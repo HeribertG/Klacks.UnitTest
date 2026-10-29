@@ -367,6 +367,7 @@
   "open_absence_calendar_pdf_export": "Irreversible",
   "open_order_export": "ReadOnly",
   "open_schedule": "Irreversible",
+  "optimize_container_route": "Irreversible",
   "optimize_llm_models_for_klacksy": "Irreversible",
   "partition_clients_by_address": "Irreversible",
   "partition_clients_by_qualification": "Irreversible",

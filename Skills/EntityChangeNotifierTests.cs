@@ -103,4 +103,51 @@ public class EntityChangeNotifierTests
         await notif.DidNotReceive().SendEntityChangedAsync(
             Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>());
     }
+
+    [TestCase("add_container_template_task", "create")]
+    [TestCase("remove_container_template_task", "delete")]
+    [TestCase("bundle_nearby_timerange_shifts_into_container", "update")]
+    [TestCase("optimize_container_route", "update")]
+    public async Task ContainerSkill_NotifiesContainerTemplateAndShift_FromTheRefreshEntityMap(string skillName, string operation)
+    {
+        var notif = Substitute.For<IAssistantNotificationService>();
+
+        await Sut(notif).NotifyExecutedAsync(Descriptor(skillName), Ctx(), SkillResult.SuccessResult(null));
+
+        await notif.Received(1).SendEntityChangedAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(e => e.SequenceEqual(new[] { "containertemplate", "shift" })),
+            operation,
+            skillName);
+    }
+
+    [Test]
+    public void RefreshEntityMap_ListsOnlySeededSkills_AndEveryWritingContainerSkill()
+    {
+        var seeded = SeedSkillNames();
+        var containerSkills = MutatingSeedSkillNames()
+            .Where(n => n.Contains("container", StringComparison.Ordinal))
+            .ToList();
+
+        containerSkills.ShouldNotBeEmpty();
+
+        SkillRefreshEntityMap.Map.Keys.Where(k => !seeded.Contains(k)).ShouldBeEmpty();
+        containerSkills.Where(n => !SkillRefreshEntityMap.Map.ContainsKey(n)).ShouldBeEmpty();
+    }
+
+    private static HashSet<string> SeedSkillNames() =>
+        SeedSkills().Select(s => s["name"]!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+
+    private static IEnumerable<string> MutatingSeedSkillNames() =>
+        SeedSkills()
+            .Where(s => s["effect"]?.GetValue<string>() == "Mutate")
+            .Select(s => s["name"]!.GetValue<string>());
+
+    private static IEnumerable<System.Text.Json.Nodes.JsonNode> SeedSkills()
+    {
+        var path = Klacks.UnitTest.TestHelpers.RepositoryRootLocator.RequireFile(
+            "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+        return root["skills"]!.AsArray().Select(s => s!);
+    }
 }

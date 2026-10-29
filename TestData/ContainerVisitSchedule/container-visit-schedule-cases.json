@@ -1,0 +1,2418 @@
+{
+  "description": "Characterization cases for the container visit schedule. The oracle is Klacks.Ui ContainerTemplateRouteService.applyOptimizedRoute (with ContainerTemplateItemManipulationService.applyOptimizedRoute) and convertAbsencesToTimeBlocks; Klacks.Api ContainerVisitScheduler, ContainerAbsenceTimeBlocks and ContainerTemplateItemOrder must reproduce every expected value. Both sides pin the SHA-256 of this file (CRLF normalized to LF).",
+  "cases": [
+    {
+      "name": "two-visits-without-base-steps",
+      "note": "No base step in the route: the first visit uses travelTimeFromStartBase, the return leg goes to the last visit.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:07:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:17:00",
+            "timeRangeEndItem": "10:02:00",
+            "travelTimeBefore": "00:07",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "leading-start-base-step-is-skipped-but-advances-the-index",
+      "note": "Step 0 is the start base (all-zero shiftId): it matches no item, so the first visit takes the travel of step 0, not travelTimeFromStartBase.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "00000000-0000-0000-0000-000000000000",
+            "travelTimeToNext": "00:09:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:06:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:04:00"
+          },
+          {
+            "shiftId": "00000000-0000-0000-0000-000000000000",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:20:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:14:00",
+            "timeRangeEndItem": "08:59:00",
+            "travelTimeBefore": "00:09",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:06",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "minimum-travel-time-per-transport-mode",
+      "note": "Positive travel below the minimum is lifted to 5 (car), 3 (bicycle), 1 (foot); a missing mode counts as car.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:00:30"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:30"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000003",
+            "travelTimeToNext": "00:00:30"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000004",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:02:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 1,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 2,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": null,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000004",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 2,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:08:00",
+            "timeRangeEndItem": "08:53:00",
+            "travelTimeBefore": "00:03",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:04:00",
+            "timeRangeEndItem": "09:49:00",
+            "travelTimeBefore": "00:01",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "10:04:00",
+            "timeRangeEndItem": "10:49:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000004",
+            "timeRangeStartItem": "11:00:00",
+            "timeRangeEndItem": "11:45:00",
+            "travelTimeBefore": "00:01",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "zero-and-sub-second-travel-stay-zero",
+      "note": "Travel of 00:00:00 and of a fraction of a second parses to zero minutes, so no minimum travel time is applied.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:00:00.4000000"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:00:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:05:00",
+            "timeRangeEndItem": "08:50:00",
+            "travelTimeBefore": "00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:00:00",
+            "timeRangeEndItem": "09:45:00",
+            "travelTimeBefore": "00:00",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "seconds-truncated-and-ceiled-to-minutes",
+      "note": "Fractional seconds are cut off by parseInt (00:07:00.5 is 7 min); whole seconds round the minute up (00:07:30 is 8 min).",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:07:00.5000000"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:07:30"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000003",
+            "travelTimeToNext": "00:00:01"
+          }
+        ],
+        "travelTimeFromStartBase": "00:07:01",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:13:00",
+            "timeRangeEndItem": "08:58:00",
+            "travelTimeBefore": "00:08",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:07",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "10:18:00",
+            "timeRangeEndItem": "11:03:00",
+            "travelTimeBefore": "00:08",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "days-prefix-is-read-as-hours",
+      "note": "A travel time of a day or more ('1.02:00:00') is read as hours=1 by parseInt, a quirk ported as-is.",
+      "containerFromTime": "06:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "1.02:00:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 0
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "06:15:00",
+            "timeRangeEndItem": "07:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "08:10:00",
+            "timeRangeEndItem": "08:55:00",
+            "travelTimeBefore": "01:00",
+            "travelTimeAfter": "00:00:00"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "work-time-rounds-half-up",
+      "note": "Work time hours x 60 is rounded half up like Math.round (0.125 h = 8 min, 0.875 h = 53 min, 1.0083 h = 60 min).",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000003",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.125,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.875,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 1.0083,
+            "isTimeRange": false
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "08:23:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "08:38:00",
+            "timeRangeEndItem": "09:31:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "09:46:00",
+            "timeRangeEndItem": "10:46:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "briefing-seconds-are-ignored",
+      "note": "Briefing and debriefing are read as hours and minutes only; 00:05:59 counts as 5 minutes.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:06:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:59",
+          "debriefingTime": "00:10:30",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:16:00",
+            "timeRangeEndItem": "10:01:00",
+            "travelTimeBefore": "00:06",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "fixed-break-pushes-overlapping-visit-and-splits-travel",
+      "note": "A fixed 12:00-12:30 break overlaps the second visit: it starts at the break end, the previous visit's travelTimeAfter becomes the gap until the break and the travel before is what remains after it.",
+      "containerFromTime": "10:30:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:15:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "12:00:00",
+          "endItem": "12:30:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "10:45:00",
+            "timeRangeEndItem": "11:30:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:25"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "12:30:00",
+            "timeRangeEndItem": "13:15:00",
+            "travelTimeBefore": "00:00",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "12:00:00",
+            "fixedEndTime": "12:30:00",
+            "durationMinutes": 30,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "break-in-a-gap-still-splits-travel",
+      "note": "The break lies between two visits without overlapping either; the travel is still split around it.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "01:30:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "09:00:00",
+          "endItem": "09:15:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "10:40:00",
+            "timeRangeEndItem": "11:25:00",
+            "travelTimeBefore": "01:30",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "09:00:00",
+            "fixedEndTime": "09:15:00",
+            "durationMinutes": 15,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "break-before-first-visit-never-splits",
+      "note": "A break overlapping the first visit moves it, but with no previous visit the travel before is not split.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:10:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "08:10:00",
+          "endItem": "08:40:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:40:00",
+            "timeRangeEndItem": "09:25:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:45:00",
+            "timeRangeEndItem": "10:30:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "08:10:00",
+            "fixedEndTime": "08:40:00",
+            "durationMinutes": 30,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "two-breaks-single-forward-pass",
+      "note": "Breaks are checked once in start order; a visit pushed past the first break is pushed again by an overlapping later one, never re-checked against an earlier one.",
+      "containerFromTime": "09:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:40:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "10:00:00",
+          "endItem": "10:30:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000002",
+          "startItem": "10:20:00",
+          "endItem": "11:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "11:00:00",
+            "timeRangeEndItem": "11:45:00",
+            "travelTimeBefore": "00:40",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "12:00:00",
+            "timeRangeEndItem": "12:45:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "10:00:00",
+            "fixedEndTime": "10:30:00",
+            "durationMinutes": 30,
+            "isMovable": false
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000002",
+            "fixedStartTime": "10:20:00",
+            "fixedEndTime": "11:00:00",
+            "durationMinutes": 40,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "break-across-midnight-and-equal-bounds-full-day",
+      "note": "A 23:00-01:00 break ends at 25:00; a break with equal bounds (13:00-13:00) becomes a full 24-hour block that throws an overlapping visit to the next day.",
+      "containerFromTime": "12:30:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:05:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 0
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "23:00:00",
+          "endItem": "01:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000002",
+          "startItem": "13:00:00",
+          "endItem": "13:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "13:00:00",
+            "timeRangeEndItem": "13:45:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "14:00:00",
+            "timeRangeEndItem": "14:45:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "23:00:00",
+            "fixedEndTime": "01:00:00",
+            "durationMinutes": 120,
+            "isMovable": false
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000002",
+            "fixedStartTime": "13:00:00",
+            "fixedEndTime": "13:00:00",
+            "durationMinutes": 1,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "return-leg-only-with-distance",
+      "note": "No return leg when distanceToEndBaseKm is 0: the last visit keeps its stored travelTimeAfter.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:30:00",
+        "distanceToEndBaseKm": 0
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:17:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:21:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:17:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:21:00"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "return-leg-zero-time-with-distance",
+      "note": "A return leg of 00:00:00 with a positive distance still overwrites the last visit's travelTimeAfter with 00:00; middle visits keep their stored value.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:00:00",
+        "distanceToEndBaseKm": 0.2
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:17:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:21:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:17:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "return-leg-uses-last-visit-mode",
+      "note": "The return travel uses the minimum of the last visit's own transport mode (foot = 1 minute).",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:20"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:00:20",
+        "distanceToEndBaseKm": 0.1
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 2,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:01"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "midnight-wrap",
+      "note": "Visits running past midnight wrap their clock times (24:10 is written as 00:10:00).",
+      "containerFromTime": "22:30:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:20:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:15:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 1.0,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 1.0,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "22:50:00",
+            "timeRangeEndItem": "23:50:00",
+            "travelTimeBefore": "00:15",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "00:20:00",
+            "timeRangeEndItem": "01:20:00",
+            "travelTimeBefore": "00:20",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "unmatched-step-mid-route-and-unrouted-item",
+      "note": "A route step without an item still advances the index (the next visit takes its travel); an item missing from the route is dropped.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000009",
+            "travelTimeToNext": "00:25:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:35:00",
+            "timeRangeEndItem": "10:20:00",
+            "travelTimeBefore": "00:25",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "item-without-loaded-shift-is-dropped",
+      "note": "An item whose shift is not loaded is skipped: it is dropped and does not advance the running clock.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000003",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "duplicate-shift-id-last-item-wins",
+      "note": "Two items with the same shiftId collapse to the last one.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:20:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:30:00",
+            "timeRangeEndItem": "09:15:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:30:00",
+            "timeRangeEndItem": "10:15:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": []
+      }
+    },
+    {
+      "name": "interleave-breaks-by-start",
+      "note": "Breaks are inserted before the first visit that starts later; a movable break (no fixed start) counts as 00:00 and goes first; equal starts keep their order; non-TimeRange visits are placed by their startItem, not by the computed time.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000003",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "07:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": false
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000003",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "09:10:00",
+          "endItem": "09:20:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000002",
+          "startItem": null,
+          "endItem": null,
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "10:00:00",
+          "timeRangeEndItem": "10:45:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000003",
+          "startItem": "09:10:00",
+          "endItem": "09:30:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "ab000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "10:00:00",
+            "timeRangeEndItem": "10:45:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:05"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:30:00",
+            "timeRangeEndItem": "10:15:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": "10:30:00",
+            "timeRangeEndItem": "11:15:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "09:10:00",
+            "fixedEndTime": "09:20:00",
+            "durationMinutes": 10,
+            "isMovable": false
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000002",
+            "fixedStartTime": null,
+            "fixedEndTime": null,
+            "durationMinutes": 45,
+            "isMovable": true
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000003",
+            "fixedStartTime": "09:10:00",
+            "fixedEndTime": "09:30:00",
+            "durationMinutes": 20,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "time-blocks-from-absences",
+      "note": "Absence to time block conversion: fixed blocks keep their times, movable ones default to 00:00-00:30, durations wrap past midnight and are at least 1 minute.",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000001",
+            "travelTimeToNext": "00:05:00"
+          },
+          {
+            "shiftId": "5a000000-0000-0000-0000-000000000002",
+            "travelTimeToNext": "00:00:00"
+          }
+        ],
+        "travelTimeFromStartBase": "00:10:00",
+        "travelTimeToEndBase": "00:12:00",
+        "distanceToEndBaseKm": 3.5
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "12:00:00",
+          "endItem": "12:00:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000002",
+          "startItem": "23:30:00",
+          "endItem": "00:15:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000003",
+          "startItem": null,
+          "endItem": null,
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": null,
+          "timeRangeEndItem": null,
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000004",
+          "startItem": null,
+          "endItem": null,
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "22:00:00",
+          "timeRangeEndItem": "01:00:00",
+          "transportMode": 0,
+          "shift": null
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000005",
+          "startItem": "15:00:00",
+          "endItem": null,
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "15:00:00",
+          "timeRangeEndItem": "15:20:00",
+          "transportMode": 0,
+          "shift": null
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "ab000000-0000-0000-0000-000000000003",
+            "timeRangeStartItem": null,
+            "timeRangeEndItem": null,
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000004",
+            "timeRangeStartItem": "22:00:00",
+            "timeRangeEndItem": "01:00:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "08:15:00",
+            "timeRangeEndItem": "09:00:00",
+            "travelTimeBefore": "00:10",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "5a000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "09:15:00",
+            "timeRangeEndItem": "10:00:00",
+            "travelTimeBefore": "00:05",
+            "travelTimeAfter": "00:12"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000005",
+            "timeRangeStartItem": "15:00:00",
+            "timeRangeEndItem": "15:20:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          },
+          {
+            "key": "ab000000-0000-0000-0000-000000000002",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "12:00:00",
+            "fixedEndTime": "12:00:00",
+            "durationMinutes": 1,
+            "isMovable": false
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000002",
+            "fixedStartTime": "23:30:00",
+            "fixedEndTime": "00:15:00",
+            "durationMinutes": 45,
+            "isMovable": false
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000003",
+            "fixedStartTime": null,
+            "fixedEndTime": null,
+            "durationMinutes": 30,
+            "isMovable": true
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000004",
+            "fixedStartTime": null,
+            "fixedEndTime": null,
+            "durationMinutes": 180,
+            "isMovable": true
+          },
+          {
+            "id": "ab000000-0000-0000-0000-000000000005",
+            "fixedStartTime": null,
+            "fixedEndTime": null,
+            "durationMinutes": 20,
+            "isMovable": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty-route-keeps-only-breaks",
+      "note": "The optimizer found no route: the Ui keeps only the breaks (every visit is dropped).",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [],
+        "travelTimeFromStartBase": "00:00:00",
+        "travelTimeToEndBase": "00:00:00",
+        "distanceToEndBaseKm": 0
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": null,
+          "absenceId": "ab000000-0000-0000-0000-000000000001",
+          "startItem": "12:00:00",
+          "endItem": "12:30:00",
+          "briefingTime": "00:00:00",
+          "debriefingTime": "00:00:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "00:00:00",
+          "timeRangeEndItem": "00:30:00",
+          "transportMode": 0,
+          "shift": null
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "key": "ab000000-0000-0000-0000-000000000001",
+            "timeRangeStartItem": "00:00:00",
+            "timeRangeEndItem": "00:30:00",
+            "travelTimeBefore": "00:00:00",
+            "travelTimeAfter": "00:00:00"
+          }
+        ],
+        "timeBlocks": [
+          {
+            "id": "ab000000-0000-0000-0000-000000000001",
+            "fixedStartTime": "12:00:00",
+            "fixedEndTime": "12:30:00",
+            "durationMinutes": 30,
+            "isMovable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty-route-without-breaks-writes-nothing",
+      "note": "The optimizer found no route and there is no break: the Ui leaves the items untouched (no result).",
+      "containerFromTime": "08:00:00",
+      "route": {
+        "optimizedRoute": [],
+        "travelTimeFromStartBase": "00:00:00",
+        "travelTimeToEndBase": "00:00:00",
+        "distanceToEndBaseKm": 0
+      },
+      "items": [
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000001",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        },
+        {
+          "shiftId": "5a000000-0000-0000-0000-000000000002",
+          "absenceId": null,
+          "startItem": "08:00:00",
+          "endItem": "17:00:00",
+          "briefingTime": "00:05:00",
+          "debriefingTime": "00:05:00",
+          "travelTimeBefore": "00:00:00",
+          "travelTimeAfter": "00:00:00",
+          "timeRangeStartItem": "08:00:00",
+          "timeRangeEndItem": "17:00:00",
+          "transportMode": 0,
+          "shift": {
+            "workTime": 0.75,
+            "isTimeRange": true
+          }
+        }
+      ],
+      "expected": {
+        "items": null,
+        "timeBlocks": []
+      }
+    }
+  ]
+}

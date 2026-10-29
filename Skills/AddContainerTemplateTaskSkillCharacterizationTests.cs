@@ -197,7 +197,7 @@ public class AddContainerTemplateTaskSkillCharacterizationTests
     }
 
     [Test]
-    public async Task Success_AcquiresTheLockWithTheInstanceId_AndPassesTheCallersTokenToWriteAndRelease()
+    public async Task Success_AcquiresTheLockWithTheInstanceId_PassesTheCallersTokenToTheWrite_AndReleasesWithoutIt()
     {
         using var cts = new CancellationTokenSource();
 
@@ -209,7 +209,7 @@ public class AddContainerTemplateTaskSkillCharacterizationTests
                 c.ResourceType == "ContainerTemplate" && c.ResourceId == ContainerId && c.InstanceId == "instance-1"),
             cts.Token);
         await _mediator.Received(1).Send(Arg.Any<PutContainerTemplatesCommand>(), cts.Token);
-        await _mediator.Received(1).Send(Arg.Is<ReleaseContainerLockCommand>(c => c.LockId == LockId), cts.Token);
+        await _mediator.Received(1).Send(Arg.Is<ReleaseContainerLockCommand>(c => c.LockId == LockId), CancellationToken.None);
         await _availableTasksService.Received(1).GetAvailableTasksAsync(
             ContainerId, StorageTuesday, new TimeOnly(6, 0), new TimeOnly(22, 0),
             Arg.Any<string?>(), Arg.Any<Guid?>(),

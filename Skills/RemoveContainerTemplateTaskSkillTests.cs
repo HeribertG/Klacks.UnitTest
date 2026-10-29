@@ -167,4 +167,20 @@ public class RemoveContainerTemplateTaskSkillTests
         await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task ReusedLockOfTheOpenContainerPage_IsNotReleased()
+    {
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ContainerTemplateResource> { TemplateWithItem(includeItem: true) });
+        _mediator.Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new ContainerLockResource { Id = LockId, Acquired = true, AlreadyHeld = true });
+        _mediator.Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ContainerTemplateResource> { TemplateWithItem(includeItem: false) });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.DidNotReceive().Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>());
+    }
 }
