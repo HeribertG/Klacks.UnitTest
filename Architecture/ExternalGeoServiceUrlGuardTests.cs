@@ -32,6 +32,7 @@ public class ExternalGeoServiceUrlGuardTests
         "nominatim.openstreetmap.org",
         "router.project-osrm.org",
         "api.openrouteservice.org",
+        "api.heigit.org",
         "tile.openstreetmap.org",
         "tile.openstreetmap.de",
         "basemaps.cartocdn.com",

@@ -124,6 +124,7 @@ public class GeoServicesPolicyEvaluatorTests
         yield return new TestCaseData(GeoServiceKind.MapTiles, "https://a.tile.opentopomap.org/{z}/{x}/{y}.png");
         yield return new TestCaseData(GeoServiceKind.Geocoding, "https://nominatim.openstreetmap.org./");
         yield return new TestCaseData(GeoServiceKind.Routing, "https://router.project-osrm.org.");
+        yield return new TestCaseData(GeoServiceKind.Routing, "https://api.heigit.org/openrouteservice/v2");
         yield return new TestCaseData(GeoServiceKind.MapTiles, "https://tile.openstreetmap.org./{z}/{x}/{y}.png");
     }
 
