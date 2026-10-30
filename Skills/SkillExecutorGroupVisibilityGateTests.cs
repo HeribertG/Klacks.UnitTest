@@ -20,7 +20,7 @@ namespace Klacks.UnitTest.Skills;
 public class SkillExecutorGroupVisibilityGateTests
 {
     private const string BoundSkill = "read_messages";
-    private const string UnboundSkill = "read_schedule_state";
+    private const string UnboundSkill = "list_branches";
     private const string GenericHandlerType = "test_handler";
     private const string GenericHandlerConfig = "{\"endpoint\":\"test\"}";
 

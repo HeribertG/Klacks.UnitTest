@@ -4,7 +4,9 @@
 /// The real container autofill over EF InMemory: the available-task list (ContainerAvailableTasksService with ShiftReader,
 /// GroupItemRepository and ContainerTemplateRepository) and the autofill services as AddContainerAutofillServices
 /// registers them; only geocoding of the base address, the distance matrix (a line by latitude, 600 s per unit) and the
-/// directions are faked. Clients placed with ClientAt geocode from their stored coordinates.
+/// directions are faked. Clients placed with ClientAt geocode from their stored coordinates. A test that watches the
+/// writes or the external services hands in its own coordinate writer, geocoder or directions builder; estimated marks
+/// the matrix as the fallback of an unreachable routing service.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
@@ -46,14 +48,19 @@ public static class InMemoryContainerAutofill
     /// <summary>
     /// Builds the autofill service on top of the given available-task list; the caller disposes the returned provider.
     /// </summary>
-    public static (IContainerAutofillService Service, ServiceProvider Provider) Create(IContainerAvailableTasksService availableTasks)
+    public static (IContainerAutofillService Service, ServiceProvider Provider) Create(
+        IContainerAvailableTasksService availableTasks,
+        IAddressCoordinateWriter? coordinateWriter = null,
+        IGeocodingService? geocodingService = null,
+        IRouteDirectionsBuilder? routeDirectionsBuilder = null,
+        bool estimated = false)
     {
         var routeOptimization = Substitute.For<IRouteOptimizationService>();
         routeOptimization
             .CalculateDistanceMatrixForLocationsAsync(Arg.Any<List<Location>>(), Arg.Any<ContainerTransportMode>())
-            .Returns(call => BuildLineMatrix(call.Arg<List<Location>>()));
+            .Returns(call => BuildLineMatrix(call.Arg<List<Location>>()) with { IsEstimated = estimated });
 
-        var geocoding = Substitute.For<IGeocodingService>();
+        var geocoding = geocodingService ?? Substitute.For<IGeocodingService>();
         geocoding
             .GeocodeAddressAsync(BaseAddress, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(((double?)0, (double?)0));
@@ -70,7 +77,7 @@ public static class InMemoryContainerAutofill
             Name = new MultiLanguage { De = DefaultCountryQueryName, En = "Austria" }
         });
 
-        var directionsBuilder = Substitute.For<IRouteDirectionsBuilder>();
+        var directionsBuilder = routeDirectionsBuilder ?? Substitute.For<IRouteDirectionsBuilder>();
         directionsBuilder
             .GetRouteDirectionsAsync(Arg.Any<List<Location>>(), Arg.Any<DistanceMatrix>(), Arg.Any<ContainerTransportMode>())
             .Returns(new List<RouteSegmentDirections>());
@@ -80,7 +87,7 @@ public static class InMemoryContainerAutofill
         services.AddSingleton(availableTasks);
         services.AddSingleton(routeOptimization);
         services.AddSingleton(geocoding);
-        services.AddSingleton(Substitute.For<IAddressCoordinateWriter>());
+        services.AddSingleton(coordinateWriter ?? Substitute.For<IAddressCoordinateWriter>());
         services.AddSingleton(settingsReader);
         services.AddSingleton(countryResolver);
         services.AddSingleton(directionsBuilder);

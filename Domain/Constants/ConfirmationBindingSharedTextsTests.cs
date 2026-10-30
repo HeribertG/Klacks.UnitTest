@@ -24,6 +24,13 @@ public class ConfirmationBindingSharedTextsTests
     }
 
     [Test]
+    public void TheBroadcastKind_IsTheHostKind_AndNotTheMessageKind()
+    {
+        ConfirmationBindingKinds.Broadcast.ShouldBe(MessagingConstants.BroadcastBindingKind);
+        ConfirmationBindingKinds.Broadcast.ShouldNotBe(ConfirmationBindingKinds.Message);
+    }
+
+    [Test]
     public void TheMessageKind_IsTheHostKind_AndDistinctFromTheOthers()
     {
         ConfirmationBindingKinds.Message.ShouldBe(MessagingConstants.MessageBindingKind);

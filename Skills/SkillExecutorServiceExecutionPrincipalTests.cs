@@ -20,7 +20,7 @@ namespace Klacks.UnitTest.Skills;
 [TestFixture]
 public class SkillExecutorServiceExecutionPrincipalTests
 {
-    private const string SkillName = "read_schedule_state";
+    private const string SkillName = "list_branches";
     private const string GenericHandlerType = "test_handler";
     private const string GenericHandlerConfig = "{\"endpoint\":\"test\"}";
 

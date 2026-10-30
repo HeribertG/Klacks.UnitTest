@@ -99,6 +99,12 @@ public class ConfirmedBindingPinGuardTests
             ["recipient"] = "Hans Muster",
             ["content"] = "Hello"
         },
+        StartSoftwareUpdateSkill.SkillName => new Dictionary<string, object>(),
+        MessagingConstants.SkillSendBroadcast => new Dictionary<string, object>
+        {
+            ["groupId"] = Guid.NewGuid().ToString(),
+            ["content"] = "Hello"
+        },
         _ => null
     };
 

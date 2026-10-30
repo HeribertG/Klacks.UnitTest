@@ -22,7 +22,7 @@ public class CappedChannelSkillExclusionsTests
         "restore_email", "fetch_new_emails", "translate_email", "list_emails_by_group", "get_email_group_tree"
     ];
 
-    private static readonly string[] AddedAfterB8 = ["get_replacement_status"];
+    private static readonly string[] AddedAfterB8 = ["get_replacement_status", "send_broadcast", "evaluate_messaging_reach"];
 
     private static readonly string[] ReachableBeforeB8 =
     [

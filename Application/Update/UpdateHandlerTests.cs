@@ -49,7 +49,8 @@ public class UpdateHandlerTests
     {
         var installation = Substitute.For<IInstallationIdentityProvider>();
         installation.Get().Returns(identity ?? new InstallationIdentity(InstallationKind.Docker, "linux-x64"));
-        return new TriggerUpdateCommandHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, installation);
+        return new TriggerUpdateCommandHandler(
+            _repository, new UpdateTriggerPreflight(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, installation));
     }
 
     private DeleteUpdateHistoryCommandHandler CreateDeleteHandler()

@@ -240,6 +240,26 @@ public class SpamFilterServiceTests
     }
 
     [Test]
+    public async Task SenderDomain_DoesNotMatchASubdomain()
+    {
+        Rules(Rule(SpamRuleType.SenderDomain, "spam.com"));
+
+        var result = await _service.ClassifyAsync(Email(fromAddress: "user@mail.spam.com"));
+
+        result.IsSpam.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task SenderDomain_MatchesTheDomainOfADisplayNameForm()
+    {
+        Rules(Rule(SpamRuleType.SenderDomain, "spam.com"));
+
+        var result = await _service.ClassifyAsync(Email(fromAddress: "Big Shop <user@Spam.com>"));
+
+        result.IsSpam.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task SubjectContains_IsCaseInsensitiveSubstring()
     {
         Rules(Rule(SpamRuleType.SubjectContains, "free money"));

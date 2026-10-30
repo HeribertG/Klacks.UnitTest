@@ -39,6 +39,7 @@ public class SkillAreaCoverageTests
         "group",
         "inbox",
         "klacksy",
+        "messaging",
         "navigation",
         "period",
         "schedule",

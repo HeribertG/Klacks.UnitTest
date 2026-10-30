@@ -170,6 +170,30 @@ public class SkillRelationSeedLoaderTests
             .AddRangeAsync(Arg.Any<IEnumerable<SkillRelation>>(), Arg.Any<CancellationToken>());
     }
 
+    // The edge of a plugin skill is skipped at startup while the plugin is off. Running the loader again once the skill exists
+    // (FeaturePluginService after install and enable) must insert exactly that edge and leave the others alone.
+    [Test]
+    public async Task Load_RunAgainAfterAPluginSeededItsSkill_InsertsTheEdgeSkippedBefore()
+    {
+        WriteSeedFile(new { version = 1, relations = new[] { Edge("create_shift", "send_broadcast", type: 3) } });
+        await Build().LoadAsync();
+        await _skillRelationRepository.DidNotReceive()
+            .AddRangeAsync(Arg.Any<IEnumerable<SkillRelation>>(), Arg.Any<CancellationToken>());
+        _agentSkillRepository.GetAllByAgentIdAsync(AgentId, Arg.Any<CancellationToken>()).Returns(new List<AgentSkill>
+        {
+            new() { AgentId = AgentId, Name = "create_shift" },
+            new() { AgentId = AgentId, Name = "send_broadcast" },
+        });
+        List<SkillRelation>? added = null;
+        _skillRelationRepository.When(r => r.AddRangeAsync(Arg.Any<IEnumerable<SkillRelation>>(), Arg.Any<CancellationToken>()))
+            .Do(ci => added = ci.Arg<IEnumerable<SkillRelation>>().ToList());
+
+        await Build().LoadAsync();
+
+        added.ShouldNotBeNull();
+        added!.ShouldHaveSingleItem().SkillBName.ShouldBe("send_broadcast");
+    }
+
     [Test]
     public async Task Load_MissingSeedFile_IsNoOp()
     {

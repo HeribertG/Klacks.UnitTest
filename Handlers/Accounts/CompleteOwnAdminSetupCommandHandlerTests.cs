@@ -22,6 +22,7 @@ public class CompleteOwnAdminSetupCommandHandlerTests
 
     private IAdminSetupGateService _gateService = null!;
     private IUserManagementService _userManagementService = null!;
+    private IAdministratorRoleLock _administratorRoleLock = null!;
     private IUsernameGeneratorService _usernameGeneratorService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private CompleteOwnAdminSetupCommandHandler _sut = null!;
@@ -31,6 +32,7 @@ public class CompleteOwnAdminSetupCommandHandlerTests
     {
         _gateService = Substitute.For<IAdminSetupGateService>();
         _userManagementService = Substitute.For<IUserManagementService>();
+        _administratorRoleLock = Substitute.For<IAdministratorRoleLock>();
         _usernameGeneratorService = Substitute.For<IUsernameGeneratorService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
@@ -41,6 +43,7 @@ public class CompleteOwnAdminSetupCommandHandlerTests
         _sut = new CompleteOwnAdminSetupCommandHandler(
             _gateService,
             _userManagementService,
+            _administratorRoleLock,
             _usernameGeneratorService,
             new AuthMapper(),
             _unitOfWork,
@@ -111,6 +114,39 @@ public class CompleteOwnAdminSetupCommandHandlerTests
         await _userManagementService.Received(1).RegisterUserAsync(Arg.Any<AppUser>(), "Password1!");
         await _userManagementService.Received(1).DeactivateUserAsync(
             Guid.Parse(SystemAccounts.SeedAdminUserId), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_GateActive_TakesTheAdministratorLockFirstInsideTheTransaction()
+    {
+        GateActive();
+        AllStepsSucceed();
+        using var cts = new CancellationTokenSource();
+
+        await _sut.Handle(Cmd(), cts.Token);
+
+        Received.InOrder(() =>
+        {
+            _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+            _administratorRoleLock.AcquireAsync(cts.Token);
+            _gateService.IsExemptAsync();
+            _gateService.IsGateActiveAsync();
+            _userManagementService.ChangeUserRoleAsync(Arg.Any<string>(), Roles.Admin, true);
+            _userManagementService.DeactivateUserAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        });
+    }
+
+    [Test]
+    public async Task Handle_TheLockCannotBeTaken_TheSeedAdminIsNotDeactivated()
+    {
+        GateActive();
+        AllStepsSucceed();
+        _administratorRoleLock.AcquireAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("lock unavailable")));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _sut.Handle(Cmd(), CancellationToken.None));
+
+        await _userManagementService.DidNotReceive().DeactivateUserAsync(Arg.Any<Guid>(), Arg.Any<string>());
     }
 
     [Test]

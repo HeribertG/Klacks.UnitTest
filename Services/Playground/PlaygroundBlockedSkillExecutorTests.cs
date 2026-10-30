@@ -141,6 +141,9 @@ public class PlaygroundBlockedSkillExecutorTests
     public void EveryBlockedSkillName_IsASeededSkill()
     {
         var seeded = SkillGuardSources.LoadSkillEffects().Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        using var pluginSeeds = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Klacks.UnitTest.TestHelpers.RepositoryRootLocator.RequireFile("Klacks.Api", "Plugins", "Features", "messaging", "skill-seeds.json")));
+        seeded.UnionWith(pluginSeeds.RootElement.EnumerateArray().Select(skill => skill.GetProperty("name").GetString()!));
 
         var unknown = PlaygroundBlockedSkills.Names.Where(name => !seeded.Contains(name)).OrderBy(n => n).ToList();
 

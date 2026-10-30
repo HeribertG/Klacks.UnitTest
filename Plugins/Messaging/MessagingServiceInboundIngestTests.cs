@@ -109,11 +109,12 @@ public class MessagingServiceInboundIngestTests
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),
             Substitute.For<IClientIdNumberReader>(),
-            Substitute.For<IClientPhoneReader>(),
+            Substitute.For<IBroadcastRecipientResolver>(),
             _unitOfWork,
             Substitute.For<IPluginSettingsReader>(),
             _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
             _activityTracker,
+            Substitute.For<IBroadcastRunLock>(),
             _logger);
     }
 

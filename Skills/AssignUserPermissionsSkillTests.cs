@@ -9,6 +9,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.Accounts;
+using Klacks.Api.Application.Services.Authentication;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Registrations;
@@ -195,5 +196,76 @@ public class AssignUserPermissionsSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("could not be confirmed in the database");
+    }
+
+    [TestCase(Roles.Authorised)]
+    [TestCase(Roles.User)]
+    public async Task DemotingTheLastActiveAdministrator_IsRefused_BeforeAnyRoleIsWritten(string role)
+    {
+        var mediator = Substitute.For<IMediator>();
+        var users = Substitute.For<IUserManagementService>();
+        users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Admin });
+        users.CountActiveAdministratorsAsync().Returns(1);
+        var skill = new AssignUserPermissionsSkill(mediator, users);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["userId"] = "u1", ["role"] = role });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(LastAdministratorRule.RefusalMessage);
+        await mediator.DidNotReceive().Send(Arg.Any<ChangeRoleCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DemotingAnAdministrator_WithASecondActiveAdministrator_IsApplied()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var users = Substitute.For<IUserManagementService>();
+        users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Admin }, new List<string> { Roles.Authorised });
+        users.CountActiveAdministratorsAsync().Returns(2);
+        var skill = new AssignUserPermissionsSkill(mediator, users);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["userId"] = "u1", ["role"] = Roles.Authorised });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<ChangeRoleCommand>(c => c.ChangeRole.RoleName == Roles.Admin && !c.ChangeRole.IsSelected),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DemotingADeactivatedAdministrator_IsNotBlocked()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var users = Substitute.For<IUserManagementService>();
+        var deactivated = User("u1");
+        deactivated.DeactivatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        users.FindUserByIdAsync("u1").Returns(deactivated);
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Admin }, new List<string> { Roles.Authorised });
+        users.CountActiveAdministratorsAsync().Returns(1);
+        var skill = new AssignUserPermissionsSkill(mediator, users);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["userId"] = "u1", ["role"] = Roles.Authorised });
+
+        result.Success.ShouldBeTrue(result.Message);
+    }
+
+    [Test]
+    public async Task ServiceRefusal_AtTheCommandStep_IsReportedWithItsMessage()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<ChangeRoleCommand>(), Arg.Any<CancellationToken>())
+            .Returns<Task<Klacks.Api.Domain.DTOs.HttpResultResource>>(_ =>
+                throw new Klacks.Api.Application.Exceptions.ConflictException(LastAdministratorRule.RefusalMessage));
+        var users = Substitute.For<IUserManagementService>();
+        users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Authorised });
+        var skill = new AssignUserPermissionsSkill(mediator, users);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["userId"] = "u1", ["role"] = Roles.Admin });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain(LastAdministratorRule.RefusalMessage);
     }
 }

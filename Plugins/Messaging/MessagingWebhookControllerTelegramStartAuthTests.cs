@@ -149,11 +149,12 @@ public class MessagingWebhookControllerTelegramStartAuthTests
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),
             Substitute.For<IClientIdNumberReader>(),
-            Substitute.For<IClientPhoneReader>(),
+            Substitute.For<IBroadcastRecipientResolver>(),
             Substitute.For<IPluginUnitOfWork>(),
             Substitute.For<IPluginSettingsReader>(),
             _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
             _activityTracker,
+            Substitute.For<IBroadcastRunLock>(),
             NullLogger<MessagingService>.Instance);
 
         return new MessagingWebhookController(

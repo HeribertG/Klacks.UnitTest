@@ -209,6 +209,8 @@ public class UpdateWriteFailureOverRepositoryTests
         installation.Get().Returns(new InstallationIdentity(InstallationKind.Docker, "linux-x64"));
 
         return new TriggerUpdateCommandHandler(
-            _repository, manifestReader, new UpdateAvailabilityEvaluator(), Substitute.For<ISettingsReader>(), installation);
+            _repository,
+            new UpdateTriggerPreflight(
+                _repository, manifestReader, new UpdateAvailabilityEvaluator(), Substitute.For<ISettingsReader>(), installation));
     }
 }

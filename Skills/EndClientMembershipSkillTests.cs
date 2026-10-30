@@ -92,7 +92,7 @@ public class EndClientMembershipSkillTests
     {
         var active = Membership();
         var historical = Membership(validUntil: new DateTime(2025, 12, 31));
-        _membershipRepository.List().Returns(new List<Membership> { historical, active });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { historical, active });
         _membershipRepository.GetNoTracking(active.Id).Returns(_ => active);
 
         var result = await _skill.ExecuteAsync(Context(), Parameters());
@@ -108,7 +108,7 @@ public class EndClientMembershipSkillTests
     {
         var first = Membership();
         var second = Membership(validUntil: new DateTime(2026, 12, 31));
-        _membershipRepository.List().Returns(new List<Membership> { first, second });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { first, second });
         _membershipRepository.GetNoTracking(second.Id).Returns(_ => second);
 
         var result = await _skill.ExecuteAsync(Context(), Parameters(membershipId: second.Id));
@@ -124,7 +124,7 @@ public class EndClientMembershipSkillTests
     {
         var foreignClientId = Guid.NewGuid();
         var foreign = Membership(clientId: foreignClientId);
-        _membershipRepository.List().Returns(new List<Membership> { foreign });
+        _membershipRepository.GetNoTracking(foreign.Id).Returns(foreign);
         _clientVisibilityGuard.IsVisibleAsync(foreignClientId, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await _skill.ExecuteAsync(Context(), Parameters(membershipId: foreign.Id));
@@ -139,7 +139,7 @@ public class EndClientMembershipSkillTests
         var hiddenClientId = Guid.NewGuid();
         var hidden = Membership(clientId: hiddenClientId);
         var missingId = Guid.NewGuid();
-        _membershipRepository.List().Returns(new List<Membership> { hidden });
+        _membershipRepository.GetNoTracking(hidden.Id).Returns(hidden);
         _clientVisibilityGuard.IsVisibleAsync(hiddenClientId, Arg.Any<CancellationToken>()).Returns(false);
 
         var hiddenResult = await _skill.ExecuteAsync(Context(), Parameters(membershipId: hidden.Id));
@@ -155,7 +155,7 @@ public class EndClientMembershipSkillTests
     public async Task NoActiveMembership_ReturnsError()
     {
         var expired = Membership(validUntil: new DateTime(2026, 6, 30));
-        _membershipRepository.List().Returns(new List<Membership> { expired });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { expired });
 
         var result = await _skill.ExecuteAsync(Context(), Parameters());
 
@@ -168,7 +168,7 @@ public class EndClientMembershipSkillTests
     {
         var first = Membership();
         var second = Membership(validUntil: new DateTime(2026, 12, 31));
-        _membershipRepository.List().Returns(new List<Membership> { first, second });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { first, second });
 
         var result = await _skill.ExecuteAsync(Context(), Parameters());
 
@@ -182,7 +182,7 @@ public class EndClientMembershipSkillTests
     public async Task ExitDateBeforeValidFrom_ReturnsError()
     {
         var active = Membership();
-        _membershipRepository.List().Returns(new List<Membership> { active });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { active });
 
         var result = await _skill.ExecuteAsync(Context(), Parameters(exitDate: "2025-12-15"));
 
@@ -200,20 +200,20 @@ public class EndClientMembershipSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not found");
-        await _membershipRepository.DidNotReceive().List();
+        await _membershipRepository.DidNotReceive().ListByClientAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task ClientOutsideTheCallersVisibility_IsAnsweredLikeAnUnknownClient()
     {
         _clientVisibilityGuard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(false);
-        _membershipRepository.List().Returns(new List<Membership> { Membership() });
+        _membershipRepository.ListByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(new List<Membership> { Membership() });
 
         var result = await _skill.ExecuteAsync(Context(), Parameters());
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe($"Client {ClientId} not found.");
-        await _membershipRepository.DidNotReceive().List();
+        await _membershipRepository.DidNotReceive().ListByClientAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         _api.Calls.ShouldBeEmpty();
     }
 }

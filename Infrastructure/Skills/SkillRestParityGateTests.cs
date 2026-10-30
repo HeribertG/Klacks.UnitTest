@@ -14,19 +14,24 @@
 /// WorksController endpoints Restore, ReassignClient and the bulk DELETE, which carry no role attribute (gate
 /// CanEditSchedule alone, part of the Planer floor); confirm_break and unconfirm_break mirror BreaksController Confirm and
 /// Unconfirm, which carry no role attribute either (the lock-level rules inside the handler decide by role).
-/// A third direction covers the Supervisor: the messaging skills send_message and read_messages mirror
+/// A third direction covers the Supervisor: the messaging skills send_message, send_broadcast, evaluate_messaging_reach and read_messages mirror
 /// MessagingController (Admin plus Authorised, group-visibility scoped inside the skill) and the e-mail inbox skills
 /// mirror ReceivedEmailController (Admin plus Authorised, group-visibility scoped inside the handlers); both carry
 /// CanEditClients, the one granular right whose role set is exactly Admin plus Authorised and outside the Planer floor,
 /// so a caller without a role stays out. list_messaging_providers mirrors the provider GET that every signed-in user
 /// may call (CanViewClients, part of the floor), while diagnose_messaging_setup, create_email_folder and
 /// delete_email_folder mirror Admin-only routes (MessagingSetupController, EmailFoldersController, gate
-/// CanEditSettings). The messaging plugin seeds are read next to the core seeds.
+/// CanEditSettings). The messaging plugin seeds are read next to the core seeds. A skill the Planer floor reaches that injects
+/// the client or shift visibility guard must be listed in GroupVisibilityBoundSkills, so a call for nobody cannot pass as a
+/// background job.
 /// The rule applied is SkillExecutorService.ValidatePermissions: the Admin role passes, everyone else needs every
 /// required right among Permissions.ExpandRoles of their roles.
 /// </summary>
 
 using System.Text.Json;
+using System.Reflection;
+using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Attributes;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
 using Klacks.UnitTest.TestHelpers;
@@ -54,7 +59,12 @@ public class SkillRestParityGateTests
         ["create_test_environment"] = Permissions.CanEditSettings,
         ["diagnose_messaging_setup"] = Permissions.CanEditSettings,
         ["create_email_folder"] = Permissions.CanEditSettings,
-        ["delete_email_folder"] = Permissions.CanEditSettings
+        ["delete_email_folder"] = Permissions.CanEditSettings,
+        ["start_software_update"] = Roles.Admin,
+        ["evaluate_software_update"] = Roles.Admin,
+        ["evaluate_user_role_change"] = Roles.Admin,
+        ["evaluate_compliance_enforcement_change"] = Roles.Admin,
+        ["evaluate_spam_rule_candidates"] = Roles.Admin
     };
 
     private static readonly Dictionary<string, string> PlannerFloorGateBySkill = new(StringComparer.Ordinal)
@@ -74,6 +84,8 @@ public class SkillRestParityGateTests
     {
         ["send_message"] = Permissions.CanEditClients,
         ["read_messages"] = Permissions.CanEditClients,
+        ["send_broadcast"] = Permissions.CanEditClients,
+        ["evaluate_messaging_reach"] = Permissions.CanEditClients,
         ["list_email_folders"] = Permissions.CanEditClients,
         ["list_emails"] = Permissions.CanEditClients,
         ["read_email"] = Permissions.CanEditClients,
@@ -95,7 +107,7 @@ public class SkillRestParityGateTests
         "fetch_new_emails"
     ];
 
-    private static readonly string[] MessagingAndEmailNameMarkers = ["email", "messag", "messeng"];
+    private static readonly string[] MessagingAndEmailNameMarkers = ["email", "messag", "messeng", "broadcast"];
 
     private static readonly string[] InboundAnalysisSkills =
     [
@@ -229,6 +241,29 @@ public class SkillRestParityGateTests
             .Where(name => MessagingAndEmailNameMarkers.Any(marker => name.Contains(marker, StringComparison.Ordinal)))
             .Where(name => MayRun(name, Roles.Authorised) && !MayRun(name))
             .Except(SupervisorReachableSkillsOutsideTheInbox, StringComparer.Ordinal);
+
+    [Test]
+    public void EveryPlannerFloorSkillBehindAVisibilityGuard_IsGroupVisibilityBound()
+    {
+        var guarded = SkillsBehindAVisibilityGuard().ToList();
+
+        guarded.ShouldContain("evaluate_employee_exit", "The scan must see a known guarded skill, or it proves nothing.");
+        guarded
+            .Where(name => Seeds().ContainsKey(name) && MayRun(name))
+            .Where(name => !GroupVisibilityBoundSkills.Contains(name))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ShouldBeEmpty(
+                "The Planer floor reaches these skills and they read or change data through a visibility guard, which treats a " +
+                "missing user as an unrestricted background job. List them in GroupVisibilityBoundSkills.");
+    }
+
+    private static IEnumerable<string> SkillsBehindAVisibilityGuard() =>
+        typeof(EvaluateEmployeeExitSkill).Assembly.GetTypes()
+            .Where(type => type.GetCustomAttribute<SkillImplementationAttribute>() != null)
+            .Where(type => type.GetConstructors().Any(constructor => constructor.GetParameters()
+                .Any(parameter => parameter.ParameterType == typeof(IClientVisibilityGuard)
+                    || parameter.ParameterType == typeof(IShiftVisibilityGuard))))
+            .Select(type => type.GetCustomAttribute<SkillImplementationAttribute>()!.SkillName);
 
     [Test]
     public void ClientNoteGate_IsPartOfThePlanerFloor()

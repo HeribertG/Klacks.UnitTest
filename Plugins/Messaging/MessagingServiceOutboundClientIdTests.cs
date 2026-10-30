@@ -66,11 +66,12 @@ public class MessagingServiceOutboundClientIdTests
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),
             Substitute.For<IClientIdNumberReader>(),
-            Substitute.For<IClientPhoneReader>(),
+            Substitute.For<IBroadcastRecipientResolver>(),
             _unitOfWork,
             Substitute.For<IPluginSettingsReader>(),
             _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
             Substitute.For<IMessagingInboundActivityTracker>(),
+            Substitute.For<IBroadcastRunLock>(),
             NullLogger<MessagingService>.Instance);
     }
 

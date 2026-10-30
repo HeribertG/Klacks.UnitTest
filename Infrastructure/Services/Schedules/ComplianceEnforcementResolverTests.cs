@@ -5,7 +5,8 @@
 /// effective: a per-rule COMPLIANCE_ENFORCEMENT_* value wins over the default mode, the default mode
 /// applies when the per-rule key is absent, Warn is the hard fallback when nothing is configured, an
 /// unrecognized per-rule value (typo) falls back to the default mode instead of silently weakening
-/// to Warn, every one of the eleven rule names reads its own setting key, and the supervisor-override
+/// to Warn (this covers hour and day numbers that an older skill version stored in the five limit-rule keys: they
+/// count as not set), every one of the eleven rule names reads its own setting key, and the supervisor-override
 /// flag follows its setting with a default of true — also when its value is unparseable.
 /// </summary>
 
@@ -147,6 +148,30 @@ public class ComplianceEnforcementResolverTests
 
         modeA.ShouldBe(RuleEnforcementMode.Warn);
         modeB.ShouldBe(RuleEnforcementMode.Block);
+    }
+
+    [TestCase(ComplianceRuleNames.MaxDailyHours, SettingKeys.ComplianceEnforcementMaxDailyHours, "10")]
+    [TestCase(ComplianceRuleNames.MaxWeeklyHours, SettingKeys.ComplianceEnforcementMaxWeeklyHours, "48.5")]
+    [TestCase(ComplianceRuleNames.MinRestHours, SettingKeys.ComplianceEnforcementMinRestHours, "11")]
+    [TestCase(ComplianceRuleNames.MinRestDays, SettingKeys.ComplianceEnforcementMinRestDays, "2")]
+    [TestCase(ComplianceRuleNames.MaxConsecutiveDays, SettingKeys.ComplianceEnforcementMaxConsecutiveDays, "6")]
+    public async Task GetModeAsync_LegacyNumberInPerRuleKey_IsTreatedAsNotSetAndUsesDefaultMode(
+        string ruleName, string key, string legacyNumber)
+    {
+        StubSetting(key, legacyNumber);
+        StubSetting(SettingKeys.ComplianceEnforcementDefaultMode, BlockValue);
+
+        (await _sut.GetModeAsync(ruleName)).ShouldBe(RuleEnforcementMode.Block);
+    }
+
+    [TestCase(ComplianceRuleNames.MaxDailyHours, SettingKeys.ComplianceEnforcementMaxDailyHours, "10")]
+    [TestCase(ComplianceRuleNames.MinRestHours, SettingKeys.ComplianceEnforcementMinRestHours, "11")]
+    [TestCase(ComplianceRuleNames.MaxConsecutiveDays, SettingKeys.ComplianceEnforcementMaxConsecutiveDays, "6")]
+    public async Task GetModeAsync_LegacyNumberWithoutDefault_ReturnsWarn(string ruleName, string key, string legacyNumber)
+    {
+        StubSetting(key, legacyNumber);
+
+        (await _sut.GetModeAsync(ruleName)).ShouldBe(RuleEnforcementMode.Warn);
     }
 
     [TestCase(ComplianceRuleNames.MaxDailyHours, SettingKeys.ComplianceEnforcementMaxDailyHours)]

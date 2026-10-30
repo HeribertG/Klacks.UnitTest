@@ -64,6 +64,7 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
         string[] bound =
         [
             Klacks.Plugin.Messaging.Application.Constants.MessagingConstants.SkillSendMessage,
+            Klacks.Plugin.Messaging.Application.Constants.MessagingConstants.SkillSendBroadcast,
             BulkDeleteWorksSkill.SkillName,
             CutShiftSkill.SkillName,
             MacroAssignmentSkillNames.AssignToShift,
@@ -72,7 +73,8 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
             SealOpenOrdersSkill.SkillName,
             SealShiftSkill.SkillName,
             SplitShiftsByWeekdaySkill.SkillName,
-            ExecuteOrderReviewSkill.SkillName
+            ExecuteOrderReviewSkill.SkillName,
+            StartSoftwareUpdateSkill.SkillName
         ];
 
         foreach (var name in bound)

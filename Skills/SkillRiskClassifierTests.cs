@@ -333,6 +333,7 @@ public class SkillRiskClassifierTests
     public void Classify_SendMessage_IsSensitive_BecauseItLeavesTheInstallation()
     {
         Assert.That(_sut.Classify(Descriptor("send_message", SkillCategory.Action)), Is.EqualTo(SkillRiskClass.Sensitive));
+        Assert.That(_sut.Classify(Descriptor("send_broadcast", SkillCategory.Action)), Is.EqualTo(SkillRiskClass.Sensitive));
     }
 
     // rollback_my_last_change only looks the inverse up and returns it as a proposal; the inverse call it

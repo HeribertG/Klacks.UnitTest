@@ -38,6 +38,7 @@ public class FeaturePluginServiceSkillLifecycleTests
 
     private ISettingsRepository _settingsRepository = null!;
     private SkillSeedLoader _seedLoader = null!;
+    private SkillRelationSeedLoader _relationLoader = null!;
     private ISkillCatalogRefresher _refresher = null!;
     private ILanguagePluginService _languagePluginService = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -84,6 +85,12 @@ public class FeaturePluginServiceSkillLifecycleTests
             Substitute.For<ILogger<SkillSeedLoader>>());
         _seedLoader.GetPluginSkillNamesAsync(PluginName, Arg.Any<CancellationToken>())
             .Returns(new List<string> { PluginSkillName });
+        _relationLoader = Substitute.For<SkillRelationSeedLoader>(
+            Substitute.For<ISkillRelationRepository>(),
+            Substitute.For<IAgentSkillRepository>(),
+            Substitute.For<IAgentRepository>(),
+            Substitute.For<IWebHostEnvironment>(),
+            Substitute.For<ILogger<SkillRelationSeedLoader>>());
         _refresher = Substitute.For<ISkillCatalogRefresher>();
         _languagePluginService = Substitute.For<ILanguagePluginService>();
 
@@ -95,6 +102,7 @@ public class FeaturePluginServiceSkillLifecycleTests
         provider.GetService(typeof(ISettingsRepository)).Returns(_settingsRepository);
         provider.GetService(typeof(IUnitOfWork)).Returns(_unitOfWork);
         provider.GetService(typeof(SkillSeedLoader)).Returns(_seedLoader);
+        provider.GetService(typeof(SkillRelationSeedLoader)).Returns(_relationLoader);
         provider.GetService(typeof(ISkillCatalogRefresher)).Returns(_refresher);
         provider.GetService(typeof(ILanguagePluginService)).Returns(_languagePluginService);
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
@@ -137,6 +145,46 @@ public class FeaturePluginServiceSkillLifecycleTests
                 Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { PluginSkillName })));
             _refresher.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         });
+    }
+
+    // The core relation seeds name plugin skills and skip an edge whose skill is missing. Install has to pull them after the
+    // skills exist and before the refresh, otherwise such an edge reaches the database only with the next application start.
+    [Test]
+    public async Task InstallAsync_SeedsTheSkillRelationsAfterTheSkillsAndBeforeTheRefresh()
+    {
+        await _service.InstallAsync(PluginName);
+
+        Received.InOrder(() =>
+        {
+            _seedLoader.SeedPluginSkillsAsync(PluginName, Arg.Any<CancellationToken>());
+            _seedLoader.SetPluginSkillsEnabledAsync(PluginName, true, Arg.Any<CancellationToken>());
+            _relationLoader.LoadAsync(Arg.Any<CancellationToken>());
+            _refresher.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task EnableAsync_SeedsTheSkillRelations()
+    {
+        await _service.InstallAsync(PluginName);
+        await _service.DisableAsync(PluginName);
+        _relationLoader.ClearReceivedCalls();
+
+        await _service.EnableAsync(PluginName);
+
+        await _relationLoader.Received(1).LoadAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InstallAsync_SeedingTheRelationsThrows_StillRefreshesTheCatalogue()
+    {
+        _relationLoader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("relation seed unreadable"));
+
+        var installed = await _service.InstallAsync(PluginName);
+
+        installed.ShouldBeTrue();
+        await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // A language pack installed while the plugin was disabled skipped the plugin's skills, because the

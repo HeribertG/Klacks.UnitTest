@@ -90,7 +90,7 @@ public static class SkillFeatureCoverageMap
         ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_grouping/apply_grouping but route planning itself is not"),
         ["ScheduleChangesController"] = Gap("schedule change history; rollback_my_last_change/verify_my_last_action only cover the assistant's own session"),
         ["TranslationController"] = Covered("get_translation_status"),
-        ["UpdateController"] = Excluded("auto-update deployment infrastructure, not a Klacksy domain feature"),
+        ["UpdateController"] = Covered("evaluate_software_update", "start_software_update"),
         ["VersionController"] = Covered("get_system_info"),
         ["WhisperPluginController"] = Excluded("Whisper plugin install/uninstall rides the updater deployment infrastructure; admin settings card only, engine visibility via get_speech_settings"),
         ["ExportFormatOverridesController"] = Excluded("support hotfix tooling for export formats; admin settings card only, not a Klacksy domain feature"),

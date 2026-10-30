@@ -15,6 +15,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.UnitTest.TestHelpers;
@@ -39,6 +40,7 @@ public class BundleNearbyTimeRangeShiftsGroupFilterTests
     private ServiceProvider _provider = null!;
     private PostContainerTemplatesCommand? _postCommand;
     private BundleNearbyTimeRangeShiftsIntoContainerSkill _skill = null!;
+    private EvaluateContainerBundlingSkill _adviceSkill = null!;
     private Shift _winterthurTask = null!;
     private Shift _zurichTask = null!;
     private Group _winterthurGroup = null!;
@@ -59,7 +61,8 @@ public class BundleNearbyTimeRangeShiftsGroupFilterTests
         await _context.Shift.AddRangeAsync(_winterthurTask, _zurichTask);
         await _context.SaveChangesAsync();
 
-        var (autofill, provider) = InMemoryContainerAutofill.Create(InMemoryContainerAutofill.AvailableTasks(_context));
+        var availableTasks = InMemoryContainerAutofill.AvailableTasks(_context);
+        var (autofill, provider) = InMemoryContainerAutofill.Create(availableTasks);
         _provider = provider;
 
         var shiftRepository = Substitute.For<IShiftRepository>();
@@ -92,6 +95,20 @@ public class BundleNearbyTimeRangeShiftsGroupFilterTests
         userService.GetInstanceId().Returns("instance-1");
         var macroResolver = Substitute.For<IDefaultShiftMacroResolver>();
         macroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>()).Returns((Guid?)null);
+
+        var companyClock = Substitute.For<ICompanyClock>();
+        companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc));
+        _adviceSkill = new EvaluateContainerBundlingSkill(
+            availableTasks,
+            autofill,
+            ShiftVisibilityGuards.AllowAll(),
+            groupRepository,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            new GroupItemRepository(_context, Substitute.For<ILogger<GroupItem>>()),
+            companyClock,
+            Substitute.For<ISettingsReader>(),
+            Substitute.For<ISettingsEncryptionService>(),
+            GeoServicesPolicyTestFactory.Default());
 
         _skill = new BundleNearbyTimeRangeShiftsIntoContainerSkill(
             shiftRepository,
@@ -133,6 +150,27 @@ public class BundleNearbyTimeRangeShiftsGroupFilterTests
 
         result.Success.ShouldBeTrue(result.Message);
         BundledShiftIds().ShouldBe([_winterthurTask.Id, _zurichTask.Id], ignoreOrder: true);
+    }
+
+    [TestCase(null)]
+    [TestCase(WinterthurGroupName)]
+    public async Task AdviceStops_AreTheVisitsTheBundlingWrites(string? groupName)
+    {
+        var advice = await _adviceSkill.ExecuteAsync(Ctx(), Params(groupName));
+        var bundled = await _skill.ExecuteAsync(Ctx(), Params(groupName));
+
+        advice.Success.ShouldBeTrue(advice.Message);
+        bundled.Success.ShouldBeTrue(bundled.Message);
+        var stops = advice.Data.ShouldBeOfType<ContainerBundlingEvaluation>().Route!.Stops;
+        var items = _postCommand!.Resources.Single().ContainerTemplateItems;
+        stops.Count.ShouldBe(items.Count);
+        foreach (var item in items)
+        {
+            var stop = stops.Single(candidate => candidate.ShiftId == item.ShiftId);
+            stop.VisitStart.ShouldBe(item.TimeRangeStartItem!.Value.ToString(DateTimeFormats.HourMinute));
+            stop.VisitEnd.ShouldBe(item.TimeRangeEndItem!.Value.ToString(DateTimeFormats.HourMinute));
+            stop.TravelBefore.ShouldBe(item.TravelTimeBefore.ToString(DateTimeFormats.HourMinute));
+        }
     }
 
     private List<Guid> BundledShiftIds()

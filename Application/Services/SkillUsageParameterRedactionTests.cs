@@ -4,7 +4,8 @@
 /// Tests that the skill usage log keeps no secrets. Whatever a user types into the chat reaches the
 /// tracker as tool-call arguments, so an API key or password would otherwise sit in plain text in
 /// ParametersJson forever. Nested objects and arrays are covered too, because tool-call arguments
-/// arrive as JsonElement and are not flat.
+/// arrive as JsonElement and are not flat. The text and the id numbers of a send_broadcast never reach the log either, on the
+/// success and the failure path, while the same parameter names stay readable in every other skill.
 /// </summary>
 
 using System.Text.Json;
@@ -66,6 +67,70 @@ public class SkillUsageParameterRedactionTests
 
         saved.ShouldNotBeNull();
         return saved!.ParametersJson!;
+    }
+
+    private const string BroadcastText = "Vertraulicher Rundbrief";
+    private const int IdNumber = 40711;
+
+    private static Dictionary<string, object> BroadcastArguments() =>
+        JsonSerializer.Deserialize<Dictionary<string, object>>(
+            $$"""{ "groupId": "g-1", "content": "{{BroadcastText}}", "idNumbers": [{{IdNumber}}] }""")!;
+
+    private static SkillUsageTrackerService Tracker(ISkillUsageRepository repository) => new(
+        repository, Substitute.For<ISkillSequenceProactiveNotifier>(), NullLogger<SkillUsageTrackerService>.Instance);
+
+    private static void ShouldHideTheBroadcast(string? parametersJson)
+    {
+        parametersJson.ShouldNotBeNull();
+        parametersJson.ShouldNotContain(BroadcastText);
+        parametersJson.ShouldNotContain(IdNumber.ToString());
+        parametersJson.ShouldContain("g-1");
+    }
+
+    [Test]
+    public void Redact_HidesTheTextOfASendMessage()
+    {
+        SensitiveSkillParameters.IsPersonalInSkill("send_message", "content").ShouldBeTrue();
+        SensitiveSkillParameters.IsPersonalInSkill("send_message", "contentType").ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task TrackAsync_HidesTheTextAndTheIdNumbersOfABroadcast()
+    {
+        var repository = Substitute.For<ISkillUsageRepository>();
+        SkillUsageRecord? saved = null;
+        repository.When(r => r.AddAsync(Arg.Any<SkillUsageRecord>(), Arg.Any<CancellationToken>()))
+            .Do(ci => saved = ci.Arg<SkillUsageRecord>());
+        var descriptor = new SkillDescriptor(
+            "send_broadcast", "desc", SkillCategory.Action, Array.Empty<SkillParameter>(),
+            Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
+
+        await Tracker(repository).TrackAsync(descriptor, Context(), BroadcastArguments(), SkillResult.SuccessResult(null), TimeSpan.FromMilliseconds(3));
+
+        ShouldHideTheBroadcast(saved!.ParametersJson);
+    }
+
+    [Test]
+    public async Task TrackFailureAsync_HidesTheTextAndTheIdNumbersOfABroadcast()
+    {
+        var repository = Substitute.For<ISkillUsageRepository>();
+        SkillUsageRecord? saved = null;
+        repository.When(r => r.AddAsync(Arg.Any<SkillUsageRecord>(), Arg.Any<CancellationToken>()))
+            .Do(ci => saved = ci.Arg<SkillUsageRecord>());
+
+        await Tracker(repository).TrackFailureAsync(
+            "send_broadcast", SkillFailureKind.PermissionDenied, Context(), BroadcastArguments(), "refused", TimeSpan.FromMilliseconds(3));
+
+        ShouldHideTheBroadcast(saved!.ParametersJson);
+    }
+
+    [Test]
+    public void AnotherSkill_KeepsItsContentReadable()
+    {
+        var redacted = Klacks.Api.Domain.Services.Assistant.Skills.SkillParameterRedactor.Redact(
+            new Dictionary<string, object> { ["content"] = "Notiz" }, "add_client_note");
+
+        redacted["content"].ShouldBe("Notiz");
     }
 
     [Test]
