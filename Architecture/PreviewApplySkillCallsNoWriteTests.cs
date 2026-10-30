@@ -31,6 +31,7 @@ using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Application.Queries.Shifts;
 using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Services.Orders;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Attributes;
 using Klacks.Api.Domain.Common;
@@ -63,6 +64,7 @@ public class PreviewApplySkillCallsNoWriteTests
     private const string AssignOrdersToGroups = "assign_orders_to_groups";
     private const string AssignShiftsToCityGroups = "assign_shifts_to_city_groups";
     private const string SealOpenOrders = "seal_open_orders";
+    private const string SplitShiftsByWeekday = "split_shifts_by_weekday";
     private const string ScheduleRecurringTask = "schedule_recurring_task";
 
     private const string ApplyAbsent = "absent";
@@ -122,6 +124,7 @@ public class PreviewApplySkillCallsNoWriteTests
             [AssignOrdersToGroups] = typeof(AssignOrdersToGroupsSkill),
             [AssignShiftsToCityGroups] = typeof(AssignShiftsToCityGroupsSkill),
             [SealOpenOrders] = typeof(SealOpenOrdersSkill),
+            [SplitShiftsByWeekday] = typeof(SplitShiftsByWeekdaySkill),
             [ScheduleRecurringTask] = typeof(ScheduleRecurringTaskSkill),
         };
 
@@ -437,6 +440,34 @@ public class PreviewApplySkillCallsNoWriteTests
         order.GroupItems.ShouldBeEmpty();
         await _mediator.Received(1).Send(Arg.Is<AssignOrdersToGroupsCommand>(c => !c.Apply), Arg.Any<CancellationToken>());
         ShouldNotHaveWritten(_mediator, [_shiftRepository, _groupRepository, _groupItemRepository], _unitOfWork);
+    }
+
+    [Test]
+    public async Task SplitShiftsByWeekday_PreviewWritesNothing([Values(ApplyAbsent, ApplyFalse, ApplyJsonFalse)] string applyShape)
+    {
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(), Name = ShiftName, Status = ShiftStatus.OriginalShift, ShiftType = ShiftType.IsTask,
+            OriginalId = Guid.NewGuid(), IsMonday = true, IsWednesday = true
+        };
+        _groupItemRepository.GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<Guid> { shift.Id });
+        var shiftReader = Substitute.For<IShiftReader>();
+        shiftReader.ScanRealPlanAsync(Arg.Any<RealPlanShiftScan>(), Arg.Any<CancellationToken>())
+            .Returns(call => (IReadOnlyList<Shift>)(call.Arg<RealPlanShiftScan>().Status == ShiftStatus.OriginalShift ? [shift] : []));
+        var cutFacade = Substitute.For<IShiftCutFacade>();
+        var skill = new SplitShiftsByWeekdaySkill(
+            new ShiftWeekdayCutPlanner(
+                _groupRepository, TestGroupWriteVisibility.UnrestrictedGroups(), _groupItemRepository, shiftReader,
+                ShiftVisibilityGuards.AllowAll()),
+            shiftReader, cutFacade, _unitOfWork);
+
+        var result = await RunPreviewAsync(
+            SplitShiftsByWeekday, skill, Ctx(),
+            WithApply(applyShape, new Dictionary<string, object> { [SplitShiftsByWeekdaySkill.GroupNameParameter] = CityName }));
+
+        result.Message.ShouldContain(NothingChangedMarker);
+        shift.Status.ShouldBe(ShiftStatus.OriginalShift);
+        ShouldNotHaveWritten(null, [_groupRepository, _groupItemRepository], _unitOfWork, cutFacade);
     }
 
     [Test]

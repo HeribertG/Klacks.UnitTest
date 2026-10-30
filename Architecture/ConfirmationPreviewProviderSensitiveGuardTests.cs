@@ -71,6 +71,7 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
             MacroAssignmentSkillNames.Revert,
             SealOpenOrdersSkill.SkillName,
             SealShiftSkill.SkillName,
+            SplitShiftsByWeekdaySkill.SkillName,
             ExecuteOrderReviewSkill.SkillName
         ];
 

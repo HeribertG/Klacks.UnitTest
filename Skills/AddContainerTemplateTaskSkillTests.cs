@@ -85,6 +85,7 @@ public class AddContainerTemplateTaskSkillTests
                 Arg.Any<bool?>(),
                 Arg.Any<bool?>(),
                 Arg.Any<IReadOnlyCollection<Guid>?>(),
+                Arg.Any<IReadOnlyCollection<Guid>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new List<Shift> { taskShift });
 
@@ -157,7 +158,7 @@ public class AddContainerTemplateTaskSkillTests
             ContainerId, StorageWeekday, Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
             Arg.Any<string?>(), Arg.Any<Guid?>(),
             Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == false),
-            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
     [TestCase(true, false)]
@@ -187,7 +188,7 @@ public class AddContainerTemplateTaskSkillTests
             ContainerId, StorageWeekday, Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
             Arg.Any<string?>(), Arg.Any<Guid?>(),
             Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == isWeekdayAndHoliday),
-            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

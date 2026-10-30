@@ -84,6 +84,11 @@ public class ConfirmedBindingPinGuardTests
         {
             [SealShiftSkill.ShiftIdParameter] = Guid.NewGuid().ToString()
         },
+        SplitShiftsByWeekdaySkill.SkillName => new Dictionary<string, object>
+        {
+            [SplitShiftsByWeekdaySkill.GroupNameParameter] = "Spitex",
+            [PreviewApplySkillCalls.ApplyParameter] = true
+        },
         ExecuteOrderReviewSkill.SkillName => new Dictionary<string, object>
         {
             ["target"] = "all"

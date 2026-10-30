@@ -236,7 +236,7 @@ public class ContainerTemplateVisibilityTests
     private void GivenAvailableTasks(params Guid[] shiftIds) =>
         _availableTasks.GetAvailableTasksAsync(
                 _containerId, Monday, Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
-                Arg.Any<bool?>(), Arg.Any<bool?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<bool?>(), Arg.Any<bool?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
             .Returns(shiftIds.Select(id => new Shift { Id = id, ShiftType = ShiftType.IsTask }).ToList());
 
     private ContainerTemplateResource Template(params ContainerTemplateItemResource[] items) => new()

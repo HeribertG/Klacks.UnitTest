@@ -70,7 +70,6 @@ public class SkillGeneratedIdGuardTests
             // Case (2): a parent and its children travel in ONE payload, so the children need the
             // parent's id before the write. CreateEmployeeSkill reads the persisted id back afterwards
             // (client.Id = result.Value.Id) and reports that one.
-            [@"Application\Skills\BundleNearbyTimeRangeShiftsIntoContainerSkill.cs"] = 1,
             [@"Application\Skills\CreateEmployeeSkill.cs"] = 5,
             [@"Application\Skills\CreateTestEnvironmentSkill.cs"] = 7,
             [@"Application\Skills\UpdateClientSkill.cs"] = 3,

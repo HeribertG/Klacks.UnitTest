@@ -71,8 +71,8 @@ public class AddContainerTemplateBreakSkillTests
         _mediator.Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _skill = new AddContainerTemplateBreakSkill(
-            _shiftRepository, _absenceRepository, _mediator, _userService, ShiftVisibilityGuards.AllowAll(), _routeWriteService,
-            NullLogger<AddContainerTemplateBreakSkill>.Instance);
+            _shiftRepository, _absenceRepository, _mediator, _userService, ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<IUnitOfWork>(), _routeWriteService, NullLogger<AddContainerTemplateBreakSkill>.Instance);
     }
 
     [Test]

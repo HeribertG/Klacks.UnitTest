@@ -410,7 +410,7 @@ public class ContainerAutofillServiceCharacterizationTests
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Is(ContainerFrom), Arg.Is(ContainerUntil),
             Arg.Is<string?>(v => v == null), Arg.Is<Guid?>(v => v == null),
             Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == false),
-            Arg.Is(lockIds), Arg.Any<CancellationToken>());
+            Arg.Is(lockIds), Arg.Is<IReadOnlyCollection<Guid>?>(v => v == null), Arg.Any<CancellationToken>());
     }
 
     [TestCase(false, false)]
@@ -429,7 +429,7 @@ public class ContainerAutofillServiceCharacterizationTests
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
             Arg.Any<string?>(), Arg.Any<Guid?>(),
             Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == isWeekdayAndHoliday),
-            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -542,7 +542,7 @@ public class ContainerAutofillServiceCharacterizationTests
             .GetAvailableTasksAsync(
                 Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
                 Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<bool?>(), Arg.Any<bool?>(),
-                Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
             .Returns(shifts.ToList());
     }
 

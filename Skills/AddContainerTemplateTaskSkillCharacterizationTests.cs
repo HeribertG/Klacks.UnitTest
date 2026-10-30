@@ -118,7 +118,7 @@ public class AddContainerTemplateTaskSkillCharacterizationTests
         _availableTasksService.GetAvailableTasksAsync(
                 Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
                 Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<bool?>(), Arg.Any<bool?>(),
-                Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 _calls.Add("available-tasks");
@@ -214,7 +214,7 @@ public class AddContainerTemplateTaskSkillCharacterizationTests
             ContainerId, StorageTuesday, new TimeOnly(6, 0), new TimeOnly(22, 0),
             Arg.Any<string?>(), Arg.Any<Guid?>(),
             Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == false),
-            Arg.Any<IReadOnlyCollection<Guid>?>(), cts.Token);
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), cts.Token);
     }
 
     [Test]
@@ -279,7 +279,7 @@ public class AddContainerTemplateTaskSkillCharacterizationTests
         await _availableTasksService.Received(1).GetAvailableTasksAsync(
             ContainerId, Arg.Is<int>(w => w == StorageSunday), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
             Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<bool?>(), Arg.Any<bool?>(),
-            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
     [TestCase(0)]
