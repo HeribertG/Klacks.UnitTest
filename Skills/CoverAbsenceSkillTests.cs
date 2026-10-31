@@ -10,6 +10,9 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 
@@ -23,11 +26,19 @@ public class CoverAbsenceSkillTests
     private static readonly Guid AbsenceId = Guid.NewGuid();
     private static readonly Guid ShiftId = Guid.NewGuid();
 
+    private const string SickName = "Krankheit/Unfall";
+
     private IMediator _mediator = null!;
+    private IAbsenceRepository _absenceRepository = null!;
 
     [SetUp]
     public void Setup()
     {
+        var sick = new Absence { Id = AbsenceId, Name = new MultiLanguage { De = SickName }, Abbreviation = new MultiLanguage { De = "KU" } };
+        var vacation = new Absence { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Ferien" }, Abbreviation = new MultiLanguage { De = "FE" } };
+        _absenceRepository = Substitute.For<IAbsenceRepository>();
+        _absenceRepository.Get(AbsenceId).Returns(sick);
+        _absenceRepository.List().Returns([sick, vacation]);
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>())
             .Returns(new CoverAbsenceOutcome(
@@ -45,7 +56,7 @@ public class CoverAbsenceSkillTests
         UserPermissions = new List<string> { "CanEditShifts" }
     };
 
-    private CoverAbsenceSkill Skill() => new(_mediator);
+    private CoverAbsenceSkill Skill() => new(_mediator, _absenceRepository);
 
     private static Dictionary<string, object> Params() => new()
     {
@@ -74,6 +85,58 @@ public class CoverAbsenceSkillTests
             Arg.Is<CoverAbsenceCommand>(c =>
                 c.ClientId == ClientId && c.Date == new DateOnly(2026, 3, 10) && c.GroupId == GroupId && c.AbsenceId == AbsenceId),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AbsenceTypeGivenByName_IsResolved_AndTheCoverRuns()
+    {
+        var parameters = Params();
+        parameters["absenceId"] = SickName;
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue();
+        await _mediator.Received(1).Send(
+            Arg.Is<CoverAbsenceCommand>(c => c.AbsenceId == AbsenceId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnknownAbsenceTypeName_AnswersWithTheRealTypes_AndWritesNothing()
+    {
+        var parameters = Params();
+        parameters["absenceId"] = "Sabbatical";
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Ferien");
+        await _mediator.DidNotReceive().Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnknownAbsenceTypeId_IsAnswered_AndWritesNothing()
+    {
+        var parameters = Params();
+        parameters["absenceId"] = Guid.NewGuid().ToString();
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("clientId")]
+    [TestCase("groupId")]
+    public async Task ANameInsteadOfAnId_IsRefusedWithACorrectableError_NotAFormatException(string parameter)
+    {
+        var parameters = Params();
+        parameters[parameter] = "Max Wenger";
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => Skill().ExecuteAsync(Ctx(), parameters));
+
+        ex.Message.ShouldContain(parameter);
+        ex.Message.ShouldContain("Max Wenger");
     }
 
     [Test]

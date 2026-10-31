@@ -111,10 +111,9 @@ public class WorkChangeVisibilityTests
         var hidden = NewChange(hiddenWork.Id);
         hidden.Work = hiddenWork;
         var missingId = Guid.NewGuid();
-        _workChangeRepository.Get(hidden.Id).Returns(hidden);
-        _workChangeRepository.Get(missingId).Returns((WorkChange?)null);
-        var handler = new GetQueryHandler(
-            _workChangeRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+        _workChangeRepository.GetWithWorkInAnyScope(hidden.Id).Returns(hidden);
+        _workChangeRepository.GetWithWorkInAnyScope(missingId).Returns((WorkChange?)null);
+        var handler = NewGetHandler();
 
         var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetQuery<WorkChangeResource>(hidden.Id), CancellationToken.None));
@@ -124,6 +123,54 @@ public class WorkChangeVisibilityTests
         hiddenEx.Message.ShouldBe($"WorkChange with ID {hidden.Id} not found");
         missingEx.Message.ShouldBe($"WorkChange with ID {missingId} not found");
     }
+
+    [Test]
+    public async Task Get_ChangeInAVisibleScenario_IsResolvedFromTheStoredRow()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = Guid.NewGuid();
+        var change = NewChange(scenarioWork.Id);
+        change.Work = scenarioWork;
+        change.AnalyseToken = scenarioWork.AnalyseToken;
+        _workChangeRepository.GetWithWorkInAnyScope(change.Id).Returns(change);
+
+        var result = await NewGetHandler().Handle(new GetQuery<WorkChangeResource>(change.Id), CancellationToken.None);
+
+        result.Id.ShouldBe(change.Id);
+    }
+
+    [Test]
+    public async Task Get_ChangeInAHiddenScenario_IsAnsweredLikeAMissingChange()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = _hiddenToken;
+        var change = NewChange(scenarioWork.Id);
+        change.Work = scenarioWork;
+        _workChangeRepository.GetWithWorkInAnyScope(change.Id).Returns(change);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => NewGetHandler().Handle(new GetQuery<WorkChangeResource>(change.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"WorkChange with ID {change.Id} not found");
+    }
+
+    [Test]
+    public async Task Get_ChangeThatMovesAHiddenClientIn_IsAnsweredLikeAMissingChange()
+    {
+        var work = NewWork(_visibleClientId);
+        var change = NewChange(work.Id);
+        change.Work = work;
+        change.ReplaceClientId = _hiddenClientId;
+        _workChangeRepository.GetWithWorkInAnyScope(change.Id).Returns(change);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => NewGetHandler().Handle(new GetQuery<WorkChangeResource>(change.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"WorkChange with ID {change.Id} not found");
+    }
+
+    private GetQueryHandler NewGetHandler() => new(
+        _workChangeRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
     [Test]
     public async Task Post_OnAWorkOfAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingWritten()

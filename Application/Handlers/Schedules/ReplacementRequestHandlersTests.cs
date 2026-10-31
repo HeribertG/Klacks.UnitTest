@@ -12,6 +12,7 @@ using System.Security.Claims;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
@@ -45,6 +46,8 @@ public class ReplacementRequestHandlersTests
     private ISettingsReader _settingsReader = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IReplacementContactValidator _validator = null!;
+    private IScenarioReplacementSwitcher _switcher = null!;
+    private readonly Guid _hiddenToken = Guid.NewGuid();
 
     [SetUp]
     public void Setup()
@@ -68,6 +71,12 @@ public class ReplacementRequestHandlersTests
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork.When(u => u.CompleteAsync()).Do(_ => _context.SaveChanges());
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
+            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<(ReplacementRequest Row, bool IsScenarioReplacement)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(ReplacementRequest Row, bool IsScenarioReplacement)>>>()());
+
+        _switcher = Substitute.For<IScenarioReplacementSwitcher>();
 
         _settingsReader = Substitute.For<ISettingsReader>();
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((SettingsEntity?)null);
@@ -99,6 +108,84 @@ public class ReplacementRequestHandlersTests
         row.Outcome.ShouldBe(ReplacementRequestOutcome.Declined);
         row.OutcomeAtUtc.ShouldBe(Now);
         row.OutcomeByUserId.ShouldBe(UserId);
+    }
+
+    [Test]
+    public async Task SetOutcome_PassesTheSavedRowToTheSwitcher_AndReportsTheResult()
+    {
+        var rowId = await SeedAsync(VisibleCandidateId);
+        _switcher.ApplyAcceptedAsync(Arg.Any<ReplacementRequest>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await OutcomeHandler().Handle(
+            new SetReplacementRequestOutcomeCommand(rowId, ReplacementRequestOutcome.Accepted, OverrideBlock: true), CancellationToken.None);
+
+        result.IsScenarioReplacement.ShouldBeTrue();
+        await _switcher.Received(1).ApplyAcceptedAsync(
+            Arg.Is<ReplacementRequest>(r => r.Id == rowId && r.Outcome == ReplacementRequestOutcome.Accepted),
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task BothWrites_StartFromAFreshTracker_SoARetriedTransactionWritesAgain()
+    {
+        var rowId = await SeedAsync(VisibleCandidateId);
+
+        await OutcomeHandler().Handle(
+            new SetReplacementRequestOutcomeCommand(rowId, ReplacementRequestOutcome.Declined), CancellationToken.None);
+        await ContactHandler().Handle(
+            new RecordReplacementContactCommand(Contact(VisibleCandidateId, Guid.NewGuid(), ReplacementRequestOutcome.Declined)),
+            CancellationToken.None);
+
+        _unitOfWork.Received(2).DiscardTrackedChanges();
+    }
+
+    [TestCase(ReplacementRequestOutcome.Accepted)]
+    [TestCase(ReplacementRequestOutcome.Declined)]
+    public async Task SetOutcome_ARowOfAHiddenScenario_IsAnsweredExactlyLikeAMissingRow_NothingWritten(ReplacementRequestOutcome outcome)
+    {
+        var rowId = await SeedAsync(VisibleCandidateId);
+        var seeded = await _context.ReplacementRequests.SingleAsync(r => r.Id == rowId);
+        seeded.AnalyseToken = _hiddenToken;
+        await _context.SaveChangesAsync();
+
+        var hidden = await Should.ThrowAsync<KeyNotFoundException>(() => OutcomeHandler().Handle(
+            new SetReplacementRequestOutcomeCommand(rowId, outcome), CancellationToken.None));
+
+        var missingId = Guid.NewGuid();
+        var missing = await Should.ThrowAsync<KeyNotFoundException>(() => OutcomeHandler().Handle(
+            new SetReplacementRequestOutcomeCommand(missingId, outcome), CancellationToken.None));
+        hidden.Message.Replace(rowId.ToString(), "<id>").ShouldBe(missing.Message.Replace(missingId.ToString(), "<id>"));
+        (await _context.ReplacementRequests.SingleAsync(r => r.Id == rowId)).Outcome.ShouldBe(ReplacementRequestOutcome.Proposed);
+        await _switcher.DidNotReceive().ApplyAcceptedAsync(
+            Arg.Any<ReplacementRequest>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetOutcome_ARefusedSwitch_SurfacesTheRefusal()
+    {
+        var rowId = await SeedAsync(VisibleCandidateId);
+        _switcher.ApplyAcceptedAsync(Arg.Any<ReplacementRequest>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new ConflictException("no longer available")));
+
+        await Should.ThrowAsync<ConflictException>(() => OutcomeHandler().Handle(
+            new SetReplacementRequestOutcomeCommand(rowId, ReplacementRequestOutcome.Accepted), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task RecordContact_PassesTheSavedRowToTheSwitcher_AndReportsTheResult()
+    {
+        _switcher.ApplyAcceptedAsync(Arg.Any<ReplacementRequest>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ContactHandler().Handle(
+            new RecordReplacementContactCommand(Contact(VisibleCandidateId, Guid.NewGuid(), ReplacementRequestOutcome.Accepted) with { OverrideBlock = true }),
+            CancellationToken.None);
+
+        result.IsScenarioReplacement.ShouldBeTrue();
+        await _switcher.Received(1).ApplyAcceptedAsync(
+            Arg.Is<ReplacementRequest>(r => r.CandidateClientId == VisibleCandidateId && r.Outcome == ReplacementRequestOutcome.Accepted),
+            true,
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -292,12 +379,13 @@ public class ReplacementRequestHandlersTests
     }
 
     private SetReplacementRequestOutcomeCommandHandler OutcomeHandler()
-        => new(_repository, _visibilityGuard, _unitOfWork, _settingsReader, new SettableTimeProvider(Now), _httpContextAccessor);
+        => new(_repository, _visibilityGuard, _unitOfWork, _settingsReader, new SettableTimeProvider(Now), _httpContextAccessor, _switcher,
+            TestScenarioTokenAccess.Hiding(_hiddenToken));
 
     private RecordReplacementContactCommandHandler ContactHandler()
         => new(_repository, _validator, _unitOfWork, _settingsReader,
             new FixedCompanyClock(new DateTimeOffset(Now), TimeZoneInfo.FindSystemTimeZoneById("Europe/Zurich")),
-            new SettableTimeProvider(Now), _httpContextAccessor);
+            new SettableTimeProvider(Now), _httpContextAccessor, _switcher);
 
     private ListReplacementRequestsQueryHandler ListHandler()
         => new(_repository, _visibilityGuard, _settingsReader, Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible());

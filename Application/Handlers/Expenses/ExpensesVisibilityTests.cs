@@ -122,10 +122,9 @@ public class ExpensesVisibilityTests
     {
         var hidden = NewExpense(NewWork(_hiddenClientId));
         var missingId = Guid.NewGuid();
-        _expensesRepository.Get(hidden.Id).Returns(hidden);
-        _expensesRepository.Get(missingId).Returns((ExpensesEntity?)null);
-        var handler = new GetQueryHandler(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+        _expensesRepository.GetWithWorkInAnyScope(hidden.Id).Returns(hidden);
+        _expensesRepository.GetWithWorkInAnyScope(missingId).Returns((ExpensesEntity?)null);
+        var handler = NewGetHandler();
 
         var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetQuery<ExpensesResource>(hidden.Id), CancellationToken.None));
@@ -135,6 +134,37 @@ public class ExpensesVisibilityTests
         hiddenEx.Message.ShouldBe($"Expenses with ID {hidden.Id} not found");
         missingEx.Message.ShouldBe($"Expenses with ID {missingId} not found");
     }
+
+    [Test]
+    public async Task Get_ExpenseInAVisibleScenario_IsResolvedFromTheStoredRow()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = Guid.NewGuid();
+        var expense = NewExpense(scenarioWork);
+        expense.AnalyseToken = scenarioWork.AnalyseToken;
+        _expensesRepository.GetWithWorkInAnyScope(expense.Id).Returns(expense);
+
+        var result = await NewGetHandler().Handle(new GetQuery<ExpensesResource>(expense.Id), CancellationToken.None);
+
+        result.Id.ShouldBe(expense.Id);
+    }
+
+    [Test]
+    public async Task Get_ExpenseInAHiddenScenario_IsAnsweredLikeAMissingExpense()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = _hiddenToken;
+        var expense = NewExpense(scenarioWork);
+        _expensesRepository.GetWithWorkInAnyScope(expense.Id).Returns(expense);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => NewGetHandler().Handle(new GetQuery<ExpensesResource>(expense.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Expenses with ID {expense.Id} not found");
+    }
+
+    private GetQueryHandler NewGetHandler() => new(
+        _expensesRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
     [Test]
     public async Task Post_OnAWorkOfAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingWritten()

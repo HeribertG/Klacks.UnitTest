@@ -177,6 +177,13 @@ public class CoverAbsenceCommandHandlerTests
             _recorder, NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
+    private static IAbsenceRepository SkillAbsenceRepository()
+    {
+        var repository = Substitute.For<IAbsenceRepository>();
+        repository.Get(AbsenceId).Returns(new Absence { Id = AbsenceId });
+        return repository;
+    }
+
     private void SetVisibleAgents(Func<Guid, bool> isVisible)
         => _visibilityGuard.FilterVisibleAsync(
                 Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Func<Guid, Guid>>(), Arg.Any<CancellationToken>())
@@ -736,7 +743,7 @@ public class CoverAbsenceCommandHandlerTests
         var skillMediator = Substitute.For<IMediator>();
         skillMediator.Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => _handler.Handle(ci.Arg<CoverAbsenceCommand>(), ci.Arg<CancellationToken>()));
-        var skill = new CoverAbsenceSkill(skillMediator);
+        var skill = new CoverAbsenceSkill(skillMediator, SkillAbsenceRepository());
         var parameters = new Dictionary<string, object>
         {
             ["clientId"] = ClientId.ToString(),
