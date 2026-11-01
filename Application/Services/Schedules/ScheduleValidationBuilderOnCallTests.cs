@@ -43,6 +43,16 @@ public class ScheduleValidationBuilderOnCallTests
         ScheduleValidationBuilder.AddCollisions(_entries, _timeline, "Test", onCallBreakIds);
     }
 
+    [Test]
+    public void WorkOverAbsence_StaysACollisionForTheBookingChecks()
+    {
+        Run(new HashSet<Guid>(), Block(ScheduleBlockType.Break, 0, 24), Block(ScheduleBlockType.Work, 10, 14));
+
+        var entry = _entries.ShouldHaveSingleItem();
+        entry.Type.ShouldBe(ScheduleValidationType.Error);
+        entry.Comment.ShouldBe(ScheduleValidationKeys.Collision);
+    }
+
     [TestCase(ScheduleBlockType.Work)]
     [TestCase(ScheduleBlockType.Replacement)]
     public void BlockOverOnCallBreak_IsOnCallOverlapWarning(ScheduleBlockType type)

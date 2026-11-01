@@ -6,9 +6,9 @@ using Klacks.Api.Infrastructure.Services;
 namespace Klacks.UnitTest.Infrastructure.Services;
 
 /// <summary>
-/// The live collision list must agree with the validation builders: a work over an on-call break is not a red
-/// collision (the live check reports it as an on-call-overlap Warning instead), while a work over any other
-/// break and two overlapping works stay collisions.
+/// The live collision list keeps only real double bookings: a work over an on-call break is reported as an
+/// on-call-overlap Warning and a work over any other break as an uncovered absence, both outside this list.
+/// Replacements over a break, break pairs and two overlapping works stay collisions.
 /// </summary>
 [TestFixture]
 public class TimelineCollisionNotificationBuilderOnCallTests
@@ -42,10 +42,28 @@ public class TimelineCollisionNotificationBuilderOnCallTests
     }
 
     [Test]
-    public void WorkOverOtherBreak_StaysACollision()
+    public void WorkOverOtherBreak_IsNotACollision()
     {
         var list = TimelineCollisionNotificationBuilder.BuildList(
             Timeline(Block(ScheduleBlockType.Break, 0, 24), Block(ScheduleBlockType.Work, 10, 14)), [], new HashSet<Guid>());
+
+        list.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void ReplacementOverOtherBreak_StaysACollision()
+    {
+        var list = TimelineCollisionNotificationBuilder.BuildList(
+            Timeline(Block(ScheduleBlockType.Break, 0, 24), Block(ScheduleBlockType.Replacement, 10, 14)), [], new HashSet<Guid>());
+
+        list.ShouldHaveSingleItem();
+    }
+
+    [Test]
+    public void TwoOverlappingBreaks_StayACollision()
+    {
+        var list = TimelineCollisionNotificationBuilder.BuildList(
+            Timeline(Block(ScheduleBlockType.Break, 0, 24), Block(ScheduleBlockType.Break, 10, 14)), [], new HashSet<Guid>());
 
         list.ShouldHaveSingleItem();
     }

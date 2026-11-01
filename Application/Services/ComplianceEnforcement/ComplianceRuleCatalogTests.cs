@@ -30,6 +30,7 @@ public class ComplianceRuleCatalogTests
         ScheduleValidationKeys.TravelTimeError,
         ScheduleValidationKeys.TravelTimeWarning,
         ScheduleValidationKeys.TravelTimeNoApiKey,
+        ScheduleValidationKeys.UncoveredAbsence,
     ];
 
     [Test]

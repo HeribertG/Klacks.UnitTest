@@ -128,7 +128,7 @@ public class PeriodValidationLoaderHolidayWorkDatesTests
     }
 
     [TestCase(true, "OnCallOverlap", ScheduleValidationType.Warning)]
-    [TestCase(false, "Collision", ScheduleValidationType.Error)]
+    [TestCase(false, "UncoveredAbsence", ScheduleValidationType.Error)]
     public async Task LoadAsync_WorkOverFullDayBreak_IsOnCallOverlapOnlyForOnCallTypes(
         bool isOnCall, string expectedCode, ScheduleValidationType expectedSeverity)
     {
@@ -158,9 +158,60 @@ public class PeriodValidationLoaderHolidayWorkDatesTests
 
         var issues = await _sut.LoadAsync(From, To, null);
 
-        var issue = issues.Single(i => i.Code is "OnCallOverlap" or "Collision");
+        var issue = issues.Single(i => i.Code is "OnCallOverlap" or "Collision" or "UncoveredAbsence");
         issue.Code.ShouldBe(expectedCode);
         issue.Severity.ShouldBe(expectedSeverity);
+    }
+
+    [Test]
+    public async Task LoadAsync_AbsenceWithFullReplacementWithin_IsNoIssue()
+    {
+        var clientId = SeedClient();
+        var day = new DateOnly(2026, 7, 14);
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = day,
+            StartTime = new TimeOnly(10, 0),
+            EndTime = new TimeOnly(14, 0),
+            WorkTime = 4m
+        };
+        _context.Work.Add(work);
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Type = WorkChangeType.ReplacementWithin,
+            StartTime = work.StartTime,
+            EndTime = work.EndTime,
+            ChangeTime = work.WorkTime,
+            ReplaceClientId = Guid.NewGuid()
+        });
+        var absence = new Absence
+        {
+            Id = Guid.NewGuid(),
+            Name = new MultiLanguage { De = "Typ" },
+            Description = new MultiLanguage(),
+            Abbreviation = new MultiLanguage()
+        };
+        _context.Absence.Add(absence);
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            AbsenceId = absence.Id,
+            CurrentDate = day,
+            StartTime = new TimeOnly(0, 0),
+            EndTime = new TimeOnly(23, 59),
+            WorkTime = 8m
+        });
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null);
+
+        issues.ShouldNotContain(i => i.Code == "Collision" || i.Code == "UncoveredAbsence");
     }
 
     private Guid SeedClient()
