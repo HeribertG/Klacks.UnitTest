@@ -68,6 +68,23 @@ public class TimelineCalculationServiceTests
         blocks[0].Duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
+    [TestCase(WorkChangeType.CorrectionStart)]
+    [TestCase(WorkChangeType.Briefing)]
+    [TestCase(WorkChangeType.TravelStart)]
+    [TestCase(WorkChangeType.CorrectionEnd)]
+    [TestCase(WorkChangeType.Debriefing)]
+    [TestCase(WorkChangeType.TravelEnd)]
+    public void CalculateScheduleBlocks_CorrectionBlock_NamesItsParentWork(WorkChangeType type)
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var change = new WorkChange { Id = Guid.NewGuid(), WorkId = work.Id, Type = type, ChangeTime = 1m };
+
+        var blocks = _service.CalculateScheduleBlocks([work], [change], []);
+
+        blocks.Single(b => b.BlockType == ScheduleBlockType.Correction).ParentWorkId.ShouldBe(work.Id);
+        blocks.Single(b => b.BlockType == ScheduleBlockType.Work).ParentWorkId.ShouldBeNull();
+    }
+
     [Test]
     public void CalculateScheduleBlocks_WithCorrectionStart_WorkBlockKeepsOriginalStart()
     {

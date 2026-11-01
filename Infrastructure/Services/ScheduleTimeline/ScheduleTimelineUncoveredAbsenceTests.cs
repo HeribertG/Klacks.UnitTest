@@ -37,6 +37,11 @@ public class ScheduleTimelineUncoveredAbsenceTests
     private static readonly TimeOnly FullDayStart = new(0, 0);
     private static readonly TimeOnly FullDayEnd = new(23, 59);
     private static readonly TimeOnly NoTimesRecorded = new(0, 0);
+    private static readonly TimeOnly BeforeBriefingStart = new(6, 0);
+    private static readonly TimeOnly BriefingMiddle = new(7, 30);
+    private const decimal CorrectionHours = 1m;
+    private const decimal TwoHours = 2m;
+    private static readonly TimeOnly LateNightStart = new(23, 0);
 
     private ScheduleTimelineTestHost _host = null!;
     private Guid _absentClientId;
@@ -268,9 +273,320 @@ public class ScheduleTimelineUncoveredAbsenceTests
         _host.Collisions.ShouldHaveSingleItem().Collisions.ShouldBeEmpty();
     }
 
-    private async Task<(CollisionListNotificationDto Collisions, List<ScheduleValidationNotificationDto> Findings)> RunSingleCheckAsync()
+    [Test]
+    public async Task BriefingBeforeAnUncoveredWork_IsOneFindingAndNoSecondCollision()
     {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        var finding = findings.ShouldHaveSingleItem();
+        finding.Date.ShouldBe(Tuesday);
+        finding.CommentParams[ShiftsParam].ShouldBe(EarlyShift);
+    }
+
+    [Test]
+    public async Task DebriefingAfterAnUncoveredWork_IsOneFindingAndNoSecondCollision()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Debriefing);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldHaveSingleItem().CommentParams[ShiftsParam].ShouldBe(EarlyShift);
+    }
+
+    [Test]
+    public async Task BriefingBeforeAWorkFullyHandedOverFromTheStart_LeavesNothing()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementStart, ShiftHours, default, default);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task DebriefingAfterAWorkFullyHandedOverWithin_LeavesNothing()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Debriefing);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementWithin, ShiftHours, ShiftStart, ShiftEnd);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task BriefingBeforeAPartlyHandedOverWork_IsOneFinding()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementWithin, HalfShiftHours, ShiftStart, ShiftMiddle);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldHaveSingleItem();
+    }
+
+    [Test]
+    public async Task AbsenceOnlyOverTheBriefing_IsReportedForTheService()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, BeforeBriefingStart, BriefingMiddle);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        var finding = findings.ShouldHaveSingleItem();
+        finding.Date.ShouldBe(Tuesday);
+        finding.CommentParams[ShiftsParam].ShouldBe(EarlyShift);
+    }
+
+    [Test]
+    public async Task AbsenceOnlyOverTheBriefingOfAFullyHandedOverWork_LeavesNothing()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, BeforeBriefingStart, BriefingMiddle);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementStart, ShiftHours, default, default);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RangeCheck_BriefingBeforeAnUncoveredWork_IsOneFindingAndNoCollision()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+
+        var notification = await RunRangeCheckAsync();
+
+        notification.Entries.Where(entry => entry.Comment == ScheduleValidationKeys.UncoveredAbsence).ShouldHaveSingleItem();
+        notification.Entries.ShouldNotContain(entry => entry.Comment == ScheduleValidationKeys.Collision);
+        _host.Collisions.ShouldHaveSingleItem().Collisions.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RangeCheck_BriefingBeforeAWorkFullyHandedOver_LeavesNothing()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddCorrectionAsync(work.Id, WorkChangeType.Briefing);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementStart, ShiftHours, default, default);
+
+        var notification = await RunRangeCheckAsync();
+
+        notification.Entries.ShouldNotContain(entry => entry.Comment == ScheduleValidationKeys.UncoveredAbsence);
+        notification.Entries.ShouldNotContain(entry => entry.Comment == ScheduleValidationKeys.Collision);
+        _host.Collisions.ShouldHaveSingleItem().Collisions.ShouldBeEmpty();
+    }
+
+    [TestCase(2026, 3, 2)]
+    [TestCase(2026, 10, 31)]
+    [TestCase(2026, 12, 31)]
+    public async Task NightShiftIntoAnAbsenceOfTheNextDay_IsReportedWhenTheShiftDayIsChecked(int year, int month, int day)
+    {
+        var shiftDay = new DateOnly(year, month, day);
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, shiftDay, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: shiftDay.AddDays(1));
+
+        var (collisions, findings) = await RunSingleCheckAsync(shiftDay);
+
+        collisions.Collisions.ShouldBeEmpty();
+        AssertNightShiftFinding(findings, shiftDay);
+    }
+
+    [TestCase(2026, 3, 2)]
+    [TestCase(2026, 10, 31)]
+    [TestCase(2026, 12, 31)]
+    public async Task NightShiftIntoAnAbsenceOfTheNextDay_IsReportedWhenTheAbsenceDayIsChecked(int year, int month, int day)
+    {
+        var shiftDay = new DateOnly(year, month, day);
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, shiftDay, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: shiftDay.AddDays(1));
+
+        var (collisions, findings) = await RunSingleCheckAsync(shiftDay.AddDays(1));
+
+        collisions.Collisions.ShouldBeEmpty();
+        AssertNightShiftFinding(findings, shiftDay);
+    }
+
+    [Test]
+    public async Task NightShiftIntoAnAbsence_SingleAndRangeCheckReportTheSameFinding()
+    {
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(1));
+
         _host.Service.QueueCheck(_absentClientId, Tuesday, null);
+        _host.Service.QueueRangeCheck(Tuesday, Tuesday.AddDays(1), null);
+        await _host.StartAsync();
+        var notifications = await _host.WaitForValidationsAsync(2);
+
+        var single = UncoveredEntries(notifications.Single(n => !n.IsFullRefresh)).ShouldHaveSingleItem();
+        var range = UncoveredEntries(notifications.Single(n => n.IsFullRefresh)).ShouldHaveSingleItem();
+        single.Type.ShouldBe(range.Type);
+        single.ClientId.ShouldBe(range.ClientId);
+        single.Date.ShouldBe(range.Date);
+        single.CommentParams[ShiftsParam].ShouldBe(range.CommentParams[ShiftsParam]);
+        single.CommentParams[LocalizedCommentParamKeys.Absence].ShouldBe(range.CommentParams[LocalizedCommentParamKeys.Absence]);
+    }
+
+    [Test]
+    public async Task NightShiftFullyHandedOver_LeavesTheNextDayAbsenceSilentWhenTheShiftDayIsChecked()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(1));
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementWithin, ShiftHours, NightStart, NightEnd);
+
+        (await RunSingleCheckAsync(Tuesday)).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NightShiftFullyHandedOver_LeavesTheNextDayAbsenceSilentWhenTheAbsenceDayIsChecked()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(1));
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementWithin, ShiftHours, NightStart, NightEnd);
+
+        (await RunSingleCheckAsync(Tuesday.AddDays(1))).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NightShiftAndAnAbsenceTwoDaysLater_AreNotRelated()
+    {
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(2));
+
+        (await RunSingleCheckAsync(Tuesday)).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NightShiftOfTheRealPlan_DoesNotMeetAnAbsenceOfAScenarioOnTheNextDay()
+    {
+        var token = Guid.NewGuid();
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, token, date: Tuesday.AddDays(1));
+
+        (await RunSingleCheckAsync(Tuesday.AddDays(1), token)).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NightShiftOfAScenario_DoesNotMeetAnAbsenceOfTheRealPlanOnTheNextDay()
+    {
+        var token = Guid.NewGuid();
+        await AddScenarioWorkAsync(token, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(1));
+
+        (await RunSingleCheckAsync(Tuesday.AddDays(1))).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NightShiftIntoAnAbsenceOfTheNextDayInAScenario_IsReportedInThatScenario()
+    {
+        var token = Guid.NewGuid();
+        await AddScenarioWorkAsync(token, NightStart, NightEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, token, date: Tuesday.AddDays(1));
+
+        var (_, findings) = await RunSingleCheckAsync(Tuesday.AddDays(1), token);
+
+        findings.ShouldHaveSingleItem().Date.ShouldBe(Tuesday);
+    }
+
+    [TestCase(2026, 3, 3)]
+    [TestCase(2026, 10, 31)]
+    [TestCase(2026, 12, 31)]
+    public async Task UncoveredWorkOfTheDayBefore_IsReportedAgainWhenTheNextDayIsChecked(int year, int month, int day)
+    {
+        var workDay = new DateOnly(year, month, day);
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, workDay, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: workDay);
+
+        var (_, findings) = await RunSingleCheckAsync(workDay.AddDays(1));
+
+        findings.ShouldHaveSingleItem().Date.ShouldBe(workDay);
+    }
+
+    [Test]
+    public async Task UncoveredWorkOfTheDayBefore_IsGoneWhenTheAbsenceWasRemovedAndTheNextDayIsChecked()
+    {
+        await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+
+        (await RunSingleCheckAsync(Tuesday.AddDays(1))).Findings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UncoveredWorkThatReachesPastMidnight_IsDatedOnTheDayOfTheWork()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, LateNightStart, NightEnd);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementStart, TwoHours, default, default);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, date: Tuesday.AddDays(1));
+
+        var (_, findings) = await RunSingleCheckAsync(Tuesday);
+
+        findings.ShouldHaveSingleItem().Date.ShouldBe(Tuesday);
+    }
+
+    [Test]
+    public async Task ReplacementWithinWithoutChangeTimeOverTheWholeShift_LeavesNoFinding()
+    {
+        var work = await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, ShiftStart, ShiftEnd);
+        await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd);
+        await AddReplacementAsync(work.Id, WorkChangeType.ReplacementWithin, 0m, ShiftStart, ShiftEnd);
+
+        var (collisions, findings) = await RunSingleCheckAsync();
+
+        collisions.Collisions.ShouldBeEmpty();
+        findings.ShouldBeEmpty();
+    }
+
+    private void AssertNightShiftFinding(List<ScheduleValidationNotificationDto> findings, DateOnly shiftDay)
+    {
+        var finding = findings.ShouldHaveSingleItem();
+        finding.Type.ShouldBe(ScheduleValidationType.Error);
+        finding.ClientId.ShouldBe(_absentClientId);
+        finding.Date.ShouldBe(shiftDay);
+        finding.CommentParams[ShiftsParam].ShouldBe(EarlyShift);
+        finding.CommentParams[LocalizedCommentParamKeys.Absence].ShouldBe("Krankheit/Unfall");
+    }
+
+    private static List<ScheduleValidationNotificationDto> UncoveredEntries(ScheduleValidationListNotificationDto notification)
+        => notification.Entries.Where(entry => entry.Comment == ScheduleValidationKeys.UncoveredAbsence).ToList();
+
+    private Task AddCorrectionAsync(Guid workId, WorkChangeType type)
+        => AddReplacementAsync(workId, type, CorrectionHours, default, default, replaceClientId: null);
+
+    private async Task<ScheduleValidationListNotificationDto> RunRangeCheckAsync()
+    {
+        _host.Service.QueueRangeCheck(Tuesday, Tuesday, null);
+        await _host.StartAsync();
+        await _host.WaitForValidationsAsync(1);
+        return _host.Validations.ShouldHaveSingleItem();
+    }
+
+    private async Task<(CollisionListNotificationDto Collisions, List<ScheduleValidationNotificationDto> Findings)> RunSingleCheckAsync(
+        DateOnly? checkedDate = null, Guid? analyseToken = null)
+    {
+        _host.Service.QueueCheck(_absentClientId, checkedDate ?? Tuesday, analyseToken);
         await _host.StartAsync();
         await _host.WaitForValidationsAsync(1);
         var findings = _host.Validations.ShouldHaveSingleItem().Entries
@@ -304,7 +620,9 @@ public class ScheduleTimelineUncoveredAbsenceTests
         return absence.Id;
     }
 
-    private async Task AddScenarioWorkAsync(Guid token)
+    private Task AddScenarioWorkAsync(Guid token) => AddScenarioWorkAsync(token, ShiftStart, ShiftEnd);
+
+    private async Task AddScenarioWorkAsync(Guid token, TimeOnly start, TimeOnly end)
     {
         await using var context = _host.NewContext();
         context.Work.Add(new Work
@@ -313,8 +631,8 @@ public class ScheduleTimelineUncoveredAbsenceTests
             ClientId = _absentClientId,
             ShiftId = _earlyShiftId,
             CurrentDate = Tuesday,
-            StartTime = ShiftStart,
-            EndTime = ShiftEnd,
+            StartTime = start,
+            EndTime = end,
             WorkTime = ShiftHours,
             AnalyseToken = token,
         });
@@ -322,7 +640,7 @@ public class ScheduleTimelineUncoveredAbsenceTests
     }
 
     private async Task AddBreakAsync(
-        Guid absenceId, TimeOnly start, TimeOnly end, Guid? analyseToken = null, Guid? clientId = null)
+        Guid absenceId, TimeOnly start, TimeOnly end, Guid? analyseToken = null, Guid? clientId = null, DateOnly? date = null)
     {
         await using var context = _host.NewContext();
         context.Break.Add(new Break
@@ -330,7 +648,7 @@ public class ScheduleTimelineUncoveredAbsenceTests
             Id = Guid.NewGuid(),
             ClientId = clientId ?? _absentClientId,
             AbsenceId = absenceId,
-            CurrentDate = Tuesday,
+            CurrentDate = date ?? Tuesday,
             StartTime = start,
             EndTime = end,
             WorkTime = ShiftHours,

@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.Api.Domain.Services.Schedules;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 
@@ -140,6 +141,30 @@ public class ReplacementCoverProtectionTests
         cover.Hours.ShouldBe(8m);
         cover.StartAt.ShouldBe(Day.ToDateTime(new TimeOnly(6, 0)));
         cover.EndAt.ShouldBe(Day.ToDateTime(new TimeOnly(14, 0)));
+    }
+
+    [Test]
+    public async Task Query_WithinWithItsOwnSpanButNoChangeTime_StillOccupiesItsWindow()
+    {
+        var work = AddWork(_absent, Day, token: null);
+        var change = AddChange(work, WorkChangeType.ReplacementWithin, _substitute, token: null);
+        change.ChangeTime = 0m;
+        await _context.SaveChangesAsync();
+
+        var cover = (await ReplacementCoverQuery.LoadAsync(_context, null, From, Until, null, CancellationToken.None)).ShouldHaveSingleItem();
+
+        cover.StartAt.ShouldBe(Day.ToDateTime(new TimeOnly(6, 0)));
+        cover.EndAt.ShouldBe(Day.ToDateTime(new TimeOnly(10, 0)));
+    }
+
+    [Test]
+    public async Task Query_WithinWithEqualBounds_IsNoOccupancy()
+    {
+        var work = AddWork(_absent, Day, token: null);
+        AddChange(work, WorkChangeType.ReplacementWithin, _substitute, token: null, new TimeOnly(6, 0), new TimeOnly(6, 0));
+        await _context.SaveChangesAsync();
+
+        (await ReplacementCoverQuery.LoadAsync(_context, null, From, Until, null, CancellationToken.None)).ShouldBeEmpty();
     }
 
     [Test]

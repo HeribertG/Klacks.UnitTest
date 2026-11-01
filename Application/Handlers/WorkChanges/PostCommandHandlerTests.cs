@@ -28,6 +28,18 @@ public class PostCommandHandlerTests
 {
     private static readonly TimeOnly ChangeStart = new(8, 0);
     private static readonly TimeOnly ChangeEnd = new(16, 0);
+    private const decimal WholeShiftHours = 8m;
+    private const decimal HalfShiftHours = 4m;
+    private const decimal TwoHours = 2m;
+    private const decimal MoreThanTheShiftHours = 12m;
+    private static readonly TimeOnly NoTime = new(0, 0);
+    private static readonly TimeOnly NightStart = new(22, 0);
+    private static readonly TimeOnly NightEnd = new(6, 0);
+    private static readonly TimeOnly Noon = new(12, 0);
+    private static readonly TimeOnly TenOClock = new(10, 0);
+    private static readonly TimeOnly FourAm = new(4, 0);
+    private static readonly TimeOnly TwoAm = new(2, 0);
+    private static readonly TimeOnly FiveAm = new(5, 0);
 
     private IWorkChangeRepository _workChangeRepository = null!;
     private IWorkRepository _workRepository = null!;
@@ -181,6 +193,113 @@ public class PostCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_ReplacementStart_ChecksOnlyTheHoursHandedOverAtTheStartOfTheWork()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementStart, HalfShiftHours), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, ChangeStart, Noon))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementEnd_ChecksOnlyTheHoursHandedOverAtTheEndOfTheWork()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementEnd, HalfShiftHours), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, Noon, ChangeEnd))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementLongerThanTheWork_ChecksTheWholeWorkOnly()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementStart, MoreThanTheShiftHours), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, ChangeStart, ChangeEnd))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(WorkChangeType.ReplacementStart)]
+    [TestCase(WorkChangeType.ReplacementEnd)]
+    public async Task Handle_ReplacementThatHandsNothingOver_SkipsTheCheck(WorkChangeType type)
+    {
+        await _handler.Handle(UiCommand(type, 0m), CancellationToken.None);
+
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithin_ChecksItsOwnWindow()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementWithin, TwoHours, TenOClock, Noon), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, TenOClock, Noon))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithinWithoutChangeTime_StillChecksItsOwnWindow()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementWithin, 0m, TenOClock, Noon), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, TenOClock, Noon))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithinWithEqualBounds_SkipsTheCheck()
+    {
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementWithin, WholeShiftHours, TenOClock, TenOClock), CancellationToken.None);
+
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_NightShiftReplacementEnd_ChecksTheMorningOfTheNextDay()
+    {
+        _workRepository.GetNoTracking(_workId).Returns(NightParentWork());
+
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementEnd, TwoHours), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date.AddDays(1), FourAm, NightEnd))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_NightShiftReplacementStart_ChecksTheEveningUntilMidnight()
+    {
+        _workRepository.GetNoTracking(_workId).Returns(NightParentWork());
+
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementStart, TwoHours), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, NightStart, NoTime))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_NightShiftReplacementWithinAfterMidnight_ChecksTheNextDay()
+    {
+        _workRepository.GetNoTracking(_workId).Returns(NightParentWork());
+
+        await _handler.Handle(UiCommand(WorkChangeType.ReplacementWithin, TwoHours, TwoAm, FiveAm), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date.AddDays(1), TwoAm, FiveAm))),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Handle_PureCorrection_SkipsTheReplacementGuard()
     {
         GivenConflicts(CollisionError());
@@ -285,6 +404,31 @@ public class PostCommandHandlerTests
         AnalyseToken = analyseToken,
     };
 
+    private Work NightParentWork() => new()
+    {
+        Id = _workId,
+        ClientId = _parentClientId,
+        ShiftId = _shiftId,
+        CurrentDate = _date,
+        StartTime = NightStart,
+        EndTime = NightEnd,
+    };
+
+    private PostCommand<WorkChangeResource> UiCommand(WorkChangeType type, decimal changeTime, TimeOnly? start = null, TimeOnly? end = null) =>
+        new(new WorkChangeResource
+        {
+            WorkId = _workId,
+            Type = type,
+            ReplaceClientId = _replaceClientId,
+            ChangeTime = changeTime,
+            StartTime = start ?? NoTime,
+            EndTime = end ?? NoTime,
+        });
+
+    private PlannedWorkRow Row(DateOnly date, TimeOnly start, TimeOnly end) => new(_replaceClientId, date, start, end, _shiftId);
+
+    private static bool IsOnly(IReadOnlyList<PlannedWorkRow> rows, PlannedWorkRow expected) => rows.Count == 1 && rows[0] == expected;
+
     private PostCommand<WorkChangeResource> ReplacementCommand(bool overrideBlock) =>
         new(new WorkChangeResource
         {
@@ -293,6 +437,7 @@ public class PostCommandHandlerTests
             ReplaceClientId = _replaceClientId,
             StartTime = ChangeStart,
             EndTime = ChangeEnd,
+            ChangeTime = WholeShiftHours,
             OverrideBlock = overrideBlock,
         });
 
