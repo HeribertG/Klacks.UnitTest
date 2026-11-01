@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests for OmegaSkExportFormatter verifying the R00/R01/R02 record structure,
-/// semicolon delimiter, item-type codes and Windows-1250 encoding.
+/// tab delimiter, fixed column counts, item type 0 for all items and Windows-1250 encoding.
 /// </summary>
 using System.Text;
 using Shouldly;
@@ -15,6 +15,13 @@ namespace Klacks.UnitTest.Infrastructure.Services.Exports;
 [TestFixture]
 public class OmegaSkExportFormatterTests
 {
+    private const char Tab = '\t';
+    private const int DocumentHeaderColumnCount = 29;
+    private const int ItemColumnCount = 25;
+    private const int ItemTypeColumn = 1;
+    private const int ItemWorkerNumberColumn = 24;
+    private const int DocumentHeaderIssueDateColumn = 9;
+
     private OmegaSkExportFormatter _formatter = null!;
 
     [OneTimeSetUp]
@@ -30,11 +37,11 @@ public class OmegaSkExportFormatterTests
     }
 
     [Test]
-    public void Format_StartsWithFormatHeaderRecord()
+    public void Format_StartsWithDataTypeRecord()
     {
         var lines = FormatLines(BuildData(_ => { }));
 
-        lines[0].ShouldStartWith("R00;OMEGA;");
+        lines[0].ShouldBe("R00\tT00");
     }
 
     [Test]
@@ -42,7 +49,15 @@ public class OmegaSkExportFormatterTests
     {
         var lines = FormatLines(BuildData(_ => { }));
 
-        lines.Count(l => l.StartsWith("R01;")).ShouldBe(1);
+        lines.Count(l => l.StartsWith("R01\t")).ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_WritesDocumentHeader_WithFixedColumnCount()
+    {
+        var lines = FormatLines(BuildData(_ => { }));
+
+        lines.Single(l => l.StartsWith("R01\t")).Split(Tab).Length.ShouldBe(DocumentHeaderColumnCount);
     }
 
     [Test]
@@ -50,9 +65,10 @@ public class OmegaSkExportFormatterTests
     {
         var lines = FormatLines(BuildData(_ => { }));
 
-        var itemLines = lines.Where(l => l.StartsWith("R02;")).ToArray();
+        var itemLines = lines.Where(l => l.StartsWith("R02\t")).ToArray();
         itemLines.Length.ShouldBe(1);
-        itemLines[0].Split(';')[1].ShouldBe("0");
+        itemLines[0].Split(Tab).Length.ShouldBe(ItemColumnCount);
+        itemLines[0].Split(Tab)[ItemTypeColumn].ShouldBe("0");
     }
 
     [Test]
@@ -60,20 +76,20 @@ public class OmegaSkExportFormatterTests
     {
         var lines = FormatLines(BuildData(o => o.WorkEntries[0].EmployeeIdNumber = 77));
 
-        var itemLine = lines.Single(l => l.StartsWith("R02;"));
-        itemLine.Split(';')[2].ShouldBe("77");
+        var itemLine = lines.Single(l => l.StartsWith("R02\t"));
+        itemLine.Split(Tab)[ItemWorkerNumberColumn].ShouldBe("77");
     }
 
     [Test]
-    public void Format_WritesNonTaxableExpense_AsReimbursementItemType()
+    public void Format_WritesNonTaxableExpense_AsAccountingEntryItemType()
     {
         var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
         [
             new ExpensesExportEntry { Amount = 12m, Description = "Train ticket", Taxable = false },
         ]));
 
-        var expenseLine = lines.Where(l => l.StartsWith("R02;")).ElementAt(1);
-        expenseLine.Split(';')[1].ShouldBe("1");
+        var expenseLine = lines.Where(l => l.StartsWith("R02\t")).ElementAt(1);
+        expenseLine.Split(Tab)[ItemTypeColumn].ShouldBe("0");
     }
 
     [Test]
@@ -84,12 +100,12 @@ public class OmegaSkExportFormatterTests
             new ExpensesExportEntry { Amount = 12m, Description = "Allowance", Taxable = true },
         ]));
 
-        var expenseLine = lines.Where(l => l.StartsWith("R02;")).ElementAt(1);
-        expenseLine.Split(';')[1].ShouldBe("0");
+        var expenseLine = lines.Where(l => l.StartsWith("R02\t")).ElementAt(1);
+        expenseLine.Split(Tab)[ItemTypeColumn].ShouldBe("0");
     }
 
     [Test]
-    public void Format_NeverWritesReductionItemType_ForExpenses()
+    public void Format_NeverWritesPaymentOrReductionItemType_ForExpenses()
     {
         var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
         [
@@ -97,16 +113,16 @@ public class OmegaSkExportFormatterTests
             new ExpensesExportEntry { Amount = 5m, Description = "Allowance", Taxable = true },
         ]));
 
-        lines.Where(l => l.StartsWith("R02;")).ShouldAllBe(l => l.Split(';')[1] != "2");
+        lines.Where(l => l.StartsWith("R02\t")).ShouldAllBe(l => l.Split(Tab)[ItemTypeColumn] == "0");
     }
 
     [Test]
-    public void Format_WritesDates_AsDdMmYyyy()
+    public void Format_WritesIssueDate_AsDdMmYyyy_InDocumentHeader()
     {
         var lines = FormatLines(BuildData(_ => { }));
 
-        var itemLine = lines.Single(l => l.StartsWith("R02;"));
-        itemLine.Split(';')[3].ShouldBe("10.01.2026");
+        var headerLine = lines.Single(l => l.StartsWith("R01\t"));
+        headerLine.Split(Tab)[DocumentHeaderIssueDateColumn].ShouldBe("10.01.2026");
     }
 
     private string[] FormatLines(OrderExportData data)
