@@ -55,6 +55,30 @@ public class LocalizedCommentParamsTests
     }
 
     [Test]
+    public void ForLanguage_WithholdsTheAbsenceTypeAndItsCompanion_KeepsTheOtherParameters()
+    {
+        var parameters = new Dictionary<string, string> { ["shifts"] = "FD" };
+        var sickness = new MultiLanguage { De = "Krankheit/Unfall", En = "Illness/Accident" };
+        LocalizedCommentParams.Add(parameters, LocalizedCommentParamKeys.Absence, sickness);
+        LocalizedCommentParams.Add(parameters, LocalizedCommentParamKeys.Holiday, Christmas());
+
+        var resolved = LocalizedCommentParams.ForLanguage(parameters, "de");
+
+        resolved.ShouldNotContainKey(LocalizedCommentParamKeys.Absence);
+        resolved.ShouldNotContainKey(LocalizedCommentParamKeys.AbsenceMultiLanguage);
+        resolved["shifts"].ShouldBe("FD");
+        resolved[LocalizedCommentParamKeys.Holiday].ShouldBe("Weihnachten");
+    }
+
+    [Test]
+    public void ForLanguage_AbsenceTypeWithoutCompanion_IsWithheldAsWell()
+    {
+        var parameters = new Dictionary<string, string> { [LocalizedCommentParamKeys.Absence] = "Krankheit/Unfall" };
+
+        LocalizedCommentParams.ForLanguage(parameters, "de").ShouldNotContainKey(LocalizedCommentParamKeys.Absence);
+    }
+
+    [Test]
     public void ForLanguage_MalformedCompanion_KeepsThePlainText()
     {
         var parameters = new Dictionary<string, string>
