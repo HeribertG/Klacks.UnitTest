@@ -201,7 +201,7 @@ public class WinmentorRoExportFormatterTests
     }
 
     [Test]
-    public void Format_CountsWorkedDaysIntoAvansAndLichidareSplitAtDayFifteen()
+    public void Format_LeavesAvansEmptyAndCountsAllWorkedDaysIntoLichidare()
     {
         var data = DataWith(
             new DateOnly(2026, 7, 1),
@@ -216,8 +216,8 @@ public class WinmentorRoExportFormatterTests
         var avansStart = IdentityColumnCount + 31 + 1;
         var lichidareStart = avansStart + 4;
 
-        sheet.Cell(FirstDataRow, avansStart).GetValue<int>().ShouldBe(2);
-        sheet.Cell(FirstDataRow, lichidareStart).GetValue<int>().ShouldBe(1);
+        sheet.Cell(FirstDataRow, avansStart).IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, lichidareStart).GetValue<int>().ShouldBe(3);
     }
 
     [Test]

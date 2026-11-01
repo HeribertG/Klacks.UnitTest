@@ -26,7 +26,8 @@ public class PohodaCzExportFormatterTests
     private static readonly XName Nepritomnosti = Ns + "nepritomnosti";
     private static readonly XName Nepritomnost = Ns + "nepritomnost";
     private static readonly XName Pritomnost = Ns + "pritomnost";
-    private static readonly XName PrescasPracovniDen = Ns + "prescas_pracovni_den";
+    private static readonly XName Rozvrh = Ns + "rozvrh";
+    private static readonly XName Uvazek = Ns + "uvazek";
     private static readonly XName Hodiny = Ns + "hodiny";
     private static readonly XName Kod = Ns + "kod";
     private static readonly XName Od = Ns + "od";
@@ -140,7 +141,7 @@ public class PohodaCzExportFormatterTests
     }
 
     [Test]
-    public void Format_WorkHours_IsSummedUnderPritomnostAndNotUnderNepritomnosti()
+    public void Format_WorkHours_AreWrittenUnderRozvrhUvazekAndNotUnderPritomnostOrNepritomnosti()
     {
         var data = DataWith(
             "Muster, Max",
@@ -150,8 +151,12 @@ public class PohodaCzExportFormatterTests
         var result = _formatter.Format(data, Config());
         var document = ParseSingleEntry(result.Content);
 
-        var pritomnost = document.Root!.Element(Pritomnost)!;
-        pritomnost.Element(PrescasPracovniDen)!.Element(Hodiny)!.Value.ShouldBe("12:30");
+        document.Root!.Element(Pritomnost)!.Elements().ShouldBeEmpty();
+        var uvazekByDate = document.Root.Element(Rozvrh)!.Elements(Uvazek)
+            .ToDictionary(e => e.Attribute("datum")!.Value, e => e.Value);
+        uvazekByDate["2026-01-15"].ShouldBe("8:30");
+        uvazekByDate["2026-01-16"].ShouldBe("4:00");
+        uvazekByDate["2026-01-17"].ShouldBe("0:00");
         document.Root.Element(Nepritomnosti)!.Elements(Nepritomnost).ShouldBeEmpty();
         result.RecordCount.ShouldBe(2);
     }

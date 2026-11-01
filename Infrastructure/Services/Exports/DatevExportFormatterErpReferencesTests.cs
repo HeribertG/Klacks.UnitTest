@@ -70,23 +70,23 @@ public class DatevExportFormatterErpReferencesTests
     }
 
     [Test]
-    public void Format_DoublesQuotes_InOrderAbbreviation()
+    public void Format_StripsQuotes_FromOrderAbbreviation_BecauseBelegfeld1AllowsOnlyRestrictedCharacters()
     {
         var data = BuildData(order => order.OrderAbbreviation = "A\"B");
 
         var fields = ParseFirstDataRow(data);
 
-        fields[OrderAbbreviationIndex].ShouldBe("\"A\"\"B\"");
+        fields[OrderAbbreviationIndex].ShouldBe("\"AB\"");
     }
 
     [Test]
-    public void Format_NeutralizesFormulaInjection_InOrderAbbreviation()
+    public void Format_RemovesFormulaTrigger_FromOrderAbbreviation_BecauseBelegfeld1AllowsOnlyRestrictedCharacters()
     {
         var data = BuildData(order => order.OrderAbbreviation = "=danger");
 
         var fields = ParseFirstDataRow(data);
 
-        fields[OrderAbbreviationIndex].ShouldBe("\"'=danger\"");
+        fields[OrderAbbreviationIndex].ShouldBe("\"danger\"");
     }
 
     private string[] ParseFirstDataRow(OrderExportData data)
