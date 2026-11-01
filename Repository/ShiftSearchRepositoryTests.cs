@@ -13,6 +13,7 @@
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
@@ -60,7 +61,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_AbbreviationOfGroupOnlyShift_FindsShiftWithoutClient()
     {
-        var result = await _repository.SearchAsync(searchTerm: "FS", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "FS", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Abbreviation.ShouldBe("FS");
@@ -69,7 +70,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_NameOfGroupOnlyShift_FindsShiftWithoutClient()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Frühschicht", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Frühschicht", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Name.ShouldBe("Frühschicht");
@@ -78,7 +79,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_ClientName_StillMatchesShiftWithClient()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Gasparoli", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Gasparoli", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().ClientLastName.ShouldBe("Gasparoli");
@@ -87,7 +88,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_NoTerm_ReturnsOnlyOriginalAndSplitShifts()
     {
-        var result = await _repository.SearchAsync(limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, limit: 10);
 
         result.TotalCount.ShouldBe(4);
     }
@@ -95,7 +96,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_Name_ExcludesSealedAndOriginalOrderDuplicates()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Frühdienst", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Frühdienst", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Abbreviation.ShouldBe("FD");
@@ -104,7 +105,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_SplitShift_IsIncluded()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Nachtschicht", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Nachtschicht", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Abbreviation.ShouldBe("NS");
@@ -113,7 +114,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_NamePlusAbbreviationTokens_MatchesSingleShiftAcrossBothColumns()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Frühdienst FD", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Frühdienst FD", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Name.ShouldBe("Frühdienst");
@@ -123,7 +124,7 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_NamePlusWrongAbbreviationToken_MatchesNothing()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Frühdienst ZZ", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Frühdienst ZZ", limit: 10);
 
         result.TotalCount.ShouldBe(0);
     }
@@ -131,9 +132,76 @@ public class ShiftSearchRepositoryTests
     [Test]
     public async Task SearchAsync_DisplayNameWithParentheses_MatchesShift()
     {
-        var result = await _repository.SearchAsync(searchTerm: "Frühschicht (FS)", limit: 10);
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "Frühschicht (FS)", limit: 10);
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Abbreviation.ShouldBe("FS");
+    }
+
+    [Test]
+    public async Task SearchAsync_ShiftWithAnAnalyseToken_IsNeverFound_ForAnUnrestrictedCaller()
+    {
+        AddShift("KeyShift", analyseToken: Guid.NewGuid());
+        AddShift("KeyShift", analyseToken: null, scenarioSourceShiftId: Guid.NewGuid());
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _repository.SearchAsync(visibleGroupIds: null, searchTerm: "KeyShift", limit: 10);
+
+        result.TotalCount.ShouldBe(0);
+        result.Items.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task SearchAsync_RestrictedCaller_CountsAndListsOnlyVisibleShifts_BeforeTheCap()
+    {
+        var visibleGroup = Guid.NewGuid();
+        var hiddenGroup = Guid.NewGuid();
+        var visible = AddShift("Capped", fromDate: new DateOnly(2099, 1, 1), groupId: visibleGroup);
+        AddShift("Capped", fromDate: new DateOnly(2099, 6, 1), groupId: hiddenGroup);
+        AddShift("Capped", fromDate: new DateOnly(2099, 7, 1), groupId: hiddenGroup);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _repository.SearchAsync(visibleGroupIds: [visibleGroup], searchTerm: "Capped", limit: 1);
+
+        result.TotalCount.ShouldBe(1);
+        result.Items.Single().Id.ShouldBe(visible.Id);
+    }
+
+    [Test]
+    public async Task SearchAsync_EmptyRestriction_KeepsOnlyGrouplessShifts()
+    {
+        var groupless = AddShift("Scoped");
+        AddShift("Scoped", groupId: Guid.NewGuid());
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _repository.SearchAsync(visibleGroupIds: [], searchTerm: "Scoped", limit: 10);
+
+        result.Items.Single().Id.ShouldBe(groupless.Id);
+    }
+
+    private Shift AddShift(
+        string name,
+        DateOnly? fromDate = null,
+        Guid? groupId = null,
+        Guid? analyseToken = null,
+        Guid? scenarioSourceShiftId = null)
+    {
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Abbreviation = "AA",
+            Name = name,
+            Status = ShiftStatus.OriginalShift,
+            FromDate = fromDate ?? new DateOnly(2099, 1, 1),
+            AnalyseToken = analyseToken,
+            ScenarioSourceShiftId = scenarioSourceShiftId
+        };
+        if (groupId.HasValue)
+        {
+            shift.GroupItems = [new GroupItem { Id = Guid.NewGuid(), GroupId = groupId.Value, ShiftId = shift.Id }];
+        }
+
+        _dbContext.Shift.Add(shift);
+        return shift;
     }
 }

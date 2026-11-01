@@ -10,6 +10,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.ShiftSchedule;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -22,6 +23,7 @@ public class SearchAndNavigateSkillTests
     private IClientSearchRepository _clientSearch = null!;
     private IGroupSearchRepository _groupSearch = null!;
     private IShiftSearchRepository _shiftSearch = null!;
+    private IShiftGroupFilterService _shiftGroupFilter = null!;
     private SearchAndNavigateSkill _skill = null!;
     private SkillExecutionContext _context = null!;
 
@@ -31,7 +33,8 @@ public class SearchAndNavigateSkillTests
         _clientSearch = Substitute.For<IClientSearchRepository>();
         _groupSearch = Substitute.For<IGroupSearchRepository>();
         _shiftSearch = Substitute.For<IShiftSearchRepository>();
-        _skill = new SearchAndNavigateSkill(_clientSearch, _groupSearch, _shiftSearch);
+        _shiftGroupFilter = Substitute.For<IShiftGroupFilterService>();
+        _skill = new SearchAndNavigateSkill(_clientSearch, _groupSearch, _shiftSearch, _shiftGroupFilter);
         _context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -169,7 +172,7 @@ public class SearchAndNavigateSkillTests
     public async Task ExecuteAsync_SingleShiftWithoutClient_NavigatesToWorkplaceEditShift()
     {
         var id = Guid.NewGuid();
-        _shiftSearch.SearchAsync(searchTerm: "FS", limit: 10, cancellationToken: Arg.Any<CancellationToken>())
+        _shiftSearch.SearchAsync(visibleGroupIds: null, searchTerm: "FS", limit: 10, cancellationToken: Arg.Any<CancellationToken>())
             .Returns(new ShiftSearchResult
             {
                 TotalCount = 1,
@@ -203,7 +206,7 @@ public class SearchAndNavigateSkillTests
     public async Task ExecuteAsync_SingleShiftAsOriginalOrder_NoLockGuidanceInMessage()
     {
         var id = Guid.NewGuid();
-        _shiftSearch.SearchAsync(searchTerm: "FS", limit: 10, cancellationToken: Arg.Any<CancellationToken>())
+        _shiftSearch.SearchAsync(visibleGroupIds: null, searchTerm: "FS", limit: 10, cancellationToken: Arg.Any<CancellationToken>())
             .Returns(new ShiftSearchResult
             {
                 TotalCount = 1,
@@ -249,5 +252,23 @@ public class SearchAndNavigateSkillTests
 
         RouteOf(result).ShouldNotBeNull();
         RouteOf(result)!.ShouldStartWith("/workplace/");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ShiftSearch_HandsTheCallersGroupRestrictionToTheRepository()
+    {
+        var restriction = new List<Guid> { Guid.NewGuid() };
+        _shiftGroupFilter.ResolveShiftListGroupIdsAsync(null).Returns(restriction);
+        _shiftSearch.SearchAsync(restriction, "FS", 10, Arg.Any<CancellationToken>())
+            .Returns(new ShiftSearchResult { TotalCount = 0, Items = [] });
+
+        var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
+        {
+            { "entityType", "shift" },
+            { "searchQuery", "FS" }
+        });
+
+        result.Success.ShouldBeFalse();
+        await _shiftSearch.Received(1).SearchAsync(restriction, "FS", 10, Arg.Any<CancellationToken>());
     }
 }
