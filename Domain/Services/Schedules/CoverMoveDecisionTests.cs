@@ -66,6 +66,18 @@ public class CoverMoveDecisionTests
         CoverMoveDecision.MayMove(Facts(), report, eastOfUtc).ShouldBeFalse();
     }
 
+    [Test]
+    public void AWork_MayFall_UntilItStarts()
+    {
+        CoverMoveDecision.MayFall(Facts(), StartUtc.AddMinutes(-1), TimeZoneInfo.Utc).ShouldBeTrue();
+        CoverMoveDecision.MayFall(Facts(), StartUtc, TimeZoneInfo.Utc).ShouldBeFalse();
+        CoverMoveDecision.MayFall(Facts(), StartUtc.AddMinutes(1), TimeZoneInfo.Utc).ShouldBeFalse();
+    }
+
+    [Test]
+    public void ATouchedWork_NeverFalls()
+        => CoverMoveDecision.MayFall(Facts(hasReplacement: true), StartUtc.AddHours(-3), TimeZoneInfo.Utc).ShouldBeFalse();
+
     private static bool MayMove(ReplacementRequestSource source, DateTime reportedAtUtc)
         => CoverMoveDecision.MayMove(Facts(), new CoverReport(source, reportedAtUtc), TimeZoneInfo.Utc);
 

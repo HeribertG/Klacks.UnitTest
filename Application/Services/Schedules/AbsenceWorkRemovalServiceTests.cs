@@ -10,6 +10,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 
@@ -34,6 +35,7 @@ public class AbsenceWorkRemovalServiceTests
     private IPeriodHoursService _periodHours = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IMediator _mediator = null!;
+    private FixedCompanyClock _clock = null!;
     private AbsenceWorkRemovalService _service = null!;
     private ScheduleCell _cell = null!;
     private CoverMoveFacts _facts = null!;
@@ -68,7 +70,8 @@ public class AbsenceWorkRemovalServiceTests
         _periodHours.GetPeriodBoundariesAsync(Day).Returns((PeriodStart, PeriodEnd));
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>()).Returns(ci => ci.Arg<Func<Task<int>>>()());
-        _service = new AbsenceWorkRemovalService(_entries, _factsReader, _absences, _groups, _periodHours, _unitOfWork, _mediator);
+        _clock = new FixedCompanyClock(new DateTimeOffset(Day.ToDateTime(new TimeOnly(7, 59)), TimeSpan.Zero));
+        _service = new AbsenceWorkRemovalService(_entries, _factsReader, _absences, _groups, _periodHours, _unitOfWork, _mediator, _clock);
     }
 
     private static AbsenceSpan FullDay(Guid absenceId) => new(Elsa, absenceId, Day, new TimeOnly(0, 0), new TimeOnly(23, 59));
@@ -79,6 +82,23 @@ public class AbsenceWorkRemovalServiceTests
     [Test]
     public async Task AFullDayAbsence_TakesTheWork()
         => (await Find(FullDay(Sick))).ShouldHaveSingleItem().WorkId.ShouldBe(WorkId);
+
+    [Test]
+    public async Task AStartedWork_StaysWithItsOwner()
+    {
+        _clock.Now = new DateTimeOffset(Day.ToDateTime(new TimeOnly(8, 0)), TimeSpan.Zero);
+
+        (await Find(FullDay(Sick))).ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task TheStart_IsReadOnTheCompanyClock()
+    {
+        _clock.TimeZone = TimeZoneInfo.CreateCustomTimeZone("removal-east", TimeSpan.FromHours(2), "removal-east", "removal-east");
+        _clock.Now = new DateTimeOffset(Day.ToDateTime(new TimeOnly(6, 0)), TimeSpan.Zero);
+
+        (await Find(FullDay(Sick))).ShouldBeEmpty();
+    }
 
     [Test]
     public async Task AnOnCallAbsence_TakesNothing()
