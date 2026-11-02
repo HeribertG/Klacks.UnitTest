@@ -25,6 +25,7 @@ public class ScenarioOpenSlotPromoteTests
 
     private DataBaseContext _context = null!;
     private AnalyseScenarioService _service = null!;
+    private FixedCompanyClock _clock = null!;
     private Guid _token;
     private Guid _elsa;
     private Guid _sick;
@@ -36,7 +37,8 @@ public class ScenarioOpenSlotPromoteTests
     {
         var options = new DbContextOptionsBuilder<DataBaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
-        _service = AnalyseScenarioTestServiceFactory.Create(_context);
+        _clock = new FixedCompanyClock(new DateTimeOffset(From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+        _service = AnalyseScenarioTestServiceFactory.Create(_context, companyClock: _clock);
         _token = Guid.NewGuid();
         _elsa = Guid.NewGuid();
         _sick = Guid.NewGuid();
@@ -50,6 +52,18 @@ public class ScenarioOpenSlotPromoteTests
 
     [TearDown]
     public void TearDown() => _context.Dispose();
+
+    [Test]
+    public async Task AStartedWork_Stands_EvenFromAScenarioOfTheCoverDialog()
+    {
+        _context.Break.Add(NewBreak(_sick, _token));
+        await _context.SaveChangesAsync();
+        _clock.Now = new DateTimeOffset(Day.ToDateTime(_work.StartTime), TimeSpan.Zero);
+
+        await PromoteAsync();
+
+        (await IsDeleted(_work)).ShouldBeFalse();
+    }
 
     [Test]
     public async Task ANewAbsence_RemovesTheUncoveredWork_WithEverythingOnIt()

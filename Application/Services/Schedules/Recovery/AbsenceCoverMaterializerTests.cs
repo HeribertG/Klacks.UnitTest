@@ -179,12 +179,12 @@ public class AbsenceCoverMaterializerTests
     {
         var map = new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork };
 
-        (await _materializer.FindMovableSourceWorksAsync(
+        (await _materializer.FindSourceWorksAsync(
                 map, Token, new CoverReport(ReplacementRequestSource.RecoveryEngine, AfterTheStart), CancellationToken.None))
-            .ShouldBeEmpty();
-        (await _materializer.FindMovableSourceWorksAsync(
+            .Movable.ShouldBeEmpty();
+        (await _materializer.FindSourceWorksAsync(
                 map, Token, new CoverReport(ReplacementRequestSource.RecoveryEngine, AfterTheStart.AddDays(-1)), CancellationToken.None))
-            .ShouldBe(new[] { SourceWork });
+            .Movable.ShouldBe(new[] { SourceWork });
     }
 
     [Test]
@@ -192,10 +192,22 @@ public class AbsenceCoverMaterializerTests
     {
         _facts[OtherClonedWork] = Facts(OtherClonedWork, Bob) with { HasLockedChild = true };
 
-        var untouched = await _materializer.FindMovableSourceWorksAsync(
+        var works = await _materializer.FindSourceWorksAsync(
             new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork, [OtherSourceWork] = OtherClonedWork }, Token, BeforeTheStart, CancellationToken.None);
 
-        untouched.ShouldBe(new[] { SourceWork });
+        works.Movable.ShouldBe(new[] { SourceWork });
+    }
+
+    [Test]
+    public async Task AMovedClone_CountsAsMoved_AndStaysCoverable()
+    {
+        _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { IsMoved = true };
+
+        var works = await _materializer.FindSourceWorksAsync(
+            new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork }, Token, BeforeTheStart, CancellationToken.None);
+
+        works.Moved.ShouldBe(new[] { SourceWork });
+        works.Movable.ShouldBe(new[] { SourceWork });
     }
 
     [Test]

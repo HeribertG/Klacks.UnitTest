@@ -56,6 +56,48 @@ public sealed class LocalRepairEngineSwapCollisionTests
     }
 
     [Test]
+    public void A_swap_locked_work_finds_no_swap_partner()
+    {
+        var d = Day(6, 3);
+        var sDemand = Shift(1);
+        var sOther = Shift(2);
+
+        var snapshot = new SnapshotBuilder()
+            .Days(d)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "pivot")
+            .Agent(Agent(3), "recipient")
+            .SwapLockedWork(Agent(2), d, sOther, ShiftCategory.Early, At(d, 6), At(d, 14), 8m)
+            .Work(Agent(1), d, sDemand, ShiftCategory.Early, At(d, 5), At(d, 13), 8m)
+            .Ineligible(Agent(3), sDemand, d)
+            .Build();
+
+        var proposal = _engine.Repair(snapshot, new AbsenceEvent(Agent(1), [d]), Ruleset.Default);
+
+        proposal.Deltas.ShouldBeEmpty();
+        proposal.Uncovered.ShouldHaveSingleItem().ShiftId.ShouldBe(sDemand);
+    }
+
+    [Test]
+    public void A_swap_locked_work_stays_coverable_when_its_person_falls_out()
+    {
+        var d = Day(6, 3);
+        var sDemand = Shift(1);
+
+        var snapshot = new SnapshotBuilder()
+            .Days(d)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "free")
+            .SwapLockedWork(Agent(1), d, sDemand, ShiftCategory.Early, At(d, 5), At(d, 13), 8m)
+            .Build();
+
+        var proposal = _engine.Repair(snapshot, new AbsenceEvent(Agent(1), [d]), Ruleset.Default);
+
+        proposal.Uncovered.ShouldBeEmpty();
+        proposal.Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+    }
+
+    [Test]
     public void Swap_still_succeeds_when_the_pivot_has_no_colliding_neighbour()
     {
         var d = Day(6, 3);

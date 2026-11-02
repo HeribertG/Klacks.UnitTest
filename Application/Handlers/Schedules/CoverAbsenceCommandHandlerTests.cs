@@ -222,7 +222,7 @@ public class CoverAbsenceCommandHandlerTests
     private void UseSnapshot(RecoverySnapshot snapshot)
         => _snapshotBuilder.BuildAsync(
                 Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(),
-                Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(snapshot);
 
     private static RecoverySnapshot WithFreeCandidate(bool locked = false, bool candidateEligible = true)
@@ -309,7 +309,7 @@ public class CoverAbsenceCommandHandlerTests
 
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(),
-            Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)), Arg.Any<IReadOnlySet<Guid>>(),
+            Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -322,7 +322,7 @@ public class CoverAbsenceCommandHandlerTests
 
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(),
-            Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)),
+            Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)), Arg.Any<IReadOnlySet<Guid>>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -746,7 +746,7 @@ public class CoverAbsenceCommandHandlerTests
             .Do(_ => order.Add("clone"));
         _unitOfWork.When(u => u.CompleteAsync()).Do(_ => order.Add("complete"));
         _snapshotBuilder.When(s => s.BuildAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>()))
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>()))
             .Do(_ => order.Add("snapshot"));
 
         await Cover();
@@ -1014,7 +1014,7 @@ public class CoverAbsenceCommandHandlerTests
         await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
 
         await _snapshotBuilder.DidNotReceive().BuildAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await AssertNothingWasWrittenAsync();
     }
 
@@ -1088,7 +1088,7 @@ public class CoverAbsenceCommandHandlerTests
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Is<ScenarioSourceScope?>(s => s != null && s.Token == SourceToken && s.FromDate == Date && s.UntilDate == Date
                 && s.OwnedShiftIds.Contains(ShiftId) && s.OwnedShiftIds.Contains(RootShiftId)),
-            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == SourceToken && s.Token == outcome.Token));
         await _scheduleEntries.Received().GetScheduleEntriesAsync(
             Arg.Is<ScheduleEntriesCriteria>(c => c.From == Date && c.Until == Date && c.AnalyseToken == SourceToken),
@@ -1111,7 +1111,7 @@ public class CoverAbsenceCommandHandlerTests
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.FromDate == Date && s.UntilDate == sourceUntil));
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Is<IReadOnlyList<DateOnly>>(d => d.Count == 1 && d[0] == Date), Arg.Any<ScenarioSourceScope?>(),
-            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await _mediator.Received(1).Send(
             Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 1 && c.Request.Breaks[0].CurrentDate == Date),
             Arg.Any<CancellationToken>());

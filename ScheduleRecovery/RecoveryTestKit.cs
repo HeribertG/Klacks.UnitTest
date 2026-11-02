@@ -127,6 +127,19 @@ internal sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder SwapLockedWork(
+        Guid agentId,
+        DateOnly date,
+        Guid shiftId,
+        ShiftCategory category,
+        DateTime startAt,
+        DateTime endAt,
+        decimal hours)
+    {
+        Add(agentId, date, new RecoveryWork(category, shiftId, false, startAt, endAt, hours, IsSwapLocked: true));
+        return this;
+    }
+
     public SnapshotBuilder PaddedWork(
         Guid agentId,
         DateOnly date,

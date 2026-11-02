@@ -4,6 +4,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Infrastructure.Extensions;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.AnalyseScenarios;
@@ -22,13 +23,17 @@ namespace Klacks.UnitTest.TestHelpers;
 /// </summary>
 internal static class AnalyseScenarioTestServiceFactory
 {
-    public static AnalyseScenarioService Create(DataBaseContext context, IReadOnlyList<string>? rights = null)
+    private static readonly DateTimeOffset BeforeEveryTestPlan = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    public static AnalyseScenarioService Create(
+        DataBaseContext context, IReadOnlyList<string>? rights = null, ICompanyClock? companyClock = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(context);
         services.AddSingleton(CreateUserService(rights));
         services.AddSingleton(TestGroupWriteVisibility.UnrestrictedGroups());
+        services.AddSingleton(companyClock ?? new FixedCompanyClock(BeforeEveryTestPlan));
         services.AddScoped<IShiftTreeService, ShiftTreeService>();
         services.AddAnalyseScenarioServices();
         return (AnalyseScenarioService)services.BuildServiceProvider().GetRequiredService<IAnalyseScenarioService>();

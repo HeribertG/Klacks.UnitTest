@@ -78,6 +78,22 @@ public sealed class RecoverySnapshotBuilderWorksTests
         works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeFalse();
     }
 
+    [Test]
+    public void Only_the_named_work_is_swap_locked()
+    {
+        var moved = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+        var plain = Cell((int)ScheduleEntryType.Work, Original, 17, 20);
+
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [moved, plain], new HashSet<Guid>(), new HashSet<Guid> { moved.SourceId, plain.SourceId }, out _,
+            swapLockedWorkIds: new HashSet<Guid> { moved.SourceId });
+
+        var day = works[new CellKey(Original, Day)];
+        day.Single(w => w.WorkIds![0] == moved.SourceId).IsSwapLocked.ShouldBeTrue();
+        day.Single(w => w.WorkIds![0] == moved.SourceId).IsLocked.ShouldBeFalse();
+        day.Single(w => w.WorkIds![0] == plain.SourceId).IsSwapLocked.ShouldBeFalse();
+    }
+
     [TestCase(WorkLockLevel.None, false, false)]
     [TestCase(WorkLockLevel.Confirmed, false, false)]
     [TestCase(WorkLockLevel.None, true, false)]
