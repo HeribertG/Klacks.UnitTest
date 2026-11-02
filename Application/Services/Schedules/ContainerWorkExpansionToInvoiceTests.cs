@@ -4,6 +4,7 @@
 /// Briefing, debriefing and travel entries that ContainerWorkExpansionService creates are billable, for day overrides and weekly templates alike.
 /// </summary>
 
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Microsoft.Extensions.Logging;
 
@@ -42,6 +43,7 @@ public class ContainerWorkExpansionToInvoiceTests
             Substitute.For<IBreakRepository>(),
             _workChanges,
             shifts,
+            Substitute.For<IWorkWriteGuard>(),
             Substitute.For<ILogger<ContainerWorkExpansionService>>());
     }
 
