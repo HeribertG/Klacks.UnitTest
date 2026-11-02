@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for LogoBordroTrExportFormatter verifying the Logo "Excel'den Puantaj Bilgileri Aktarımı" three-row
 /// structure (row 1 description, row 2 five-digit XYZTV reference codes, row 3+ one row per sicil), the identity
-/// codes 00001 (Sicil No) / 90002 (Ad) / 90003 (Soyad) stored as text, that puantaj columns and their row-2 codes come
+/// code 00001 (Sicil No) stored as text with the undocumented Ad / Soyad codes left empty, that puantaj columns and their row-2 codes come
 /// from the group config ordered by code, that codes outside the puantaj scheme are rejected as unmapped, that the
 /// code's V digit (2 Gün / 3 Saat) must match the entry unit, per-employee aggregation, and name splitting.
 /// </summary>
@@ -53,8 +53,8 @@ public class LogoBordroTrExportFormatterTests
         sheet.Cell(1, 3).GetString().ShouldBe("Soyad");
 
         sheet.Cell(2, 1).GetString().ShouldBe("00001");
-        sheet.Cell(2, 2).GetString().ShouldBe("90002");
-        sheet.Cell(2, 3).GetString().ShouldBe("90003");
+        sheet.Cell(2, 2).GetString().ShouldBeEmpty();
+        sheet.Cell(2, 3).GetString().ShouldBeEmpty();
     }
 
     [Test]
