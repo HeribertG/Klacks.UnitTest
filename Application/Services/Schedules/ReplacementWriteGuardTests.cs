@@ -58,11 +58,7 @@ public class ReplacementWriteGuardTests
         _clientRepository.GetTypeAndDisplayNameAsync(_personId, Arg.Any<CancellationToken>())
             .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Substitute"));
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(PreCommitCheckResult.Empty);
-        _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
-                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
         _guard = new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer);
     }
@@ -127,6 +123,7 @@ public class ReplacementWriteGuardTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == _personId),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -138,7 +135,7 @@ public class ReplacementWriteGuardTests
         await _guard.EnsureAllowedAsync(Change(type, null), _parentWork, false, null, CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -152,7 +149,7 @@ public class ReplacementWriteGuardTests
             Change(WorkChangeType.ReplacementWithin, null, Guid.NewGuid()), _parentWork, false, null, CancellationToken.None));
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -162,7 +159,7 @@ public class ReplacementWriteGuardTests
             Change(WorkChangeType.ReplacementWithin, null), _parentWork, false, null, CancellationToken.None));
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -176,7 +173,7 @@ public class ReplacementWriteGuardTests
         await _guard.EnsureAllowedAsync(updated, _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -192,11 +189,12 @@ public class ReplacementWriteGuardTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == newPerson),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task UpdateThatWidensTheWindow_IsCheckedForTheAddedTimeOnly()
+    public async Task UpdateThatWidensTheWindow_IsCheckedWithTheWholeNewWindow_AndTheStoredOneComesOffTheHours()
     {
         var stored = Change(WorkChangeType.ReplacementWithin, _personId);
         var updated = Change(WorkChangeType.ReplacementWithin, _personId);
@@ -205,13 +203,35 @@ public class ReplacementWriteGuardTests
         await _guard.EnsureAllowedAsync(updated, _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.Received(1).CheckAsync(
-            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Noon && rows[0].EndTime == WorkEnd),
-            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Ten && rows[0].EndTime == WorkEnd),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 1
+                && removals[0].StartTime == Ten && removals[0].EndTime == Noon
+                && removals[0].WorkId == stored.Id && removals[0].ClientId == _personId),
             null, Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task UpdateThatWidensOnBothSides_IsCheckedForBothAddedPieces()
+    public async Task UpdateFromFourToFiveHours_IsCheckedAsOneFiveHourWindow_NotAsTheAddedHourAlone()
+    {
+        var stored = Change(WorkChangeType.ReplacementWithin, _personId);
+        stored.StartTime = Noon;
+        stored.EndTime = new TimeOnly(16, 0);
+        var updated = Change(WorkChangeType.ReplacementWithin, _personId);
+        updated.StartTime = Noon;
+        updated.EndTime = new TimeOnly(17, 0);
+
+        await _guard.EnsureAllowedAsync(updated, _parentWork, false, stored, CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1
+                && rows[0].StartTime == Noon && rows[0].EndTime == new TimeOnly(17, 0)),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 1
+                && removals[0].StartTime == Noon && removals[0].EndTime == new TimeOnly(16, 0)),
+            null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateThatWidensOnBothSides_IsCheckedWithTheWholeNewWindow()
     {
         var stored = Change(WorkChangeType.ReplacementWithin, _personId);
         var updated = Change(WorkChangeType.ReplacementWithin, _personId);
@@ -221,10 +241,10 @@ public class ReplacementWriteGuardTests
         await _guard.EnsureAllowedAsync(updated, _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.Received(1).CheckAsync(
-            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 2
-                && rows[0].StartTime == WorkStart && rows[0].EndTime == Ten
-                && rows[1].StartTime == Noon && rows[1].EndTime == WorkEnd),
-            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1
+                && rows[0].StartTime == WorkStart && rows[0].EndTime == WorkEnd),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 1
+                && removals[0].StartTime == Ten && removals[0].EndTime == Noon),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -243,7 +263,7 @@ public class ReplacementWriteGuardTests
     }
 
     [Test]
-    public async Task UpdateThatShiftsTheWindow_IsCheckedForTheAddedTime_AndTakesTheGivenUpTimeOffTheHours()
+    public async Task UpdateThatShiftsTheWindow_IsCheckedWithTheWholeNewWindow()
     {
         var stored = Change(WorkChangeType.ReplacementWithin, _personId);
         var updated = Change(WorkChangeType.ReplacementWithin, _personId);
@@ -253,15 +273,14 @@ public class ReplacementWriteGuardTests
         await _guard.EnsureAllowedAsync(updated, _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.Received(1).CheckAsync(
-            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Noon && rows[0].EndTime == TwoPm),
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Eleven && rows[0].EndTime == TwoPm),
             Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 1
-                && removals[0].StartTime == Ten && removals[0].EndTime == Eleven
-                && removals[0].WorkId == stored.Id && removals[0].ClientId == _personId),
+                && removals[0].StartTime == Ten && removals[0].EndTime == Noon),
             null, Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task UpdateToADisjointWindow_IsCheckedInFull_AndTakesTheStoredWindowOffTheHours()
+    public async Task UpdateToADisjointWindow_IsCheckedInFull_AndTheStoredWindowComesOffTheHours()
     {
         var stored = Change(WorkChangeType.ReplacementWithin, _personId);
         var updated = Change(WorkChangeType.ReplacementWithin, _personId);
@@ -287,7 +306,7 @@ public class ReplacementWriteGuardTests
             Change(WorkChangeType.ReplacementWithin, _personId), _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.ReceivedWithAnyArgs(1).CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -299,7 +318,7 @@ public class ReplacementWriteGuardTests
             Change(WorkChangeType.ReplacementWithin, _personId), _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.ReceivedWithAnyArgs(1).CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -311,7 +330,7 @@ public class ReplacementWriteGuardTests
             Change(WorkChangeType.CorrectionEnd, null), _parentWork, false, stored, CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -360,7 +379,7 @@ public class ReplacementWriteGuardTests
     private void GivenConflict(params ScheduleValidationNotificationDto[] conflicts)
     {
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult(conflicts));
     }
 

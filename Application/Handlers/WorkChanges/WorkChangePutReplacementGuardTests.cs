@@ -78,11 +78,7 @@ public class WorkChangePutReplacementGuardTests
         _clientRepository.GetTypeAndDisplayNameAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Substitute"));
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(PreCommitCheckResult.Empty);
-        _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
-                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
         _workChangeRepository.Put(Arg.Any<WorkChange>()).Returns(call => call.ArgAt<WorkChange>(0));
         _workRepository.GetNoTracking(_work.Id).Returns(_work);
@@ -147,7 +143,7 @@ public class WorkChangePutReplacementGuardTests
         var newPerson = Guid.NewGuid();
         var stored = Stored(WorkChangeType.ReplacementWithin, _personId);
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult([EscalatedError(newPerson)]));
 
         var exception = await Should.ThrowAsync<ConflictException>(() => NewHandler().Handle(
@@ -157,12 +153,13 @@ public class WorkChangePutReplacementGuardTests
         exception.Message.ShouldContain("blocked");
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == newPerson),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
         await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(default!);
     }
 
     [Test]
-    public async Task Put_WideningTheWindow_IsCheckedForTheAddedTimeOnly_AndRefusedOnAConflict()
+    public async Task Put_WideningTheWindow_IsCheckedWithTheWholeNewWindow_AndRefusedOnAConflict()
     {
         var stored = Stored(WorkChangeType.ReplacementWithin, _personId);
         _conflictChecker.CheckAsync(
@@ -176,8 +173,9 @@ public class WorkChangePutReplacementGuardTests
             () => NewHandler().Handle(new PutCommand<WorkChangeResource>(resource), CancellationToken.None));
 
         await _conflictChecker.Received(1).CheckAsync(
-            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Noon && rows[0].EndTime == WorkEnd),
-            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].StartTime == Ten && rows[0].EndTime == WorkEnd),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 1
+                && removals[0].StartTime == Ten && removals[0].EndTime == Noon),
             null, Arg.Any<CancellationToken>());
         await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(default!);
     }
@@ -187,7 +185,7 @@ public class WorkChangePutReplacementGuardTests
     {
         var stored = Stored(WorkChangeType.ReplacementWithin, _personId);
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult([EscalatedError(_personId)]));
         var resource = Resource(stored.Id, WorkChangeType.ReplacementWithin, _personId);
         resource.Description = "only the text changed";
@@ -196,7 +194,7 @@ public class WorkChangePutReplacementGuardTests
 
         result.ShouldNotBeNull();
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _workChangeRepository.Received(1).Put(Arg.Any<WorkChange>());
     }
 

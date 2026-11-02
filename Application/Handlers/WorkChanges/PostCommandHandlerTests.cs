@@ -86,7 +86,7 @@ public class PostCommandHandlerTests
         _periodHoursService.GetPeriodBoundariesAsync(_date)
             .Returns((new DateOnly(2027, 5, 1), new DateOnly(2027, 5, 31)));
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
         _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
 
@@ -205,6 +205,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, ChangeStart, Noon))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -215,6 +216,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, Noon, ChangeEnd))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -225,6 +227,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, ChangeStart, ChangeEnd))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -235,7 +238,7 @@ public class PostCommandHandlerTests
         await _handler.Handle(UiCommand(type, 0m), CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
@@ -246,6 +249,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, TenOClock, Noon))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -256,6 +260,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, TenOClock, Noon))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -265,7 +270,7 @@ public class PostCommandHandlerTests
         await _handler.Handle(UiCommand(WorkChangeType.ReplacementWithin, WholeShiftHours, TenOClock, TenOClock), CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
@@ -278,6 +283,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date.AddDays(1), FourAm, NightEnd))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -290,6 +296,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date, NightStart, NoTime))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -302,6 +309,7 @@ public class PostCommandHandlerTests
 
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date.AddDays(1), TwoAm, FiveAm))),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(removals => removals.Count == 0),
             null, Arg.Any<CancellationToken>());
     }
 
@@ -398,7 +406,7 @@ public class PostCommandHandlerTests
         await _handler.Handle(CorrectionCommand(), CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
@@ -411,7 +419,7 @@ public class PostCommandHandlerTests
         await _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None);
 
         await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
-            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
@@ -544,7 +552,7 @@ public class PostCommandHandlerTests
     private void GivenConflicts(params ScheduleValidationNotificationDto[] conflicts)
     {
         _conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult(conflicts));
     }
 

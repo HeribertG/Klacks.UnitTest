@@ -372,7 +372,7 @@ public class WorkShiftVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), _unitOfWork,
             Substitute.For<IWorkNotificationFacade>(), lockRepository, Substitute.For<IUserService>(), childrenManager,
-            Substitute.For<IOvertimeCascadeService>(), _shiftGuard, TestWorkWriteGuard.Over(_conflictChecker, _worldReader),
+            Substitute.For<IOvertimeCascadeService>(), _shiftGuard, TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IReplacementWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager, childrenReadRepository);
     }
