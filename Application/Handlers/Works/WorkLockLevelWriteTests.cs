@@ -296,7 +296,7 @@ public class WorkLockLevelWriteTests
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
-            Substitute.For<IWorkNotificationFacade>(), TestWorkHandOver.Over(_cascadeService),
+            Substitute.For<IWorkNotificationFacade>(), _cascadeService, TestWorkHandOver.Over(_cascadeService),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
             Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),

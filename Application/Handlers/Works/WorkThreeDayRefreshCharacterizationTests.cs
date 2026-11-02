@@ -258,7 +258,7 @@ public class WorkThreeDayRefreshCharacterizationTests
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
-            _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, TestWorkHandOver.Over(_cascadeService),
+            _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService, TestWorkHandOver.Over(_cascadeService),
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard, Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());

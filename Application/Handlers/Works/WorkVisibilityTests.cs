@@ -691,7 +691,7 @@ public class WorkVisibilityTests
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
-            _scheduleEntriesService, _completionService, _notificationFacade, TestWorkHandOver.Over(_cascadeService),
+            _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService, TestWorkHandOver.Over(_cascadeService),
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(),

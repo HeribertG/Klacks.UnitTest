@@ -105,7 +105,7 @@ public class ReassignWorkClientCommandHandlerTests
             _scheduleEntriesService,
             _completionService,
             _notificationFacade,
-            new WorkHandOverService(_cascadeService, _childrenManager),
+            _cascadeService, new WorkHandOverService(_cascadeService, _childrenManager),
             _groupContextResolver,
             _dayLockService,
             _unitOfWork,
