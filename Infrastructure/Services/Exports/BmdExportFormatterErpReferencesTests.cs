@@ -76,7 +76,7 @@ public class BmdExportFormatterErpReferencesTests
     {
         var lines = FormatLines(BuildData(order => order.OrderAbbreviation = "A;B"));
 
-        lines[1].ShouldContain(";Night Watch;\"A;B\";8.00;");
+        lines[1].ShouldContain(";Night Watch;\"A;B\";8,00;");
     }
 
     [Test]
@@ -84,7 +84,7 @@ public class BmdExportFormatterErpReferencesTests
     {
         var lines = FormatLines(BuildData(order => order.OrderAbbreviation = "=danger"));
 
-        lines[1].ShouldContain(";Night Watch;'=danger;8.00;");
+        lines[1].ShouldContain(";Night Watch;'=danger;8,00;");
     }
 
     private string[] FormatLines(OrderExportData data)

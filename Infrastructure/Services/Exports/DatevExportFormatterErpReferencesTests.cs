@@ -7,6 +7,7 @@
 using System.Text;
 using Shouldly;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.Services.Exports;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -21,6 +22,8 @@ public class DatevExportFormatterErpReferencesTests
     private const int BeleginfoContent2Index = 23;
     private const int OrderNumberIndex = 94;
     private const int OrderAbbreviationIndex = 10;
+    private const int ConsultantHeaderIndex = 10;
+    private const int ClientHeaderIndex = 11;
 
     private DatevExportFormatter _formatter = null!;
 
@@ -87,6 +90,60 @@ public class DatevExportFormatterErpReferencesTests
         var fields = ParseFirstDataRow(data);
 
         fields[OrderAbbreviationIndex].ShouldBe("\"danger\"");
+    }
+
+    [TestCase("1001", "10001", "1001", "10001")]
+    [TestCase("9999999", "99999", "9999999", "99999")]
+    [TestCase(" 12345 ", " 1 ", "12345", "1")]
+    public void Format_WritesConsultantAndClientNumber_IntoHeaderFields11And12(
+        string consultant, string client, string expectedConsultant, string expectedClient)
+    {
+        var header = ParseHeader(BuildData(_ => { }), consultant, client);
+
+        header[ConsultantHeaderIndex].ShouldBe(expectedConsultant);
+        header[ClientHeaderIndex].ShouldBe(expectedClient);
+    }
+
+    [TestCase(null, null)]
+    [TestCase("", "")]
+    [TestCase("999", "0")]
+    [TestCase("1000", "0")]
+    [TestCase("10000000", "100000")]
+    [TestCase("12A45", "1.5")]
+    [TestCase("-1001", "-1")]
+    [TestCase("+1001", "+1")]
+    public void Format_LeavesConsultantAndClientEmpty_WhenMissingNonNumericOrOutOfRange(string? consultant, string? client)
+    {
+        var header = ParseHeader(BuildData(_ => { }), consultant, client);
+
+        header[ConsultantHeaderIndex].ShouldBeEmpty();
+        header[ClientHeaderIndex].ShouldBeEmpty();
+    }
+
+    [Test]
+    public void DecorateFileName_PrefixesExtf_OnlyOnce()
+    {
+        _formatter.DecorateFileName("order-export_NW.csv").ShouldBe("EXTF_order-export_NW.csv");
+    }
+
+    [Test]
+    public void ExportFileNameDecorator_AppliesPrefix_OnlyForFormattersWithFileNameProvider()
+    {
+        ExportFileNameDecorator.Apply(_formatter, "order-export_NW.csv").ShouldBe("EXTF_order-export_NW.csv");
+        ExportFileNameDecorator.Apply(new BmdExportFormatter(), "order-export_NW.csv").ShouldBe("order-export_NW.csv");
+    }
+
+    private string[] ParseHeader(OrderExportData data, string? consultant, string? client)
+    {
+        var options = new ExportOptions
+        {
+            CurrencyCode = "EUR",
+            Company = new CompanyInfo { DatevConsultantNumber = consultant, DatevClientNumber = client },
+        };
+        var bytes = _formatter.Format(data, options);
+        var lines = Encoding.GetEncoding(1252).GetString(bytes)
+            .Split(ExportConstants.LineEnding, StringSplitOptions.RemoveEmptyEntries);
+        return lines[0].Split(';');
     }
 
     private string[] ParseFirstDataRow(OrderExportData data)

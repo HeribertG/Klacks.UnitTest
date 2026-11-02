@@ -23,6 +23,8 @@ public class PohodaCzExportFormatterTests
     private const string DochazkaZamestnance = "dochazka_zamestnance";
     private static readonly XName Hlavicka = Ns + "hlavicka";
     private static readonly XName CisloPracovnihoPomeru = Ns + "cislo_pracovniho_pomeru";
+    private static readonly XName Jmeno = Ns + "jmeno";
+    private static readonly XName Prijmeni = Ns + "prijmeni";
     private static readonly XName Nepritomnosti = Ns + "nepritomnosti";
     private static readonly XName Nepritomnost = Ns + "nepritomnost";
     private static readonly XName Pritomnost = Ns + "pritomnost";
@@ -67,6 +69,8 @@ public class PohodaCzExportFormatterTests
             ClientId = Guid.NewGuid(),
             IdNumber = 42,
             FullName = fullName,
+            FirstName = fullName.Contains(", ") ? fullName.Split(", ", 2)[1] : string.Empty,
+            LastName = fullName.Contains(", ") ? fullName.Split(", ", 2)[0] : fullName,
             Entries = entries.ToList(),
         });
     }
@@ -138,6 +142,38 @@ public class PohodaCzExportFormatterTests
         var document = ParseSingleEntry(result.Content);
 
         document.Root!.Element(Hlavicka)!.Element(CisloPracovnihoPomeru)!.Value.ShouldBe("42");
+    }
+
+    [Test]
+    public void Format_WritesJmenoAndPrijmeni_FromStructuredNameFields()
+    {
+        var data = DataWith("Muster-Meier, Max Moritz", new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var document = ParseSingleEntry(_formatter.Format(data, Config()).Content);
+
+        document.Root!.Element(Hlavicka)!.Element(Jmeno)!.Value.ShouldBe("Max Moritz");
+        document.Root!.Element(Hlavicka)!.Element(Prijmeni)!.Value.ShouldBe("Muster-Meier");
+    }
+
+    [Test]
+    public void Format_WritesLastNameOnly_WhenEmployeeHasNoFirstName()
+    {
+        var data = DataWith("Muster", new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var document = ParseSingleEntry(_formatter.Format(data, Config()).Content);
+
+        document.Root!.Element(Hlavicka)!.Element(Prijmeni)!.Value.ShouldBe("Muster");
+        document.Root!.Element(Hlavicka)!.Element(Jmeno).ShouldBeNull();
     }
 
     [Test]
@@ -249,6 +285,8 @@ public class PohodaCzExportFormatterTests
                 ClientId = Guid.NewGuid(),
                 IdNumber = 1,
                 FullName = "A, A",
+                FirstName = "A",
+                LastName = "A",
                 Entries = [new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 8m }],
             },
             new PayrollEmployee
@@ -256,6 +294,8 @@ public class PohodaCzExportFormatterTests
                 ClientId = Guid.NewGuid(),
                 IdNumber = 2,
                 FullName = "B, B",
+                FirstName = "B",
+                LastName = "B",
                 Entries = [new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 6m }],
             });
 
