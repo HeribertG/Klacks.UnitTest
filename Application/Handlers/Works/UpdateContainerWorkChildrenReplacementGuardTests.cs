@@ -82,7 +82,8 @@ public class UpdateContainerWorkChildrenReplacementGuardTests
         _childrenReadRepository.GetParentWorkNoTracking(_container.Id, Arg.Any<CancellationToken>()).Returns(_container);
         _childrenReadRepository.GetChildWorkShiftIds(_container.Id, Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, Guid> { [_subWork.Id] = _subWork.ShiftId });
-        _childrenReadRepository.GetChildWorksWithShiftClient(_container.Id, Arg.Any<CancellationToken>()).Returns(new List<Work>());
+        _childrenReadRepository.GetChildWorksWithShiftClient(_container.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<Work> { _subWork });
         _childrenReadRepository.GetChildBreaksWithAbsence(_container.Id, Arg.Any<CancellationToken>()).Returns(new List<Break>());
     }
 
@@ -402,6 +403,7 @@ public class UpdateContainerWorkChildrenReplacementGuardTests
             Substitute.For<IUserService>(), _childrenManager, Substitute.For<IOvertimeCascadeService>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<IWorkWriteGuard>(),
             new ReplacementWriteGuard(_clientRepository, _conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>()),
+            Substitute.For<IContainerChildrenWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
     }
 

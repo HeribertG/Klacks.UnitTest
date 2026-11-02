@@ -702,6 +702,10 @@ public class WorkVisibilityTests
     {
         var childrenReadRepository = Substitute.For<IContainerWorkChildrenReadRepository>();
         childrenReadRepository.GetParentWorkNoTracking(container.Id, Arg.Any<CancellationToken>()).Returns(container);
+        childrenReadRepository.GetChildWorksWithShiftClient(container.Id, Arg.Any<CancellationToken>()).Returns(new List<Work>());
+        childrenReadRepository.GetChildBreaksWithAbsence(container.Id, Arg.Any<CancellationToken>()).Returns(new List<Break>());
+        childrenReadRepository.GetWorkChangesForWorks(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<WorkChange>());
         var lockRepository = Substitute.For<IContainerLockRepository>();
         lockRepository.IsHeldBy(
                 Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -710,7 +714,7 @@ public class WorkVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
             lockRepository, Substitute.For<IUserService>(), childrenManager, _overtimeCascadeService,
-            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(),
+            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerChildrenWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager);
     }
