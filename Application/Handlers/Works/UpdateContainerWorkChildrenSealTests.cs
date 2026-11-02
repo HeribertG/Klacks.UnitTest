@@ -213,7 +213,7 @@ public class UpdateContainerWorkChildrenSealTests
             .Returns(true);
         var childrenGuard = new ContainerChildrenWriteGuard(
             _childrenReadRepository, new ParentWorkLockGuard(new WorkLockLevelService()),
-            Substitute.For<IDayLockService>(), _httpContextAccessor);
+            Substitute.For<IDayLockService>(), _httpContextAccessor, Substitute.For<IShiftRepository>());
         return new UpdateContainerWorkChildrenCommandHandler(
             _childrenReadRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IUnitOfWork>(), Substitute.For<IWorkNotificationFacade>(), lockRepository,

@@ -28,6 +28,7 @@ public class ContainerChildrenWriteGuardTests
     private IContainerWorkChildrenReadRepository _readRepository = null!;
     private IDayLockService _dayLockService = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IShiftRepository _shiftRepository = null!;
     private ContainerChildrenWriteGuard _guard = null!;
     private Work _container = null!;
     private Guid _scenarioToken;
@@ -40,6 +41,9 @@ public class ContainerChildrenWriteGuardTests
         _readRepository = Substitute.For<IContainerWorkChildrenReadRepository>();
         _dayLockService = Substitute.For<IDayLockService>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftRepository.GetWithClientByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Shift>());
         _scenarioToken = Guid.NewGuid();
         _container = new Work
         {
@@ -60,7 +64,8 @@ public class ContainerChildrenWriteGuardTests
             .Returns(Task.CompletedTask);
         GivenRole(null);
         _guard = new ContainerChildrenWriteGuard(
-            _readRepository, new ParentWorkLockGuard(new WorkLockLevelService()), _dayLockService, _httpContextAccessor);
+            _readRepository, new ParentWorkLockGuard(new WorkLockLevelService()), _dayLockService, _httpContextAccessor,
+            _shiftRepository);
     }
 
     [Test]
@@ -267,25 +272,99 @@ public class ContainerChildrenWriteGuardTests
     }
 
     [Test]
-    public async Task NewAndChangedWorkChanges_AndLeftOutOnes_AreCheckedAgainstTheDayTheyAreShownOn()
+    public async Task NewAndChangedWorkChanges_AndLeftOutOnes_AreCheckedAgainstTheDayTheyAreShownOn_InOneSealCheck()
     {
         var storedWork = SealedWork(WorkLockLevel.None);
-        var unchanged = Change(storedWork.Id, Guid.NewGuid());
-        var changedStored = Change(storedWork.Id, Guid.NewGuid());
-        var leftOut = Change(storedWork.Id, Guid.NewGuid());
+        var unchanged = Change(storedWork.Id, Guid.NewGuid(), Guid.NewGuid());
+        var changedStored = Change(storedWork.Id, Guid.NewGuid(), Guid.NewGuid());
+        var leftOut = Change(storedWork.Id, Guid.NewGuid(), Guid.NewGuid());
         var rebuiltUnchanged = Clone(unchanged);
         var rebuiltChanged = Clone(changedStored);
         rebuiltChanged.EndTime = new TimeOnly(18, 0);
-        var brandNew = Change(storedWork.Id, Guid.Empty);
+        var brandNew = Change(storedWork.Id, Guid.Empty, Guid.NewGuid());
 
         await Prepare(
             [storedWork], [], [unchanged, changedStored, leftOut],
             [Rebuilt(storedWork)], [], [rebuiltUnchanged, rebuiltChanged, brandNew]);
 
-        await _dayLockService.Received(1).EnsureWorkChangeNotLockedAsync(Arg.Any<Work>(), leftOut, Arg.Any<CancellationToken>());
-        await _dayLockService.Received(1).EnsureWorkChangeNotLockedAsync(Arg.Any<Work>(), rebuiltChanged, Arg.Any<CancellationToken>());
-        await _dayLockService.Received(1).EnsureWorkChangeNotLockedAsync(Arg.Any<Work>(), brandNew, Arg.Any<CancellationToken>());
-        await _dayLockService.DidNotReceive().EnsureWorkChangeNotLockedAsync(Arg.Any<Work>(), rebuiltUnchanged, Arg.Any<CancellationToken>());
+        _checkedDays.ShouldContain((Day, leftOut.ReplaceClientId!.Value, (Guid?)null));
+        _checkedDays.ShouldContain((Day, rebuiltChanged.ReplaceClientId!.Value, (Guid?)null));
+        _checkedDays.ShouldContain((Day, brandNew.ReplaceClientId!.Value, (Guid?)null));
+        _checkedDays.ShouldNotContain((Day, rebuiltUnchanged.ReplaceClientId!.Value, (Guid?)null));
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureWorkChangeNotLockedAsync(default!, default!, default);
+        await _dayLockService.Received(1).EnsureNoneLockedAsync(
+            Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ManyWorkChanges_ReadTheShiftsOnce()
+    {
+        var storedWork = SealedWork(WorkLockLevel.None);
+        var otherWork = SealedWork(WorkLockLevel.None);
+        otherWork.ShiftId = Guid.NewGuid();
+        var changes = Enumerable.Range(0, 40)
+            .Select(index => Change(index % 2 == 0 ? storedWork.Id : otherWork.Id, Guid.Empty, null))
+            .ToList();
+
+        await Prepare([storedWork, otherWork], [], [], [Rebuilt(storedWork), Rebuilt(otherWork)], [], changes);
+
+        await _shiftRepository.Received(1).GetWithClientByIdsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WorkChangeOfANightShift_IsPlacedOnTheFollowingDay_ForTheEmployeeAndTheReplacement()
+    {
+        var storedWork = SealedWork(WorkLockLevel.None);
+        storedWork.StartTime = new TimeOnly(22, 0);
+        storedWork.EndTime = new TimeOnly(6, 0);
+        _shiftRepository.GetWithClientByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Shift> { new() { Id = storedWork.ShiftId, StartShift = new TimeOnly(22, 0), EndShift = new TimeOnly(6, 0) } });
+        var replacement = Guid.NewGuid();
+        var afterMidnight = new WorkChange
+        {
+            Id = Guid.Empty, WorkId = storedWork.Id, Type = WorkChangeType.ReplacementWithin, ReplaceClientId = replacement,
+            StartTime = new TimeOnly(2, 0), EndTime = new TimeOnly(5, 0), ChangeTime = 3m,
+        };
+
+        await Prepare([storedWork], [], [], [Rebuilt(storedWork)], [], [afterMidnight]);
+
+        _checkedDays.ShouldContain((Day.AddDays(1), storedWork.ClientId, (Guid?)null));
+        _checkedDays.ShouldContain((Day.AddDays(1), replacement, (Guid?)null));
+    }
+
+    [Test]
+    public async Task WorkChangeOfAStoredSubWork_IsDayLockedForTheStoredEmployee_NotTheOneTheRequestNames()
+    {
+        var storedWork = SealedWork(WorkLockLevel.None);
+        storedWork.StartTime = new TimeOnly(22, 0);
+        storedWork.EndTime = new TimeOnly(6, 0);
+        _shiftRepository.GetWithClientByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Shift> { new() { Id = storedWork.ShiftId, StartShift = new TimeOnly(22, 0), EndShift = new TimeOnly(6, 0) } });
+        var rebuilt = Rebuilt(storedWork);
+        var otherEmployee = Guid.NewGuid();
+        rebuilt.ClientId = otherEmployee;
+        var afterMidnight = Change(storedWork.Id, Guid.Empty, null);
+        afterMidnight.Type = WorkChangeType.CorrectionEnd;
+
+        await Prepare([storedWork], [], [], [rebuilt], [], [afterMidnight]);
+
+        _checkedDays.ShouldContain((Day.AddDays(1), storedWork.ClientId, (Guid?)null));
+        _checkedDays.ShouldNotContain((Day.AddDays(1), otherEmployee, (Guid?)null));
+    }
+
+    [Test]
+    public async Task WorkChangeOfAScenarioSubWork_IsNotDayLocked()
+    {
+        _container.AnalyseToken = _scenarioToken;
+        var storedWork = SealedWork(WorkLockLevel.None);
+        storedWork.AnalyseToken = _scenarioToken;
+        var replacement = Guid.NewGuid();
+
+        await Prepare([storedWork], [], [], [Rebuilt(storedWork)], [], [Change(storedWork.Id, Guid.Empty, replacement)]);
+
+        _checkedDays.ShouldNotContain((Day, replacement, (Guid?)null));
+        await _shiftRepository.DidNotReceiveWithAnyArgs().GetWithClientByIdsAsync(default!, default);
     }
 
     [Test]
@@ -362,15 +441,16 @@ public class ContainerChildrenWriteGuardTests
         StartTime = stored.StartTime, EndTime = stored.EndTime,
     };
 
-    private static WorkChange Change(Guid workId, Guid id) => new()
+    private static WorkChange Change(Guid workId, Guid id, Guid? replaceClientId) => new()
     {
         Id = id, WorkId = workId, Type = WorkChangeType.CorrectionEnd, StartTime = Eight, EndTime = Sixteen, ChangeTime = 1m,
+        ReplaceClientId = replaceClientId,
     };
 
     private static WorkChange Clone(WorkChange change) => new()
     {
         Id = change.Id, WorkId = change.WorkId, Type = change.Type, StartTime = change.StartTime,
-        EndTime = change.EndTime, ChangeTime = change.ChangeTime,
+        EndTime = change.EndTime, ChangeTime = change.ChangeTime, ReplaceClientId = change.ReplaceClientId,
     };
 
     private void GivenRole(string? role)

@@ -10,6 +10,7 @@
 /// exactly the ones the delete takes.
 /// </summary>
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
@@ -119,6 +120,125 @@ public class ContainerWorkCascadeServiceTests
         reloadedWork.PreSealSealedBy.ShouldBeNull();
         reloadedBreak.PreSealLockLevel.ShouldBeNull();
         reloadedBreak.PreSealSealedBy.ShouldBeNull();
+    }
+
+    [TestCase(WorkLockLevel.Approved)]
+    [TestCase(WorkLockLevel.Closed)]
+    [TestCase(WorkLockLevel.Confirmed)]
+    public async Task UpdateLockLevelAsync_NeverLowersAChildThatIsSealedAsHighOrHigher(WorkLockLevel childLevel)
+    {
+        var sealedAt = DateTime.UtcNow.AddDays(-3);
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = childLevel, SealedAt = sealedAt, SealedBy = "supervisor",
+            PreSealLockLevel = WorkLockLevel.None, PreSealSealedBy = "earlier", PreSealSealedAt = sealedAt.AddDays(-1),
+        };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = childLevel, SealedAt = sealedAt, SealedBy = "supervisor", PreSealLockLevel = WorkLockLevel.None,
+        };
+        _context.Work.AddRange(parent, childWork);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        await _sut.UpdateLockLevelAsync(parent.Id, WorkLockLevel.Confirmed, "planner");
+        await _context.SaveChangesAsync();
+
+        var reloadedWork = await _context.Work.SingleAsync(w => w.Id == childWork.Id);
+        var reloadedBreak = await _context.Break.SingleAsync(b => b.Id == childBreak.Id);
+        reloadedWork.LockLevel.ShouldBe(childLevel);
+        reloadedWork.SealedBy.ShouldBe("supervisor");
+        reloadedWork.SealedAt.ShouldBe(sealedAt);
+        reloadedWork.PreSealLockLevel.ShouldBe(WorkLockLevel.None);
+        reloadedWork.PreSealSealedBy.ShouldBe("earlier");
+        reloadedBreak.LockLevel.ShouldBe(childLevel);
+        reloadedBreak.SealedBy.ShouldBe("supervisor");
+        reloadedBreak.PreSealLockLevel.ShouldBe(WorkLockLevel.None);
+    }
+
+    [Test]
+    public async Task UpdateLockLevelAsync_RaisesAnUnsealedChildAndLeavesAHigherOneAlone_InTheSameCall()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var open = new Work { Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var approved = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = WorkLockLevel.Approved, SealedBy = "supervisor",
+        };
+        _context.Work.AddRange(parent, open, approved);
+        await _context.SaveChangesAsync();
+
+        await _sut.UpdateLockLevelAsync(parent.Id, WorkLockLevel.Confirmed, "planner");
+        await _context.SaveChangesAsync();
+
+        (await _context.Work.SingleAsync(w => w.Id == open.Id)).LockLevel.ShouldBe(WorkLockLevel.Confirmed);
+        (await _context.Work.SingleAsync(w => w.Id == approved.Id)).LockLevel.ShouldBe(WorkLockLevel.Approved);
+    }
+
+    [Test]
+    public async Task GetLiveChildrenAsync_ReturnsTheLiveChildWorksAndBreaksOfTheGivenParents_Untracked()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var otherParent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var foreignParent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = WorkLockLevel.Approved,
+        };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = otherParent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = WorkLockLevel.Closed,
+        };
+        var foreignChild = new Work { Id = Guid.NewGuid(), ParentWorkId = foreignParent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var deletedChild = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date, IsDeleted = true,
+        };
+        _context.Work.AddRange(parent, otherParent, foreignParent, childWork, foreignChild, deletedChild);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var children = await _sut.GetLiveChildrenAsync([parent.Id, otherParent.Id]);
+
+        children.Works.Select(w => w.Id).ShouldBe([childWork.Id]);
+        children.Works[0].LockLevel.ShouldBe(WorkLockLevel.Approved);
+        children.Breaks.Select(b => b.Id).ShouldBe([childBreak.Id]);
+        _context.ChangeTracker.Entries().ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetLiveChildrenAsync_WithoutParents_ReturnsNone()
+    {
+        var children = await _sut.GetLiveChildrenAsync([]);
+
+        children.Works.ShouldBeEmpty();
+        children.Breaks.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task DeleteChildrenAsync_AndMoveChildrenAsync_DoNotCheckLocks_TheHandlersDoThatBeforeStaging()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var closed = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = WorkLockLevel.Closed,
+        };
+        _context.Work.AddRange(parent, closed);
+        await _context.SaveChangesAsync();
+
+        await _sut.MoveChildrenAsync(parent.Id, _date, _targetClientId);
+        await _sut.DeleteChildrenAsync(parent.Id);
+        await _context.SaveChangesAsync();
+
+        (await _context.Work.CountAsync(w => w.ParentWorkId == parent.Id && !w.IsDeleted)).ShouldBe(0);
     }
 
     [Test]
