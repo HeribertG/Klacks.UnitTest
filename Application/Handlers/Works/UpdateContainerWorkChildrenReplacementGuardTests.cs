@@ -224,6 +224,113 @@ public class UpdateContainerWorkChildrenReplacementGuardTests
             default, default, default, default, default, default!, default!, default!, default);
     }
 
+    [Test]
+    public async Task ReplacementOnAForeignWork_IsAnsweredLikeAMissingContainer_AndNothingIsWritten()
+    {
+        GivenStored();
+        var foreign = Requested(WorkChangeType.ReplacementWithin, _personId);
+        foreign.WorkId = Guid.NewGuid();
+
+        var exception = await Should.ThrowAsync<KeyNotFoundException>(() => Save(Resource(foreign)));
+
+        exception.Message.ShouldBe(string.Format(ContainerLockMessages.WorkNotFound, _container.Id));
+        await WasNotWritten();
+    }
+
+    [Test]
+    public async Task CorrectionOnAForeignWork_IsRefusedToo()
+    {
+        GivenStored();
+        var foreign = Requested(WorkChangeType.CorrectionEnd, null);
+        foreign.WorkId = Guid.NewGuid();
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Save(Resource(foreign)));
+
+        await WasNotWritten();
+    }
+
+    [Test]
+    public async Task StoredChangeMovedToAForeignWork_IsRefused()
+    {
+        var stored = Stored(WorkChangeType.ReplacementWithin, _personId);
+        GivenStored(stored);
+        var moved = ToRequest(stored);
+        moved.WorkId = Guid.NewGuid();
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Save(Resource(moved)));
+
+        await WasNotWritten();
+    }
+
+    [Test]
+    public async Task ChangeOnTheContainerItself_IsRefused()
+    {
+        GivenStored();
+        var onContainer = Requested(WorkChangeType.CorrectionEnd, null);
+        onContainer.WorkId = _container.Id;
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Save(Resource(onContainer)));
+
+        await WasNotWritten();
+    }
+
+    [Test]
+    public async Task ChangeWithAnEmptyWorkId_IsRefused()
+    {
+        GivenStored();
+        var empty = Requested(WorkChangeType.CorrectionEnd, null);
+        empty.WorkId = Guid.Empty;
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Save(Resource(empty)));
+
+        await WasNotWritten();
+    }
+
+    [Test]
+    public async Task ChangeOnANewSubWorkOfTheRequest_IsAccepted()
+    {
+        GivenStored();
+        var resource = Resource(Requested(WorkChangeType.CorrectionEnd, null));
+        var newSubWorkId = Guid.NewGuid();
+        resource.SubWorks.Add(new WorkResource
+        {
+            Id = newSubWorkId, ClientId = _subWork.ClientId, ShiftId = _subWork.ShiftId, CurrentDate = Day,
+            StartTime = WorkStart, EndTime = WorkEnd,
+        });
+        resource.SubWorkChanges[0].WorkId = newSubWorkId;
+
+        await Save(resource);
+
+        await _childrenManager.ReceivedWithAnyArgs(1).UpdateChildrenAsync(
+            default, default, default, default, default, default!, default!, default!, default);
+    }
+
+    [Test]
+    public async Task ReplacementOnAStoredSubWorkThatTheRequestDoesNotName_IsCheckedAgainstThatSubWork()
+    {
+        var otherStored = new Work
+        {
+            Id = Guid.NewGuid(), ClientId = _container.ClientId, ShiftId = _container.ShiftId, CurrentDate = Day,
+            StartTime = new TimeOnly(18, 0), EndTime = new TimeOnly(22, 0),
+        };
+        _childrenReadRepository.GetChildWorkShiftIds(_container.Id, Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, Guid> { [_subWork.Id] = _subWork.ShiftId, [otherStored.Id] = otherStored.ShiftId });
+        _childrenReadRepository.GetChildWorksWithShiftClient(_container.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<Work> { _subWork, otherStored });
+        GivenStored();
+        var change = Requested(WorkChangeType.ReplacementStart, _personId);
+        change.WorkId = otherStored.Id;
+        change.StartTime = default;
+        change.EndTime = default;
+
+        await Save(Resource(change));
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1
+                && rows[0].StartTime == new TimeOnly(18, 0) && rows[0].EndTime == new TimeOnly(22, 0)),
+            Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), null, Arg.Any<CancellationToken>());
+    }
+
     private Task Save(UpdateContainerWorkChildrenResource resource)
         => NewHandler().Handle(new UpdateContainerWorkChildrenCommand(_container.Id, resource), CancellationToken.None);
 
