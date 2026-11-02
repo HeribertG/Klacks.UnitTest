@@ -5,7 +5,9 @@
 /// automatically): each input entry - every kind including an unknown one, every quantity unit, mapped and unmapped
 /// absences, with and without a surcharge wage type - is either emitted or counted in exactly one skip counter.
 /// Also: an unparsable absence mapping is reported, never silently treated as an empty mapping, and no formatter
-/// writes a day-based entry into an hours-only field.
+/// writes a day-based entry into an hours-only field. The invariant is checked with each formatter's legacy mapping
+/// shape (MappingJsonFor: Merit's plain string, LonArt/Kod for PAXml/POHODA) and with the common shape
+/// {"WageType":"…","Ausfallschluessel":"…"} that every formatter must accept.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Interfaces.Exports;
@@ -19,6 +21,7 @@ public class PayrollFormatterAccountingInvariantTests
 {
     private const PayrollEntryKind UnknownKind = (PayrollEntryKind)99;
     private const string InvalidMappingJson = "{ this is not json";
+    private const string CommonWageType = "2000";
 
     private static readonly Guid MappedAbsenceId = Guid.NewGuid();
     private static readonly Guid UnmappedAbsenceId = Guid.NewGuid();
@@ -60,6 +63,36 @@ public class PayrollFormatterAccountingInvariantTests
             entries.Count,
             $"{formatter.FormatKey}: emitted {result.EmittedEntryCount}, skipped {result.TotalSkippedCount}");
         result.AbsenceMappingInvalid.ShouldBeFalse();
+    }
+
+    [TestCaseSource(nameof(FormatterCases))]
+    public void EveryEntry_IsEmittedOrCountedExactlyOnce_WithCommonMappingShape(IPayrollExportFormatter formatter, string surchargeWageType)
+    {
+        var entries = AllEntryCombinations().ToList();
+
+        var result = formatter.Format(DataWith(entries), Config(formatter.FormatKey, surchargeWageType, CommonMappingJson()));
+
+        (result.EmittedEntryCount + result.TotalSkippedCount).ShouldBe(
+            entries.Count,
+            $"{formatter.FormatKey}: emitted {result.EmittedEntryCount}, skipped {result.TotalSkippedCount}");
+        result.AbsenceMappingInvalid.ShouldBeFalse();
+    }
+
+    [TestCase(PayrollExportConstants.FormatKeyMeritPalkEe)]
+    [TestCase(PayrollExportConstants.FormatKeyPaxmlSe)]
+    [TestCase(PayrollExportConstants.FormatKeyPohodaCz)]
+    public void FormatSpecificLayouts_EmitMappedAbsence_InBothMappingShapes(string formatKey)
+    {
+        var formatter = AllFormatters().Single(f => f.FormatKey == formatKey);
+        var entries = new List<PayrollDayEntry> { Entry(PayrollEntryKind.Absence, PayrollQuantityUnit.Hours, MappedAbsenceId, 5) };
+
+        foreach (var mappingJson in new[] { MappingJsonFor(formatKey), CommonMappingJson() })
+        {
+            var result = formatter.Format(DataWith(entries), Config(formatKey, "1010", mappingJson));
+
+            result.EmittedEntryCount.ShouldBe(1, $"{formatKey} with mapping {mappingJson}");
+            result.SkippedAbsenceCount.ShouldBe(0, $"{formatKey} with mapping {mappingJson}");
+        }
     }
 
     [TestCaseSource(nameof(FormatterOnlyCases))]
@@ -164,6 +197,11 @@ public class PayrollFormatterAccountingInvariantTests
         return formatKey == PayrollExportConstants.FormatKeyMeritPalkEe
             ? $"{{\"{MappedAbsenceId}\":\"PIK\"}}"
             : $"{{\"{MappedAbsenceId}\":{{\"WageType\":\"2000\",\"Ausfallschluessel\":\"K\",\"LonArt\":\"2000\",\"Kod\":\"K\"}}}}";
+    }
+
+    private static string CommonMappingJson()
+    {
+        return $"{{\"{MappedAbsenceId}\":{{\"WageType\":\"{CommonWageType}\",\"Ausfallschluessel\":\"K\"}}}}";
     }
 
     private static IEnumerable<IPayrollExportFormatter> AllFormatters()

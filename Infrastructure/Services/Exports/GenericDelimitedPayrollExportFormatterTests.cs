@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for the generic Tier-A delimited payroll formatter: header row, ISO dates, delimiter/
-/// encoding from config, wage-type mapping, surcharge gating and unmapped-absence skipping.
+/// encoding from config, wage-type mapping, surcharge gating and skip accounting for empty base wage types,
+/// surcharge wage types and absence wage types.
 /// </summary>
 
 using System.Text;
@@ -192,6 +193,84 @@ public class GenericDelimitedPayrollExportFormatterTests
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(1);
         Lines(result.Content).Length.ShouldBe(1);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase(";")]
+    public void Format_WorkHoursWithEmptyBaseWageType_IsSkippedAndCounted(string baseWageType)
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var result = _formatter.Format(data, Config(baseWageType: baseWageType));
+
+        Lines(result.Content).ShouldBe(new[] { "PersonnelNumber;Date;WageType;Quantity" });
+        result.RecordCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedBaseWageCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_SurchargeWithWhitespaceSurchargeWageType_IsSkippedAndCounted()
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.Surcharge,
+            Quantity = 2m,
+        });
+
+        var result = _formatter.Format(data, Config(surchargeWageType: "  "));
+
+        Lines(result.Content).Length.ShouldBe(1);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    public void Format_AbsenceMappedToEmptyWageType_IsSkippedAndCounted(string wageType)
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"K\",\"wageType\":\"{wageType}\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 20),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Lines(result.Content).Length.ShouldBe(1);
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_MixedEntries_WritesExactRows()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"WageType\":\"2000\",\"Ausfallschluessel\":\"K\"}}}}";
+        var data = DataWith(
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 8.5m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.Surcharge, Quantity = 1.25m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 20), Kind = PayrollEntryKind.Absence, Quantity = 8m, AbsenceId = absenceId });
+
+        var result = _formatter.Format(data, Config(baseWageType: " 1000 ", surchargeWageType: "1010", absenceMappingJson: mapping));
+
+        Encoding.UTF8.GetString(result.Content).ShouldBe(
+            "PersonnelNumber;Date;WageType;Quantity\r\n"
+            + "42;2026-01-15;1000;8.50\r\n"
+            + "42;2026-01-15;1010;1.25\r\n"
+            + "42;2026-01-20;2000;8.00\r\n");
+        result.RecordCount.ShouldBe(3);
+        result.TotalSkippedCount.ShouldBe(0);
     }
 
     [Test]

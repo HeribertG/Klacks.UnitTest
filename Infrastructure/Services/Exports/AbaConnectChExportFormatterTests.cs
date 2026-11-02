@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for the Abacus AbaConnect "LOHN FlatPreEntry" CH formatter: XML envelope structure,
-/// field population, surcharge gating and unmapped-absence skipping.
+/// field population (no Factor), exact PreEntry output, PayrollType validation (1-8 digits), surcharge gating and
+/// skip accounting for unmapped base wages, surcharges and absences.
 /// </summary>
 
 using System.Text;
@@ -99,7 +100,7 @@ public class AbaConnectChExportFormatterTests
     }
 
     [Test]
-    public void Format_WorkHours_PopulatesEmployeeNumberPeriodDatePayrollTypeAmountAndFactor()
+    public void Format_WorkHours_PopulatesEmployeeNumberPeriodDatePayrollTypeAndAmount_WithoutFactor()
     {
         var data = DataWith(new PayrollDayEntry
         {
@@ -119,7 +120,7 @@ public class AbaConnectChExportFormatterTests
         preEntry.Element("PeriodNumber")!.Value.ShouldBe("01");
         preEntry.Element("PayrollType")!.Value.ShouldBe("1000");
         preEntry.Element("Amount")!.Value.ShouldBe("8.500000");
-        preEntry.Element("Factor")!.Value.ShouldBe("1.000000");
+        preEntry.Element("Factor").ShouldBeNull();
 
         result.RecordCount.ShouldBe(1);
         result.SkippedAbsenceCount.ShouldBe(0);
@@ -244,5 +245,108 @@ public class AbaConnectChExportFormatterTests
         xml.Root!.Elements("Task").Count().ShouldBe(1);
         xml.Root!.XPathSelectElements(PreEntryXPath).Count().ShouldBe(2);
         result.RecordCount.ShouldBe(2);
+    }
+
+    [Test]
+    public void Format_WorkHours_WritesExactPreEntryWithoutFactor()
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8.5m,
+        });
+
+        var text = Encoding.UTF8.GetString(_formatter.Format(data, Config(baseWageType: "1000")).Content);
+
+        text.ShouldContain(
+            "      <PreEntry mode=\"SAVE\">\r\n"
+            + "        <EmployeeNumber>42</EmployeeNumber>\r\n"
+            + "        <PeriodDate>2026-01-15</PeriodDate>\r\n"
+            + "        <PeriodNumber>01</PeriodNumber>\r\n"
+            + "        <PayrollType>1000</PayrollType>\r\n"
+            + "        <Amount>8.500000</Amount>\r\n"
+            + "      </PreEntry>\r\n");
+        text.ShouldNotContain("Factor");
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("LOHN")]
+    [TestCase("10.5")]
+    [TestCase("-1000")]
+    [TestCase("123456789")]
+    public void Format_WorkHoursWithEmptyOrNonNumericBaseWageType_IsSkippedAndCounted(string baseWageType)
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var result = _formatter.Format(data, Config(baseWageType: baseWageType));
+
+        Parse(result.Content).Root!.XPathSelectElements(PreEntryXPath).ShouldBeEmpty();
+        result.RecordCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedBaseWageCount.ShouldBe(1);
+    }
+
+    [TestCase("1")]
+    [TestCase("12345678")]
+    [TestCase(" 1000 ")]
+    public void Format_PayrollTypeOfOneToEightDigits_IsWrittenTrimmed(string baseWageType)
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var result = _formatter.Format(data, Config(baseWageType: baseWageType));
+        var preEntry = Parse(result.Content).Root!.XPathSelectElement(PreEntryXPath);
+
+        preEntry!.Element("PayrollType")!.Value.ShouldBe(baseWageType.Trim());
+        result.RecordCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_SurchargeWithNonNumericSurchargeWageType_IsSkippedAndCounted()
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.Surcharge,
+            Quantity = 2m,
+        });
+
+        var result = _formatter.Format(data, Config(surchargeWageType: "ZUSCHLAG"));
+
+        result.RecordCount.ShouldBe(0);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    [TestCase("K01")]
+    public void Format_AbsenceMappedToEmptyOrNonNumericWageType_IsSkippedAndCounted(string wageType)
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"WageType\":\"{wageType}\",\"Ausfallschluessel\":\"K\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 20),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Parse(result.Content).Root!.XPathSelectElements(PreEntryXPath).ShouldBeEmpty();
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(1);
     }
 }

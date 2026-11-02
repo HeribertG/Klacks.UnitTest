@@ -122,8 +122,8 @@ public class ClientPeriodExportAbsenceTests
         var absenceRows = csv.Split(ExportConstants.LineEnding).Where(l => l.StartsWith("Absence;")).ToList();
 
         absenceRows.Count.ShouldBe(2);
-        absenceRows[0].ShouldBe("Absence;5;Muster, Max;Employee;2026-01-12;;12:00;14:00;2.00;;Ferien;");
-        absenceRows[1].ShouldBe("Absence;5;Muster, Max;Employee;2026-01-18;;00:00;23:59;0.00;;Pikett;1");
+        absenceRows[0].ShouldBe("Absence;5;Muster, Max;Employee;2026-01-12;;12:00;14:00;2.00;;Ferien;;;;;;");
+        absenceRows[1].ShouldBe("Absence;5;Muster, Max;Employee;2026-01-18;;00:00;23:59;0.00;;Pikett;1;;;;;");
     }
 
     [Test]

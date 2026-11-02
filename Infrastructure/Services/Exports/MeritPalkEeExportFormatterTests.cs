@@ -4,7 +4,8 @@
 /// Unit tests for the Merit Palk (Estonia) "Tasude import" formatter against the vendor spec
 /// (merit-palga-tasude-import-formaadi-kirjeldus.pdf, May 2023): exact byte output of header and data rows,
 /// fixed semicolon delimiter, comma decimal separator, UTF-8 without BOM, CRLF, per-employee/per-code
-/// aggregation, rounding, wage-code mapping, deduction sign pass-through and skip accounting.
+/// aggregation, rounding, wage-code mapping (plain-string and common {"WageType":…} mapping shape), deduction sign
+/// pass-through and skip accounting.
 /// </summary>
 
 using System.Text;
@@ -257,6 +258,75 @@ public class MeritPalkEeExportFormatterTests
         Decode(result.Content).ShouldBe(ExpectedHeader);
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(2);
+    }
+
+    [Test]
+    public void Format_CommonMappingShape_UsesWageTypeAsImportCode()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"WageType\":\"PIK\",\"Ausfallschluessel\":\"K\"}}}}";
+        var data = DataWith(Hours(PayrollEntryKind.Absence, 20, 8m, absenceId));
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Decode(result.Content).ShouldBe(ExpectedHeader + "42;Tamm, Mari;;PIK;;8,00;;;;;;" + Crlf);
+        result.RecordCount.ShouldBe(1);
+        result.EmittedEntryCount.ShouldBe(1);
+        result.SkippedAbsenceCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void Format_CommonMappingShape_MatchesWageTypeCaseInsensitively()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"wageType\":\" 200 \"}}}}";
+        var data = DataWith(Hours(PayrollEntryKind.Absence, 20, 4m, absenceId));
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Decode(result.Content).ShouldBe(ExpectedHeader + "42;Tamm, Mari;;200;;4,00;;;;;;" + Crlf);
+    }
+
+    [Test]
+    public void Format_PlainStringAndCommonShapeInOneMapping_BothResolve()
+    {
+        var plainId = Guid.NewGuid();
+        var objectId = Guid.NewGuid();
+        var mapping = $"{{\"{plainId}\":\"PIK\",\"{objectId}\":{{\"WageType\":\"HAIGUS\"}}}}";
+        var data = DataWith(
+            Hours(PayrollEntryKind.Absence, 20, 8m, plainId),
+            Hours(PayrollEntryKind.Absence, 21, 6m, objectId));
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Decode(result.Content).ShouldBe(
+            ExpectedHeader
+            + "42;Tamm, Mari;;PIK;;8,00;;;;;;" + Crlf
+            + "42;Tamm, Mari;;HAIGUS;;6,00;;;;;;" + Crlf);
+        result.AbsenceMappingInvalid.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Format_CommonShapeWithoutUsableWageType_IsSkippedAndCounted()
+    {
+        var emptyId = Guid.NewGuid();
+        var whitespaceId = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
+        var numberId = Guid.NewGuid();
+        var mapping = $"{{\"{emptyId}\":{{\"WageType\":\"\"}},\"{whitespaceId}\":\"   \","
+            + $"\"{missingId}\":{{\"Ausfallschluessel\":\"K\"}},\"{numberId}\":200}}";
+        var data = DataWith(
+            Hours(PayrollEntryKind.Absence, 20, 8m, emptyId),
+            Hours(PayrollEntryKind.Absence, 21, 8m, whitespaceId),
+            Hours(PayrollEntryKind.Absence, 22, 8m, missingId),
+            Hours(PayrollEntryKind.Absence, 23, 8m, numberId));
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Decode(result.Content).ShouldBe(ExpectedHeader);
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(4);
+        result.AbsenceMappingInvalid.ShouldBeFalse();
     }
 
     [Test]

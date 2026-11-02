@@ -326,6 +326,64 @@ public class ClientPeriodExportDataLoaderTests
     }
 
     [Test]
+    public async Task LoadAsync_SoftDeletedEmployee_ClosedWorkAndPeriodHoursAreStillExported()
+    {
+        var deletedClientId = Guid.NewGuid();
+        var deletedWorkId = Guid.NewGuid();
+        _context.Client.Add(new Client
+        {
+            Id = deletedClientId,
+            Type = EntityTypeEnum.Employee,
+            IdNumber = 401,
+            Name = "Gone",
+            FirstName = "One",
+            IsDeleted = true,
+        });
+        _context.Work.Add(new Work
+        {
+            Id = deletedWorkId,
+            ClientId = deletedClientId,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = new DateOnly(2026, 1, 14),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8,
+            LockLevel = WorkLockLevel.Closed,
+        });
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = deletedClientId,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = new DateOnly(2026, 1, 15),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8,
+            LockLevel = WorkLockLevel.Closed,
+            IsDeleted = true,
+        });
+        _context.ClientPeriodHours.Add(new ClientPeriodHours
+        {
+            Id = Guid.NewGuid(),
+            ClientId = deletedClientId,
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 1, 31),
+            Hours = 8m,
+            Surcharges = 0m,
+            PaymentInterval = PaymentInterval.Monthly,
+        });
+        _context.SaveChanges();
+
+        var result = await _loader.LoadAsync(FromDate, UntilDate);
+
+        var deletedGroup = result.Clients.Single(c => c.ClientId == deletedClientId);
+        deletedGroup.ClientName.ShouldBe("Gone, One");
+        deletedGroup.ClientIdNumber.ShouldBe(401);
+        deletedGroup.WorkEntries.ShouldHaveSingleItem().WorkId.ShouldBe(deletedWorkId);
+        deletedGroup.PeriodHours.ShouldHaveSingleItem().Hours.ShouldBe(8m);
+    }
+
+    [Test]
     public async Task LoadAsync_ReturnsEmptyClients_WhenNoWorkInRange()
     {
         var farFuture = new DateOnly(2030, 1, 1);
