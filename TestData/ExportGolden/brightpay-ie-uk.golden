@@ -1,5 +1,3 @@
-Works number;Description;Number of normal hours;Number of time and a half hours
-42;1000;8.50;
-42;1010;;1.25
-42;2000;8.00;
-77;1000;8.00;
+Employee works number,Payment 1 - Description,Payment 1 - Number of normal hours,Payment 2 - Description,Payment 2 - Number of normal hours,Payment 3 - Description,Payment 3 - Number of normal hours,Payment 4 - Description,Payment 4 - Number of normal hours,Payment 5 - Description,Payment 5 - Number of normal hours
+42,1000,8.50,1010,1.25,2000,8.00,,,,
+77,1000,8.00,,,,,,,,
