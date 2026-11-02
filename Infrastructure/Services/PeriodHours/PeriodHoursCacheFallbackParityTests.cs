@@ -38,6 +38,7 @@ using Klacks.Api.Infrastructure.Services.Clients;
 public class PeriodHoursCacheFallbackParityTests
 {
     private static readonly Guid ClientId = Guid.NewGuid();
+    private static readonly Guid ReplacementClientId = Guid.NewGuid();
     private static readonly DateOnly Start = new(2026, 3, 1);
     private static readonly DateOnly End = new(2026, 3, 31);
     private static readonly DateOnly WorkDay = new(2026, 3, 10);
@@ -55,6 +56,104 @@ public class PeriodHoursCacheFallbackParityTests
 
     [TearDown]
     public void TearDown() => _context.Dispose();
+
+    [Test]
+    public async Task PeriodHours_CachePathAndFallbackPath_ProduceIdenticalSurcharges()
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            CurrentDate = WorkDay,
+            WorkTime = 5m,
+            Surcharges = 1m,
+            AnalyseToken = null,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(13, 0),
+        };
+        _context.Work.Add(work);
+
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            CurrentDate = WorkDay.AddDays(1),
+            WorkTime = 0m,
+            Surcharges = 0.5m,
+            AnalyseToken = null,
+        });
+
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Type = WorkChangeType.CorrectionStart,
+            ChangeTime = 2m,
+            Surcharges = 0.25m,
+            ToInvoice = true,
+            AnalyseToken = null,
+            StartTime = new TimeOnly(13, 0),
+            EndTime = new TimeOnly(15, 0),
+        });
+
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Type = WorkChangeType.ReplacementStart,
+            ChangeTime = 1m,
+            Surcharges = 0.1m,
+            ToInvoice = true,
+            ReplaceClientId = ReplacementClientId,
+            AnalyseToken = null,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(9, 0),
+        });
+        await _context.SaveChangesAsync();
+
+        var (periodHoursService, workRepository) = CreateServices();
+        var clientIds = new List<Guid> { ClientId, ReplacementClientId };
+
+        var core = await periodHoursService.GetPeriodHoursAsync(clientIds, Start, End);
+        var fallback = await workRepository.GetPeriodHoursForClients(clientIds, Start, End);
+
+        // Original client: work 1 + break 0.5 + correction 0.25 - handed-over replacement 0.1 = 1.65.
+        // The billable flag is an invoice marker and never adds the correction's ChangeTime as a surcharge.
+        const decimal expectedOriginal = 1.65m;
+        const decimal expectedReplacement = 0.1m;
+
+        core[ClientId].Surcharges.ShouldBe(expectedOriginal);
+        core[ReplacementClientId].Surcharges.ShouldBe(expectedReplacement);
+        fallback[ClientId].Surcharges.ShouldBe(expectedOriginal);
+        fallback[ReplacementClientId].Surcharges.ShouldBe(expectedReplacement);
+    }
+
+    private (PeriodHoursService PeriodHours, WorkRepository Works) CreateServices()
+    {
+        var contractDataProvider = Substitute.For<IClientContractDataProvider>();
+        contractDataProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<Guid, EffectiveContractData>());
+
+        var periodHoursService = new PeriodHoursService(
+            _context,
+            Substitute.For<ILogger<PeriodHoursService>>(),
+            Substitute.For<IWorkNotificationService>(),
+            Substitute.For<IClientGroupFilterService>(),
+            contractDataProvider,
+            Substitute.For<IWeekConfiguration>());
+
+        var workRepository = new WorkRepository(
+            _context,
+            Substitute.For<ILogger<Work>>(),
+            Substitute.For<IClientBaseQueryService>(),
+            Substitute.For<IWorkMacroService>(),
+            contractDataProvider);
+
+        return (periodHoursService, workRepository);
+    }
 
     [Test]
     public async Task PeriodHours_CachePathAndFallbackPath_ProduceIdenticalHours()
@@ -85,25 +184,7 @@ public class PeriodHoursCacheFallbackParityTests
         });
         await _context.SaveChangesAsync();
 
-        var contractDataProvider = Substitute.For<IClientContractDataProvider>();
-        contractDataProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData>());
-
-        var periodHoursService = new PeriodHoursService(
-            _context,
-            Substitute.For<ILogger<PeriodHoursService>>(),
-            Substitute.For<IWorkNotificationService>(),
-            Substitute.For<IClientGroupFilterService>(),
-            contractDataProvider,
-            Substitute.For<IWeekConfiguration>());
-
-        var workRepository = new WorkRepository(
-            _context,
-            Substitute.For<ILogger<Work>>(),
-            Substitute.For<IClientBaseQueryService>(),
-            Substitute.For<IWorkMacroService>(),
-            contractDataProvider);
+        var (periodHoursService, workRepository) = CreateServices();
 
         var clientIds = new List<Guid> { ClientId };
 
