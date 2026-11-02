@@ -86,6 +86,69 @@ public class ShiftCutFacadeHierarchyTests
     }
 
     [Test]
+    public async Task Create_UnderASealedOrder_StartsItsOwnTree()
+    {
+        Store(Stored(_sealedOrderId, ShiftStatus.SealedOrder, originalId: null));
+
+        await _facade.ProcessBatchCutsAsync([Create(_sealedOrderId, Piece(_pieceId, originalId: null, clientId: null))]);
+
+        _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), null, null);
+    }
+
+    [Test]
+    public async Task Create_UnderAPlannableShiftWithAnOrder_StartsItsOwnTree()
+    {
+        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: _sealedOrderId));
+
+        await _facade.ProcessBatchCutsAsync([Create(_originalShiftId, Piece(_pieceId, originalId: null, clientId: null))]);
+
+        _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), null, null);
+        await _shiftRepository.DidNotReceiveWithAnyArgs().MakeOwnRootAsync(default);
+    }
+
+    [Test]
+    public async Task Create_UnderAShiftWithoutAnOrder_IsItsChild_AndMakesItTheRoot()
+    {
+        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null));
+        var head = Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null);
+        head.RootId = _originalShiftId;
+        _shiftRepository.MakeOwnRootAsync(_originalShiftId).Returns(head);
+        _shiftRepository.CutList(_originalShiftId).Returns([head]);
+
+        await _facade.ProcessBatchCutsAsync([Create(_originalShiftId, Piece(_pieceId, originalId: null, clientId: null))]);
+
+        _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), _originalShiftId, _originalShiftId);
+    }
+
+    [Test]
+    public async Task Create_UnderACutPiece_IsItsChild_WithTheRootOfThePiece()
+    {
+        var rootId = Guid.NewGuid();
+        var parent = Stored(_foreignId, ShiftStatus.SplitShift, originalId: _sealedOrderId);
+        parent.RootId = rootId;
+        Store(parent);
+
+        await _facade.ProcessBatchCutsAsync([Create(_foreignId, Piece(_pieceId, originalId: null, clientId: null))]);
+
+        _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), _foreignId, rootId);
+    }
+
+    [Test]
+    public async Task Create_NamingItselfAsParent_IsACircle_AnUpdateIsNot()
+    {
+        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null));
+        _shiftRepository.CutList(_originalShiftId).Returns([_stored[_originalShiftId]]);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _facade.ProcessBatchCutsAsync(
+            [Create(_pieceId, Piece(_pieceId, originalId: null, clientId: null))]));
+
+        await _facade.ProcessBatchCutsAsync(
+            [new CutOperation { Type = CutOperation.UpdateType, ParentId = _originalShiftId.ToString(), Data = Piece(_originalShiftId, originalId: null, clientId: null) }]);
+
+        await _shiftRepository.Received(1).PutCutUpdate(Arg.Is<Shift>(s => s.Id == _originalShiftId));
+    }
+
+    [Test]
     public async Task Create_FromStoredPlannableShift_TakesTheOrderReferenceOfTheParent()
     {
         Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: _sealedOrderId));
