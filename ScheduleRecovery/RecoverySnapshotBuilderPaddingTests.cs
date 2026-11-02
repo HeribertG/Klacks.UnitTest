@@ -116,7 +116,6 @@ public sealed class RecoverySnapshotBuilderPaddingTests
             Change(ApiWorkChangeType.CorrectionEnd, 2m),
             Change(ApiWorkChangeType.TravelWithin, 0.25m, 11, 12),
         };
-        cells[1].SourceId = Guid.NewGuid();
 
         var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
 
@@ -130,6 +129,21 @@ public sealed class RecoverySnapshotBuilderPaddingTests
         second.LeadHours.ShouldBe(0m);
         second.TrailHours.ShouldBe(2.5m);
         second.ExtraPaidHours.ShouldBe(2m);
+    }
+
+    [Test]
+    public void The_trail_on_the_day_after_the_merged_cells_is_read_from_the_unmerged_cells()
+    {
+        var debriefing = Change(ApiWorkChangeType.Debriefing, 1.5m);
+        debriefing.EntryDate = Date.AddDays(1);
+        var merged = new List<ScheduleCell> { WorkCell(8, 16) };
+        var all = new List<ScheduleCell> { WorkCell(8, 16), debriefing };
+
+        var withoutAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), out _);
+        var withAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), out _, all);
+
+        withoutAll[new CellKey(Original, Day)].ShouldHaveSingleItem().TrailHours.ShouldBe(0m);
+        withAll[new CellKey(Original, Day)].ShouldHaveSingleItem().TrailHours.ShouldBe(1.5m);
     }
 
     [Test]

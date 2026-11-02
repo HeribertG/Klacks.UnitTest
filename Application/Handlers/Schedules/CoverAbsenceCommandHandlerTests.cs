@@ -543,6 +543,58 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
+    public async Task ExtraPaidHoursOfARelocatedWork_GoToTheRecipientAndNotOutOfTheGiver()
+    {
+        var pivotId = Guid.NewGuid();
+        var pivotShiftId = Guid.NewGuid();
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(pivotId, "Pivot")
+            .Agent(CandidateId, "Bob", blacklistedShiftIds: [ShiftId])
+            .PaddedWork(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, workIds: [WorkId])
+            .PaddedWork(pivotId, Date, pivotShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(6, 0)), Date.ToDateTime(new TimeOnly(14, 0)), 8m,
+                extraPaidHours: 1.5m, workIds: [Guid.NewGuid()])
+            .Build());
+
+        var outcome = await Cover();
+
+        outcome.Covered.ShouldNotBeEmpty();
+        await _conflictChecker.Received().CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows =>
+                rows.Any(r => r.ClientId == CandidateId && r.ExtraPaidHours == 1.5m)),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(rows => rows.Any(r => r.ClientId == pivotId)),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARemainderAfterMidnight_IsCheckedOnTheNextCalendarDay()
+    {
+        var next = Date.AddDays(1);
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date, next)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Bob")
+            .PaddedWork(ClientId, Date, ShiftId, ShiftCategory.Night,
+                next.ToDateTime(new TimeOnly(4, 0)), next.ToDateTime(new TimeOnly(6, 0)), 2m, workIds: [WorkId])
+            .Build());
+
+        var outcome = await Cover();
+
+        outcome.Covered.Count.ShouldBe(1);
+        await _conflictChecker.Received().CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows =>
+                rows.Any(r => r.ClientId == CandidateId && r.Date == next
+                    && r.StartTime == new TimeOnly(4, 0) && r.EndTime == new TimeOnly(6, 0))),
+            Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task StructuralBlock_NeverOverridable_ReportedAsUncovered_EvenWhenOverrideAuthorized()
     {
         var structuralCheck = new PreCommitCheckResult(

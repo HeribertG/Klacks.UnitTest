@@ -27,7 +27,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
 
     private static ScheduleCell Cell(
         int entryType, Guid clientId, int startHour, int endHour,
-        bool isReplacementEntry = false, ApiWorkChangeType? workChangeType = null)
+        bool isReplacementEntry = false, ApiWorkChangeType? workChangeType = null, Guid? sourceId = null)
         => new()
         {
             Id = Guid.NewGuid(),
@@ -37,7 +37,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             StartTime = new TimeSpan(startHour, 0, 0),
             EndTime = new TimeSpan(endHour, 0, 0),
             EntryId = new Guid("00000000-0000-0000-0000-0000000001a0"),
-            SourceId = Guid.NewGuid(),
+            SourceId = sourceId ?? Guid.NewGuid(),
             IsReplacementEntry = isReplacementEntry,
             WorkChangeType = workChangeType is null ? null : (int)workChangeType.Value,
         };
@@ -85,12 +85,13 @@ public sealed class RecoverySnapshotBuilderWorksTests
     [Test]
     public void Original_work_is_trimmed_by_a_within_replacement_into_two_segments()
     {
+        var workId = Guid.NewGuid();
         var cells = new List<ScheduleCell>
         {
-            Cell((int)ScheduleEntryType.Work, Original, 8, 16),
+            Cell((int)ScheduleEntryType.Work, Original, 8, 16, sourceId: workId),
             // The 10:00-12:00 middle is handed to a substitute (original loses that time).
             Cell((int)ScheduleEntryType.WorkChange, Original, 10, 12,
-                isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin),
+                isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin, sourceId: workId),
         };
 
         var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
@@ -102,14 +103,39 @@ public sealed class RecoverySnapshotBuilderWorksTests
     }
 
     [Test]
-    public void A_fully_replaced_original_work_leaves_no_occupancy_for_the_original()
+    public void A_replacement_after_midnight_of_a_night_work_is_taken_off_the_work()
     {
+        var workId = Guid.NewGuid();
+        var nextDay = Date.AddDays(1);
+        var replacement = Cell((int)ScheduleEntryType.WorkChange, Original, 2, 4,
+            isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin, sourceId: workId);
+        replacement.EntryDate = nextDay;
         var cells = new List<ScheduleCell>
         {
-            Cell((int)ScheduleEntryType.Work, Original, 8, 16),
+            Cell((int)ScheduleEntryType.Work, Original, 22, 6, sourceId: workId),
+            replacement,
+        };
+
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+
+        var segments = works[new CellKey(Original, Day)].OrderBy(w => w.StartAt).ToList();
+        segments.Count.ShouldBe(2);
+        segments[0].StartAt.ShouldBe(Date.AddHours(22));
+        segments[0].EndAt.ShouldBe(nextDay.AddHours(2));
+        segments[1].StartAt.ShouldBe(nextDay.AddHours(4));
+        segments[1].EndAt.ShouldBe(nextDay.AddHours(6));
+    }
+
+    [Test]
+    public void A_fully_replaced_original_work_leaves_no_occupancy_for_the_original()
+    {
+        var workId = Guid.NewGuid();
+        var cells = new List<ScheduleCell>
+        {
+            Cell((int)ScheduleEntryType.Work, Original, 8, 16, sourceId: workId),
             // The whole shift is handed to a substitute.
             Cell((int)ScheduleEntryType.WorkChange, Original, 8, 16,
-                isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin),
+                isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin, sourceId: workId),
             // ...and the substitute's cover appears under the substitute's id.
             Cell((int)ScheduleEntryType.WorkChange, Substitute, 8, 16, isReplacementEntry: true),
         };

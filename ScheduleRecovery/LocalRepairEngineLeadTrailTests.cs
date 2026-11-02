@@ -17,8 +17,6 @@ namespace Klacks.UnitTest.ScheduleRecovery;
 [TestFixture]
 public sealed class LocalRepairEngineLeadTrailTests
 {
-    private static readonly DayAvailability Absent = new(true, false, true);
-
     private readonly IRecoveryEngine _engine = new LocalRepairEngine();
 
     private static RecoveryProposal Repair(RecoverySnapshot snapshot, params DateOnly[] dates)
@@ -34,7 +32,7 @@ public sealed class LocalRepairEngineLeadTrailTests
             .Agent(Agent(1), "absent")
             .Agent(Agent(2), "candidate")
             .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
-            .Availability(Agent(2), next, Absent)
+            .FullDayAbsence(Agent(2), next)
             .Build();
 
         var proposal = Repair(snapshot, d);
@@ -86,7 +84,7 @@ public sealed class LocalRepairEngineLeadTrailTests
             .Agent(Agent(1), "absent")
             .Agent(Agent(2), "candidate")
             .Work(Agent(1), d, Shift(1), ShiftCategory.Late, At(d, 16), At(next, 0), 8m)
-            .Availability(Agent(2), next, Absent)
+            .FullDayAbsence(Agent(2), next)
             .Build();
 
         Repair(snapshot, d).Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
@@ -103,7 +101,7 @@ public sealed class LocalRepairEngineLeadTrailTests
             .Agent(Agent(1), "absent")
             .Agent(Agent(2), "candidate")
             .PaddedWork(Agent(1), d, Shift(1), ShiftCategory.Late, At(d, 15), At(d, 23), 8m, trailHours: trail)
-            .Availability(Agent(2), next, Absent)
+            .FullDayAbsence(Agent(2), next)
             .Build();
 
         Repair(Build(0m), d).Deltas.ShouldHaveSingleItem();
@@ -123,7 +121,7 @@ public sealed class LocalRepairEngineLeadTrailTests
             .Agent(Agent(1), "absent")
             .Agent(Agent(2), "candidate")
             .PaddedWork(Agent(1), d, Shift(1), ShiftCategory.Early, At(d, 0, 30), At(d, 8, 30), 8m, leadHours: lead)
-            .Availability(Agent(2), previous, Absent)
+            .FullDayAbsence(Agent(2), previous)
             .Build();
 
         Repair(Build(0m), d).Deltas.ShouldHaveSingleItem();
@@ -315,7 +313,7 @@ public sealed class LocalRepairEngineLeadTrailTests
                 .Ineligible(Agent(3), Shift(1), d);
             if (absentNext)
             {
-                builder.Availability(Agent(2), next, Absent);
+                builder.FullDayAbsence(Agent(2), next);
             }
             return builder.Build();
         }
@@ -324,6 +322,199 @@ public sealed class LocalRepairEngineLeadTrailTests
         var blocked = Repair(Build(true), d);
         blocked.Deltas.ShouldBeEmpty();
         blocked.Uncovered.ShouldContain(u => u.Date == d && u.IsCritical);
+    }
+
+    [Test]
+    public void A_partial_absence_of_the_next_day_blocks_a_night_only_when_it_overlaps()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+
+        RecoverySnapshot Build(int absenceFrom, int absenceTo) => new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .Absence(Agent(2), next, At(next, absenceFrom), At(next, absenceTo))
+            .Build();
+
+        Repair(Build(14, 18), d).Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+        Repair(Build(5, 9), d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void A_full_day_absence_of_the_next_day_still_blocks_a_night()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+        var snapshot = new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .Absence(Agent(2), next, At(next, 0), At(next, 23, 59))
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void An_appointment_before_the_night_on_the_anchor_day_does_not_block_the_night()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+        var snapshot = new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .Absence(Agent(2), d, At(d, 8), At(d, 10))
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+    }
+
+    [Test]
+    public void An_appointment_overlapping_the_night_on_the_anchor_day_blocks_the_night()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+        var snapshot = new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .Absence(Agent(2), d, At(d, 20), At(d, 23))
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void A_full_day_absence_on_the_anchor_day_blocks_however_it_is_stored()
+    {
+        var d = Day(6, 3);
+
+        RecoverySnapshot Build(DateTime from, DateTime to) => new SnapshotBuilder()
+            .Days(d)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Early, At(d, 8), At(d, 16), 8m)
+            .Absence(Agent(2), d, from, to)
+            .Build();
+
+        Repair(Build(At(d, 0), At(d, 23, 59)), d).Deltas.ShouldBeEmpty();
+        Repair(Build(At(d, 0), At(d.AddDays(1), 0)), d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void A_remainder_after_midnight_is_judged_by_its_real_times()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+
+        RecoverySnapshot Build(Action<SnapshotBuilder> absence)
+        {
+            var builder = new SnapshotBuilder()
+                .Days(d, next)
+                .Agent(Agent(1), "absent")
+                .Agent(Agent(2), "candidate")
+                .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(next, 4), At(next, 6), 2m);
+            absence(builder);
+            return builder.Build();
+        }
+
+        Repair(Build(b => b.Absence(Agent(2), d, At(d, 20), At(d, 23))), d).Deltas
+            .ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+        Repair(Build(b => b.Absence(Agent(2), next, At(next, 5), At(next, 7))), d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void An_on_call_duty_on_the_next_day_does_not_block_a_night()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+        var snapshot = new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .OnCallDay(Agent(2), next)
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+    }
+
+    [Test]
+    public void A_sealed_next_day_does_not_block_a_night_that_only_runs_into_it()
+    {
+        var d = Day(6, 3);
+        var next = d.AddDays(1);
+        var snapshot = new SnapshotBuilder()
+            .Days(d, next)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Night, At(d, 22), At(next, 6), 8m)
+            .SealedDay(Agent(2), next)
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldHaveSingleItem().ToAgentId.ShouldBe(Agent(2));
+    }
+
+    [Test]
+    public void A_sealed_anchor_day_still_blocks()
+    {
+        var d = Day(6, 3);
+        var snapshot = new SnapshotBuilder()
+            .Days(d)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "candidate")
+            .Work(Agent(1), d, Shift(1), ShiftCategory.Early, At(d, 8), At(d, 16), 8m)
+            .SealedDay(Agent(2), d)
+            .Build();
+
+        Repair(snapshot, d).Deltas.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void A_swap_credits_the_giver_with_the_hours_of_the_displaced_work_but_not_its_extras()
+    {
+        var d = Day(6, 3);
+
+        RecoverySnapshot Build(decimal maximumHours) => new SnapshotBuilder()
+            .Days(d)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "pivot", maximumHours: maximumHours, currentPeriodHours: 40m)
+            .Agent(Agent(3), "recipient")
+            .PaddedWork(Agent(1), d, Shift(1), ShiftCategory.Early, At(d, 8), At(d, 16), 8m, extraPaidHours: 2m)
+            .PaddedWork(Agent(2), d, Shift(2), ShiftCategory.Early, At(d, 6), At(d, 14), 8m, extraPaidHours: 2m)
+            .Ineligible(Agent(3), Shift(1), d)
+            .Build();
+
+        Repair(Build(40m), d).Deltas.ShouldBeEmpty();
+        Repair(Build(42m), d).Deltas.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public void The_giver_of_a_swap_keeps_the_extras_in_the_running_period_hours()
+    {
+        var d1 = Day(6, 3);
+        var d2 = Day(6, 4);
+        var snapshot = new SnapshotBuilder()
+            .Days(d1, d2)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "pivot", maximumHours: 39m, currentPeriodHours: 30m)
+            .Agent(Agent(3), "recipient")
+            .PaddedWork(Agent(1), d1, Shift(1), ShiftCategory.Early, At(d1, 8), At(d1, 16), 8m, extraPaidHours: 2m)
+            .Work(Agent(1), d2, Shift(1), ShiftCategory.Early, At(d2, 8), At(d2, 16), 8m)
+            .PaddedWork(Agent(2), d1, Shift(2), ShiftCategory.Early, At(d1, 6), At(d1, 14), 8m, extraPaidHours: 2m)
+            .Ineligible(Agent(3), Shift(1), d1)
+            .Ineligible(Agent(3), Shift(1), d2)
+            .Build();
+
+        var proposal = Repair(snapshot, d1, d2);
+
+        proposal.Uncovered.Count.ShouldBe(1);
     }
 
     [Test]
@@ -337,7 +528,7 @@ public sealed class LocalRepairEngineLeadTrailTests
             .Agent(Agent(2), "a")
             .Agent(Agent(3), "b")
             .PaddedWork(Agent(1), d, Shift(1), ShiftCategory.Late, At(d, 15), At(d, 23), 8m, 1m, 2m, 0.5m)
-            .Availability(Agent(2), next, Absent)
+            .FullDayAbsence(Agent(2), next)
             .Build();
 
         Format(_engine.Repair(snapshot, new AbsenceEvent(Agent(1), [d]), Ruleset.Default))

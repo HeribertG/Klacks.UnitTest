@@ -63,6 +63,7 @@ internal sealed class SnapshotBuilder
     private readonly Dictionary<CellKey, DayAvailability> _availability = [];
     private readonly HashSet<IneligibleKey> _ineligible = [];
     private readonly HashSet<CellKey> _nonCritical = [];
+    private readonly Dictionary<CellKey, List<AbsenceWindow>> _absences = [];
 
     public SnapshotBuilder Days(params DateOnly[] days)
     {
@@ -146,6 +147,28 @@ internal sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder Absence(Guid agentId, DateOnly date, DateTime startAt, DateTime endAt)
+    {
+        var key = new CellKey(agentId, date);
+        _availability[key] = new DayAvailability(true, false, true);
+        if (!_absences.TryGetValue(key, out var windows))
+        {
+            windows = [];
+            _absences[key] = windows;
+        }
+        windows.Add(new AbsenceWindow(startAt, endAt));
+        return this;
+    }
+
+    public SnapshotBuilder FullDayAbsence(Guid agentId, DateOnly date)
+        => Absence(agentId, date, RecoveryTestKit.At(date, 0), RecoveryTestKit.At(date, 23, 59));
+
+    public SnapshotBuilder SealedDay(Guid agentId, DateOnly date)
+        => Availability(agentId, date, new DayAvailability(true, false, true, IsSealed: true));
+
+    public SnapshotBuilder OnCallDay(Guid agentId, DateOnly date)
+        => Availability(agentId, date, new DayAvailability(true, false, false, IsOnCall: true));
+
     public SnapshotBuilder Break(Guid agentId, DateOnly date)
     {
         Add(agentId, date, new RecoveryWork(ShiftCategory.Break, null, true));
@@ -190,6 +213,7 @@ internal sealed class SnapshotBuilder
             kv => kv.Key,
             kv => (IReadOnlyList<RecoveryWork>)kv.Value);
         return new RecoverySnapshot(
-            _days, _agents, works, _availability, _ineligible, _nonCritical, _receivingGroupId);
+            _days, _agents, works, _availability, _ineligible, _nonCritical, _receivingGroupId,
+            _absences.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<AbsenceWindow>)kv.Value));
     }
 }

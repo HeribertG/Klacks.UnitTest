@@ -137,6 +137,47 @@ public class FindReplacementQueryHandlerTests
     }
 
     [Test]
+    public async Task PartialAbsenceOutsideTheNightSlot_DoesNotExcludeTheCandidate_ButOneOverlappingItDoes()
+    {
+        var morning = Guid.NewGuid();
+        var evening = Guid.NewGuid();
+        var wholeDay = Guid.NewGuid();
+        SetMembers(Member(morning, "Anna"), Member(evening, "Bea"), Member(wholeDay, "Cora"));
+        SetOnLeave(
+            BreakCell(morning, SickAbsenceId, 8, 10),
+            BreakCell(evening, SickAbsenceId, 20, 23),
+            BreakCell(wholeDay, SickAbsenceId));
+
+        var result = await Find();
+
+        result.Eligible.Select(c => c.ClientId).ShouldBe(new[] { morning });
+        result.Excluded.Select(c => c.ClientId).ShouldBe(new[] { evening, wholeDay }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task AbsenceInTheLeadOfTheSlot_ExcludesTheCandidate_OnlyWithTheLead()
+    {
+        var briefed = Guid.NewGuid();
+        SetMembers(Member(briefed, "Anna"));
+        SetOnLeave(new ScheduleCell
+        {
+            ClientId = briefed,
+            EntryType = (int)ScheduleEntryType.Break,
+            EntryDate = Date.ToDateTime(TimeOnly.MinValue),
+            EntryId = SickAbsenceId,
+            StartTime = new TimeSpan(20, 0, 0),
+            EndTime = new TimeSpan(21, 30, 0),
+        });
+
+        var bare = await Find();
+        var withLead = await _handler.Handle(
+            new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, false, 1.5m), CancellationToken.None);
+
+        bare.Eligible.ShouldHaveSingleItem().ClientId.ShouldBe(briefed);
+        withLead.Excluded.ShouldHaveSingleItem().ClientId.ShouldBe(briefed);
+    }
+
+    [Test]
     public async Task OnCallBreakCrossingMidnight_OverlappingTheNightSlot_IsOnCall()
     {
         var onCallNight = Guid.NewGuid();

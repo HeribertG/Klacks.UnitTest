@@ -62,6 +62,9 @@ public class ScenarioReplacementSwitcherTests
         _workChangeRepository
             .ListScenarioReplacementsAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns([]);
+        _workChangeRepository
+            .ListNonReplacementChangesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([]);
 
         _switcher = new ScenarioReplacementSwitcher(
             _workChangeRepository, _requestRepository, _scenarioRepository, _scenarioService, _mediator);
@@ -411,6 +414,81 @@ public class ScenarioReplacementSwitcherTests
             .Returns(new ReplacementSearchResult(
                 candidateIds.Select(id => new ReplacementCandidate(id, "Candidate", false, [], 0m)).ToList(),
                 []));
+
+    [Test]
+    public async Task StandIn_IsCheckedWithTheLeadTrailAndExtraPaidHoursOfTheSlot()
+    {
+        var slot = GivenSlotChange();
+        GivenPadding(slot,
+            PaddingChange(WorkChangeType.Briefing, 1m),
+            PaddingChange(WorkChangeType.TravelStart, 0.75m),
+            PaddingChange(WorkChangeType.Debriefing, 0.5m));
+
+        await Apply(Row());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q => q.LeadHours == 1.75m && q.TrailHours == 0.5m && q.ExtraPaidHours == 0.75m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StandIn_OfAMiddleSlot_TakesNeitherLeadNorTrail()
+    {
+        var slot = GivenSlotChange();
+        slot.StartTime = new TimeOnly(9, 0);
+        slot.EndTime = new TimeOnly(11, 0);
+        GivenPadding(slot,
+            PaddingChange(WorkChangeType.Briefing, 1m),
+            PaddingChange(WorkChangeType.Debriefing, 0.5m));
+
+        await Apply(Row());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q => q.LeadHours == 0m && q.TrailHours == 0m && q.ExtraPaidHours == 0m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StandIn_OfAMiddleSlot_TakesOnlyTheTravelInsideTheSlot()
+    {
+        var slot = GivenSlotChange();
+        slot.StartTime = new TimeOnly(9, 0);
+        slot.EndTime = new TimeOnly(11, 0);
+        GivenPadding(slot,
+            PaddingChange(WorkChangeType.TravelWithin, 0.25m, new TimeOnly(10, 0)),
+            PaddingChange(WorkChangeType.TravelWithin, 0.5m, new TimeOnly(12, 0)));
+
+        await Apply(Row());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q => q.ExtraPaidHours == 0.25m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StandIn_OfASlotAfterMidnight_IsSearchedOnTheDayTheSlotStarts()
+    {
+        var slot = GivenSlotChange();
+        slot.Work!.StartTime = new TimeOnly(22, 0);
+        slot.Work.EndTime = new TimeOnly(6, 0);
+        slot.StartTime = new TimeOnly(2, 0);
+        slot.EndTime = new TimeOnly(4, 0);
+
+        await Apply(Row());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q => q.Date == Day.AddDays(1)
+                && q.StartTime == new TimeOnly(2, 0) && q.EndTime == new TimeOnly(4, 0)),
+            Arg.Any<CancellationToken>());
+    }
+
+    private void GivenPadding(WorkChange slot, params WorkChange[] changes)
+        => _workChangeRepository
+            .ListNonReplacementChangesAsync(slot.Work!.Id, Arg.Any<CancellationToken>())
+            .Returns(changes.ToList());
+
+    private static WorkChange PaddingChange(WorkChangeType type, decimal hours, TimeOnly start = default)
+        => new() { Id = Guid.NewGuid(), Type = type, ChangeTime = hours, StartTime = start };
 
     private WorkChange GivenSlotChange()
     {
