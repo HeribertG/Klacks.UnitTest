@@ -11,6 +11,7 @@ using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Breaks;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.UnitTest.TestHelpers;
@@ -159,7 +160,7 @@ public class BreakThreeDayRefreshCharacterizationTests
 
     private PostCommandHandler NewPostHandler()
         => new(
-            _breakRepository, _clientVisibilityGuard, _breakMacroService, new ScheduleMapper(), _periodHoursService,
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, Substitute.For<IAbsenceWorkRemovalService>(), new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _notificationService, _completionService, Substitute.For<IHttpContextAccessor>(),
             _groupContextResolver, _dayLockService, Substitute.For<ILogger<PostCommandHandler>>());
 

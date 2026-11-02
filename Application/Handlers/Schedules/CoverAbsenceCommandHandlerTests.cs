@@ -173,7 +173,7 @@ public class CoverAbsenceCommandHandlerTests
                 .ToList());
 
         _coverFacts = Substitute.For<ICoverMoveFactsReader>();
-        _coverFacts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _coverFacts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, CoverMoveFacts>());
         _handOver = Substitute.For<IWorkHandOverService>();
         _handOver.TransferAsync(Arg.Any<Work>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(true);
@@ -191,17 +191,17 @@ public class CoverAbsenceCommandHandlerTests
         workRepository.GetNoTracking(ClonedWorkId).Returns(new Work { Id = ClonedWorkId, ClientId = ClientId, CurrentDate = Date });
         workRepository.Get(ClonedWorkId).Returns(new Work { Id = ClonedWorkId, ClientId = ClientId, CurrentDate = Date });
         return new AbsenceCoverMaterializer(
-            _mediator, _coverFacts, workRepository, _handOver, Substitute.For<IPeriodHoursService>(), _unitOfWork,
+            _mediator, _coverFacts, _companyClock, workRepository, _handOver, Substitute.For<IPeriodHoursService>(), _unitOfWork,
             Substitute.For<IOvertimeCascadeService>(), Substitute.For<IScheduleCompletionService>(),
             NullLogger<AbsenceCoverMaterializer>.Instance);
     }
 
     private void GivenTheWholeWorkCanMove()
-        => _coverFacts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        => _coverFacts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, CoverMoveFacts>
             {
                 [ClonedWorkId] = new(
-                    ClonedWorkId, ClientId, null, new TimeOnly(8, 0), new TimeOnly(16, 0), WorkLockLevel.None, false, false)
+                    ClonedWorkId, ClientId, null, Date, new TimeOnly(8, 0), new TimeOnly(16, 0), WorkLockLevel.None, false, false)
             });
 
     private static IAbsenceRepository SkillAbsenceRepository()
@@ -222,7 +222,7 @@ public class CoverAbsenceCommandHandlerTests
     private void UseSnapshot(RecoverySnapshot snapshot)
         => _snapshotBuilder.BuildAsync(
                 Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(),
-                Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(snapshot);
 
     private static RecoverySnapshot WithFreeCandidate(bool locked = false, bool candidateEligible = true)
@@ -247,7 +247,9 @@ public class CoverAbsenceCommandHandlerTests
     };
 
     private Task<CoverAbsenceOutcome> Cover()
-        => _handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
+        => _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, Source: ReplacementRequestSource.PlannerDialog),
+            CancellationToken.None);
 
     [Test]
     public async Task ScenarioName_IsAnAbsenceCoverNameInTheUsersLanguage()
@@ -307,8 +309,54 @@ public class CoverAbsenceCommandHandlerTests
 
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(),
+            Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)), Arg.Any<IReadOnlySet<Guid>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheSnapshot_KnowsWhichClonesNothingHoldsInPlace()
+    {
+        GivenTheWholeWorkCanMove();
+
+        await Cover();
+
+        await _snapshotBuilder.Received(1).BuildAsync(
+            GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(),
             Arg.Is<IReadOnlySet<Guid>>(ids => ids.Count == 1 && ids.Contains(WorkId)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARelocationThatStaysWithItsExtras_ShowsAWarning()
+    {
+        var hopWorkId = Guid.NewGuid();
+        var clonedHopId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+        _scenarioService.CloneScenarioDataWithMapsAsync(
+                Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns((new Dictionary<Guid, Guid>(), new Dictionary<Guid, Guid> { [WorkId] = ClonedWorkId, [hopWorkId] = clonedHopId }));
+        _coverFacts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, CoverMoveFacts>());
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Bob")
+            .Agent(recipientId, "Carla")
+            .Work(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .PaddedWork(CandidateId, Date, Guid.NewGuid(), ShiftCategory.Late,
+                Date.ToDateTime(new TimeOnly(14, 0)), Date.ToDateTime(new TimeOnly(22, 0)), 8m,
+                extraPaidHours: 2m, movesAsWhole: true, workIds: hopWorkId)
+            .Ineligible(recipientId, ShiftId, Date)
+            .Build());
+
+        var outcome = await Cover();
+
+        var warning = outcome.ComplianceWarnings.ShouldHaveSingleItem();
+        warning.Comment.ShouldBe(ScheduleValidationKeys.CoverRelocationKeepsExtras);
+        warning.ClientId.ShouldBe(CandidateId);
+        warning.Type.ShouldBe(ScheduleValidationType.Warning);
     }
 
     [Test]
@@ -337,16 +385,44 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
-    public async Task ACoverReportedAfterTheStartOfTheService_StillMovesTheWork()
+    public async Task TheDialog_MovesTheWork_EvenAfterTheStartOfTheService()
     {
         GivenTheWholeWorkCanMove();
-        var afterTheStart = new DateTime(2026, 3, 10, 12, 0, 0, DateTimeKind.Utc);
 
-        var outcome = await _handler.Handle(
-            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, ReportedAtUtc: afterTheStart), CancellationToken.None);
+        var outcome = await CoverReportedAt(ReplacementRequestSource.PlannerDialog, 12);
 
         outcome.Covered.ShouldHaveSingleItem().Kind.ShouldBe(ReplacementRequestKind.Move);
     }
+
+    [TestCase(ReplacementRequestSource.RecoveryEngine)]
+    [TestCase(ReplacementRequestSource.Messenger)]
+    public async Task Klacksy_AndTheMessenger_MoveTheWork_BeforeItsStart(ReplacementRequestSource source)
+    {
+        GivenTheWholeWorkCanMove();
+
+        var outcome = await CoverReportedAt(source, 7);
+
+        outcome.Covered.ShouldHaveSingleItem().Kind.ShouldBe(ReplacementRequestKind.Move);
+    }
+
+    [TestCase(ReplacementRequestSource.RecoveryEngine)]
+    [TestCase(ReplacementRequestSource.Messenger)]
+    public async Task Klacksy_AndTheMessenger_KeepTheWorkWithAReplacement_AfterItsStart(ReplacementRequestSource source)
+    {
+        GivenTheWholeWorkCanMove();
+
+        var outcome = await CoverReportedAt(source, 12);
+
+        outcome.Covered.ShouldHaveSingleItem().Kind.ShouldBe(ReplacementRequestKind.Replacement);
+        await _handOver.DidNotReceiveWithAnyArgs().TransferAsync(default!, default, default, default);
+    }
+
+    private Task<CoverAbsenceOutcome> CoverReportedAt(ReplacementRequestSource source, int utcHour)
+        => _handler.Handle(
+            new CoverAbsenceCommand(
+                ClientId, Date, GroupId, AbsenceId,
+                ReportedAtUtc: new DateTime(2026, 3, 10, utcHour, 0, 0, DateTimeKind.Utc), Source: source),
+            CancellationToken.None);
 
     [TestCase(true, 2)]
     [TestCase(false, 0)]
@@ -413,7 +489,7 @@ public class CoverAbsenceCommandHandlerTests
     [Test]
     public async Task DefaultCommand_RecordsTheRecoveryEngineAsSource()
     {
-        await Cover();
+        await _handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
 
         await _recorder.Received(1).RecordProposalsAsync(
             Arg.Is<ReplacementProposalContext>(c =>
@@ -670,7 +746,7 @@ public class CoverAbsenceCommandHandlerTests
             .Do(_ => order.Add("clone"));
         _unitOfWork.When(u => u.CompleteAsync()).Do(_ => order.Add("complete"));
         _snapshotBuilder.When(s => s.BuildAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>()))
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>()))
             .Do(_ => order.Add("snapshot"));
 
         await Cover();
@@ -938,7 +1014,7 @@ public class CoverAbsenceCommandHandlerTests
         await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
 
         await _snapshotBuilder.DidNotReceive().BuildAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await AssertNothingWasWrittenAsync();
     }
 
@@ -1012,7 +1088,7 @@ public class CoverAbsenceCommandHandlerTests
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Is<ScenarioSourceScope?>(s => s != null && s.Token == SourceToken && s.FromDate == Date && s.UntilDate == Date
                 && s.OwnedShiftIds.Contains(ShiftId) && s.OwnedShiftIds.Contains(RootShiftId)),
-            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == SourceToken && s.Token == outcome.Token));
         await _scheduleEntries.Received().GetScheduleEntriesAsync(
             Arg.Is<ScheduleEntriesCriteria>(c => c.From == Date && c.Until == Date && c.AnalyseToken == SourceToken),
@@ -1035,7 +1111,7 @@ public class CoverAbsenceCommandHandlerTests
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.FromDate == Date && s.UntilDate == sourceUntil));
         await _snapshotBuilder.Received(1).BuildAsync(
             GroupId, ClientId, Arg.Is<IReadOnlyList<DateOnly>>(d => d.Count == 1 && d[0] == Date), Arg.Any<ScenarioSourceScope?>(),
-            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
         await _mediator.Received(1).Send(
             Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 1 && c.Request.Breaks[0].CurrentDate == Date),
             Arg.Any<CancellationToken>());

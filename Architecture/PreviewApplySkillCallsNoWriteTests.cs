@@ -363,7 +363,7 @@ public class PreviewApplySkillCallsNoWriteTests
                 Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
         var skill = new BulkAddAbsenceForGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), absenceRepository, memberService, breakRepository, _mediator);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), absenceRepository, memberService, breakRepository, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IAbsenceWorkRemovalService>(), _mediator);
         var parameters = WithApply(applyShape, new Dictionary<string, object>
         {
             ["groupName"] = CityName,

@@ -4,6 +4,8 @@
 /// The rule that separates a moved work from a replacement: only a whole, untouched work moves.
 /// </summary>
 
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
 using NUnit.Framework;
 using Shouldly;
@@ -16,6 +18,9 @@ public class CoverMoveDecisionTests
     private static readonly Guid Owner = Guid.NewGuid();
     private static readonly TimeOnly Start = new(22, 0);
     private static readonly TimeOnly End = new(6, 0);
+    private static readonly DateOnly Day = new(2026, 11, 2);
+    private static readonly DateTime StartUtc = new(2026, 11, 2, 22, 0, 0, DateTimeKind.Utc);
+    private static readonly TimeSpan TwoHours = TimeSpan.FromHours(2);
 
     private static CoverMoveFacts Facts(
         Guid? clientId = null,
@@ -24,8 +29,45 @@ public class CoverMoveDecisionTests
         bool hasReplacement = false,
         bool hasLockedChild = false)
         => new(
-            Guid.NewGuid(), clientId ?? Owner, parentWorkId, Start, End, lockLevel,
+            Guid.NewGuid(), clientId ?? Owner, parentWorkId, Day, Start, End, lockLevel,
             hasReplacement, hasLockedChild);
+
+    [TestCase(ReplacementRequestSource.RecoveryEngine)]
+    [TestCase(ReplacementRequestSource.Messenger)]
+    public void Klacksy_AndTheMessenger_MoveBeforeTheStart(ReplacementRequestSource source)
+        => MayMove(source, StartUtc.AddMinutes(-1)).ShouldBeTrue();
+
+    [TestCase(ReplacementRequestSource.RecoveryEngine)]
+    [TestCase(ReplacementRequestSource.Messenger)]
+    public void Klacksy_AndTheMessenger_KeepTheWork_FromTheStartOn(ReplacementRequestSource source)
+    {
+        MayMove(source, StartUtc).ShouldBeFalse();
+        MayMove(source, StartUtc.AddMinutes(1)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void TheDialog_AlwaysMoves_EvenAfterTheStart()
+        => MayMove(ReplacementRequestSource.PlannerDialog, StartUtc.AddHours(3)).ShouldBeTrue();
+
+    [Test]
+    public void TheDialog_NeverMovesATouchedWork()
+        => CoverMoveDecision.MayMove(
+                Facts(hasReplacement: true),
+                new CoverReport(ReplacementRequestSource.PlannerDialog, StartUtc.AddHours(-3)),
+                TimeZoneInfo.Utc)
+            .ShouldBeFalse();
+
+    [Test]
+    public void TheStart_IsReadInTheCompanyZone()
+    {
+        var eastOfUtc = TimeZoneInfo.CreateCustomTimeZone("cover-test-east", TwoHours, "cover-test-east", "cover-test-east");
+        var report = new CoverReport(ReplacementRequestSource.Messenger, StartUtc.AddHours(-1));
+
+        CoverMoveDecision.MayMove(Facts(), report, eastOfUtc).ShouldBeFalse();
+    }
+
+    private static bool MayMove(ReplacementRequestSource source, DateTime reportedAtUtc)
+        => CoverMoveDecision.MayMove(Facts(), new CoverReport(source, reportedAtUtc), TimeZoneInfo.Utc);
 
     [Test]
     public void AWholeUntouchedWork_OverMidnight_IsCovered()

@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Services.Schedules;
 using Klacks.ScheduleRecovery.Model;
 using NUnit.Framework;
 using Shouldly;
@@ -60,9 +61,41 @@ public sealed class RecoverySnapshotBuilderWorksTests
     {
         var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
 
-        var works = RecoverySnapshotBuilder.BuildWorks([work], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [work], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _, untouchedWorkIds: new HashSet<Guid> { work.SourceId });
 
         works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeTrue();
+    }
+
+    [Test]
+    public void A_work_something_holds_in_place_does_not_move()
+    {
+        var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [work], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _, untouchedWorkIds: new HashSet<Guid>());
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeFalse();
+    }
+
+    [TestCase(WorkLockLevel.None, false, false)]
+    [TestCase(WorkLockLevel.Confirmed, false, false)]
+    [TestCase(WorkLockLevel.None, true, false)]
+    [TestCase(WorkLockLevel.None, false, true)]
+    public void MovesAsWhole_agrees_with_the_cover_decision(WorkLockLevel lockLevel, bool hasReplacement, bool hasLockedChild)
+    {
+        var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+        work.LockLevel = (int)lockLevel;
+        var start = new TimeOnly(8, 0);
+        var end = new TimeOnly(16, 0);
+        var facts = new CoverMoveFacts(work.SourceId, Original, null, DateOnly.MinValue, start, end, lockLevel, hasReplacement, hasLockedChild);
+        var untouched = CoverMoveDecision.IsUntouched(facts) ? new HashSet<Guid> { work.SourceId } : new HashSet<Guid>();
+
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [work], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _, untouchedWorkIds: untouched);
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole
+            .ShouldBe(CoverMoveDecision.CoversWholeWork(facts, Original, start, end));
     }
 
     [Test]

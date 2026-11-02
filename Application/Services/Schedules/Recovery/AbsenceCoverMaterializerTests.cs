@@ -10,8 +10,11 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.ScheduleRecovery.Model;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Shouldly;
@@ -73,7 +76,7 @@ public class AbsenceCoverMaterializerTests
         _completion = Substitute.For<IScheduleCompletionService>();
 
         _materializer = new AbsenceCoverMaterializer(
-            _mediator, _factsReader, _workRepository, _handOver, _periodHours, _unitOfWork, _overtime, _completion,
+            _mediator, _factsReader, new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc), _workRepository, _handOver, _periodHours, _unitOfWork, _overtime, _completion,
             NullLogger<AbsenceCoverMaterializer>.Instance);
     }
 
@@ -131,6 +134,68 @@ public class AbsenceCoverMaterializerTests
                 Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.WorkId == ClonedWork && c.Resource.ReplaceClientId == Bob),
                 Arg.Any<CancellationToken>());
         });
+    }
+
+    [Test]
+    public async Task AFallbackWithExtras_IsReported_OneWithoutIsNot()
+    {
+        _handOver.TransferAsync(Arg.Any<Work>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(false);
+        var withExtras = Delta(Elsa, Bob) with { MovesAsWhole = true, ExtraPaidHours = 1.5m };
+
+        (await MaterialiseAll(withExtras)).RelocationsKeepingExtras.ShouldHaveSingleItem().ShouldBe(withExtras);
+        (await MaterialiseAll(withExtras with { ExtraPaidHours = 0m })).RelocationsKeepingExtras.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task AMovedRelocation_IsNotReported()
+    {
+        var result = await MaterialiseAll(Delta(Elsa, Bob) with { MovesAsWhole = true, ExtraPaidHours = 1.5m });
+
+        result.RelocationsKeepingExtras.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task AMessengerReportAfterTheStart_StaysAReplacement()
+    {
+        var late = new CoverReport(ReplacementRequestSource.Messenger, AfterTheStart);
+
+        (await MaterialiseAs(late, Delta(Elsa, Bob))).MovedWorkIds.ShouldBeEmpty();
+
+        await _handOver.DidNotReceiveWithAnyArgs().TransferAsync(default!, default, default, default);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.WorkId == ClonedWork), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheDialog_MovesAfterTheStart_Too()
+    {
+        var late = new CoverReport(ReplacementRequestSource.PlannerDialog, AfterTheStart);
+
+        (await MaterialiseAs(late, Delta(Elsa, Bob))).MovedWorkIds.ShouldBe(new[] { ClonedWork });
+    }
+
+    [Test]
+    public async Task ALateReport_OffersTheEngineNoMove_AnEarlyOneDoes()
+    {
+        var map = new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork };
+
+        (await _materializer.FindMovableSourceWorksAsync(
+                map, Token, new CoverReport(ReplacementRequestSource.RecoveryEngine, AfterTheStart), CancellationToken.None))
+            .ShouldBeEmpty();
+        (await _materializer.FindMovableSourceWorksAsync(
+                map, Token, new CoverReport(ReplacementRequestSource.RecoveryEngine, AfterTheStart.AddDays(-1)), CancellationToken.None))
+            .ShouldBe(new[] { SourceWork });
+    }
+
+    [Test]
+    public async Task OnlyUntouchedClones_CountAsUntouchedSources()
+    {
+        _facts[OtherClonedWork] = Facts(OtherClonedWork, Bob) with { HasLockedChild = true };
+
+        var untouched = await _materializer.FindMovableSourceWorksAsync(
+            new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork, [OtherSourceWork] = OtherClonedWork }, Token, BeforeTheStart, CancellationToken.None);
+
+        untouched.ShouldBe(new[] { SourceWork });
     }
 
     [Test]
@@ -231,16 +296,26 @@ public class AbsenceCoverMaterializerTests
         });
     }
 
-    private Task<IReadOnlySet<Guid>> Materialise(params CellDelta[] deltas)
+    private async Task<IReadOnlySet<Guid>> Materialise(params CellDelta[] deltas)
+        => (await MaterialiseAll(deltas)).MovedWorkIds;
+
+    private Task<CoverMaterialisationResult> MaterialiseAll(params CellDelta[] deltas)
+        => MaterialiseAs(null, deltas);
+
+    private Task<CoverMaterialisationResult> MaterialiseAs(CoverReport? report, params CellDelta[] deltas)
         => _materializer.MaterialiseAsync(
             new CoverMaterialisation(
                 deltas,
                 new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork, [OtherSourceWork] = OtherClonedWork },
-                Token),
+                Token,
+                report ?? BeforeTheStart),
             CancellationToken.None);
 
+    private static readonly DateTime AfterTheStart = DateTime.SpecifyKind(Day.ToDateTime(Start).AddMinutes(1), DateTimeKind.Utc);
+    private static readonly CoverReport BeforeTheStart = new(ReplacementRequestSource.RecoveryEngine, AfterTheStart.AddDays(-1));
+
     private static CoverMoveFacts Facts(Guid workId, Guid owner)
-        => new(workId, owner, null, Start, End, WorkLockLevel.None, false, false);
+        => new(workId, owner, null, Day, Start, End, WorkLockLevel.None, false, false);
 
     private static CellDelta Delta(Guid from, Guid to, TimeOnly? start = null, TimeOnly? end = null)
         => new(

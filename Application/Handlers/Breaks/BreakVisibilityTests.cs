@@ -11,6 +11,7 @@ using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Breaks;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Domain.Exceptions;
@@ -139,11 +140,80 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task Post_TakesTheCoveredWorksAway_AfterTheCreditIsCalculated()
+    {
+        var removal = Substitute.For<IAbsenceWorkRemovalService>();
+        var handler = new PostCommandHandler(
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, removal, new ScheduleMapper(),
+            _periodHoursService, _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
+            _groupContextResolver, _dayLockService, Substitute.For<ILogger<PostCommandHandler>>());
+
+        await handler.Handle(new PostCommand<BreakResource>(NewResource(Guid.NewGuid(), _visibleClientId)), CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            _breakMacroService.ProcessBreakMacroAsync(Arg.Any<Break>(), Arg.Any<int?>());
+            removal.FindAsync(
+                Arg.Is<IReadOnlyList<AbsenceSpan>>(spans => spans.Single().ClientId == _visibleClientId),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>());
+            removal.WriteAndRemoveAsync(Arg.Any<IReadOnlyList<RemovableWork>>(), Arg.Any<Func<Task>>(), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task Post_OfASubBreak_TakesNothingAway()
+    {
+        var removal = Substitute.For<IAbsenceWorkRemovalService>();
+        var handler = new PostCommandHandler(
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, removal, new ScheduleMapper(),
+            _periodHoursService, _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
+            _groupContextResolver, _dayLockService, Substitute.For<ILogger<PostCommandHandler>>());
+        var resource = NewResource(Guid.NewGuid(), _visibleClientId);
+        resource.ParentWorkId = Guid.NewGuid();
+
+        await handler.Handle(new PostCommand<BreakResource>(resource), CancellationToken.None);
+
+        await removal.DidNotReceiveWithAnyArgs().FindAsync(default!, default, default);
+        await removal.Received(1).WriteAndRemoveAsync(
+            Arg.Is<IReadOnlyList<RemovableWork>>(works => works.Count == 0), Arg.Any<Func<Task>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task BulkAdd_TakesTheCoveredWorksAway_UnlessACoverDecides()
+    {
+        var removal = Substitute.For<IAbsenceWorkRemovalService>();
+        var handler = new BulkAddBreaksCommandHandler(
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, removal,
+            _periodHoursService, _completionService, _dayLockService, Substitute.For<ILogger<BulkAddBreaksCommandHandler>>());
+        var day = new DateOnly(2026, 11, 10);
+        var request = new BulkAddBreaksRequest
+        {
+            PeriodStart = day,
+            PeriodEnd = day,
+            Breaks = [new BulkBreakItem { ClientId = _visibleClientId, AbsenceId = Guid.NewGuid(), CurrentDate = day }]
+        };
+
+        await handler.Handle(new BulkAddBreaksCommand(request, RemoveTakenWorks: false), CancellationToken.None);
+        await removal.DidNotReceiveWithAnyArgs().FindAsync(default!, default, default);
+
+        var work = new RemovableWork(Guid.NewGuid(), _visibleClientId, Guid.NewGuid(), day, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        removal.FindAsync(Arg.Any<IReadOnlyList<AbsenceSpan>>(), null, Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<RemovableWork>)[work]);
+
+        var response = await handler.Handle(new BulkAddBreaksCommand(request), CancellationToken.None);
+
+        await removal.Received(1).WriteAndRemoveAsync(
+            Arg.Is<IReadOnlyList<RemovableWork>>(works => works.Single() == work), Arg.Any<Func<Task>>(), Arg.Any<CancellationToken>());
+        response.TakenWorks.ShouldHaveSingleItem().ShouldBe(work);
+    }
+
+    [Test]
     public async Task Post_ForHiddenClient_IsRefusedLikeAMissingClient_NothingWritten()
     {
         var handler = new PostCommandHandler(
-            _breakRepository, _clientVisibilityGuard, _breakMacroService, new ScheduleMapper(), _periodHoursService,
-            _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, Substitute.For<IAbsenceWorkRemovalService>(), new ScheduleMapper(),
+            _periodHoursService, _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
             _groupContextResolver, _dayLockService, Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
@@ -236,8 +306,8 @@ public class BreakVisibilityTests
     public async Task BulkAdd_WithOneHiddenClient_IsRefusedAsAWhole_NothingWritten()
     {
         var handler = new BulkAddBreaksCommandHandler(
-            _breakRepository, _clientVisibilityGuard, _breakMacroService, _periodHoursService, _completionService,
-            _dayLockService, Substitute.For<ILogger<BulkAddBreaksCommandHandler>>());
+            _breakRepository, _clientVisibilityGuard, _breakMacroService, Substitute.For<IAbsenceWorkRemovalService>(),
+            _periodHoursService, _completionService, _dayLockService, Substitute.For<ILogger<BulkAddBreaksCommandHandler>>());
         var request = new BulkAddBreaksRequest
         {
             PeriodStart = Day,

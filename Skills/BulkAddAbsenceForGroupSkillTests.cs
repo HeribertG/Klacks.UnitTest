@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Models.Assistant;
@@ -27,6 +28,7 @@ public class BulkAddAbsenceForGroupSkillTests
     private IGetAllClientIdsFromGroupAndSubgroups _memberService = null!;
     private IBreakRepository _breakRepository = null!;
     private IMediator _mediator = null!;
+    private IAbsenceWorkRemovalService _workRemoval = null!;
     private BulkAddAbsenceForGroupSkill _skill = null!;
 
     private static readonly Guid BernGroupId = Guid.NewGuid();
@@ -43,8 +45,10 @@ public class BulkAddAbsenceForGroupSkillTests
         _memberService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _breakRepository = Substitute.For<IBreakRepository>();
         _mediator = Substitute.For<IMediator>();
+        _workRemoval = Substitute.For<IAbsenceWorkRemovalService>();
+        _mediator.Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>()).Returns(new BulkBreaksResponse());
         _skill = new BulkAddAbsenceForGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), _absenceRepository, _memberService, _breakRepository, _mediator);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _absenceRepository, _memberService, _breakRepository, _workRemoval, _mediator);
 
         _groupRepository.List().Returns(new List<Group> { new() { Id = BernGroupId, Name = "Bern" } });
         _absenceRepository.List().Returns(new List<Absence>
@@ -86,6 +90,37 @@ public class BulkAddAbsenceForGroupSkillTests
         Assert.That(result.Message, Does.Contain("Preview"));
         await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task Preview_NamesTheServicesThatWouldFall()
+    {
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _workRemoval.FindAsync(Arg.Any<IReadOnlyList<AbsenceSpan>>(), null, Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<RemovableWork>)[Taken()]);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(apply: false));
+
+        Assert.That(result.Message, Does.Contain("1 uncovered service(s) would be removed"));
+    }
+
+    [Test]
+    public async Task Apply_ReportsTheServicesThatFell()
+    {
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _mediator.Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new BulkBreaksResponse { TakenWorks = [Taken()] });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
+
+        Assert.That(result.Message, Does.Contain("1 uncovered service(s) removed"));
+    }
+
+    private static RemovableWork Taken()
+        => new(Guid.NewGuid(), C1, Guid.NewGuid(), new DateOnly(2026, 8, 1), new TimeOnly(8, 0), new TimeOnly(16, 0));
 
     [Test]
     public async Task Apply_PlacesAbsenceForAllMembers_AndReportsVerified()

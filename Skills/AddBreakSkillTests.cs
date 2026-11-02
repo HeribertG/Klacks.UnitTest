@@ -80,6 +80,35 @@ public class AddBreakSkillTests
     }
 
     [Test]
+    public async Task NeitherAmountNorTimes_IsAWholeDay()
+    {
+        _breakRepository.GetClientIdsWithBreakOnDate(
+                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { ClientId });
+
+        await _skill.ExecuteAsync(Ctx(), Params());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Single().EndTime == new TimeOnly(23, 59)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARemovedService_IsReported()
+    {
+        _breakRepository.GetClientIdsWithBreakOnDate(
+                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { ClientId });
+        var taken = new RemovableWork(Guid.NewGuid(), ClientId, Guid.NewGuid(), new DateOnly(2026, 8, 1), new TimeOnly(8, 0), new TimeOnly(16, 0));
+        _mediator.Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new BulkBreaksResponse { TakenWorks = [taken] });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        Assert.That(result.Message, Does.Contain("1 uncovered service(s) removed"));
+    }
+
+    [Test]
     public async Task MainSchedule_RecountFindsNothing_ReturnsError()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
