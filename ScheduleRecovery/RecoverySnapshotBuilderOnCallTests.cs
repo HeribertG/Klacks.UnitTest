@@ -33,7 +33,7 @@ public sealed class RecoverySnapshotBuilderOnCallTests
     public void BuildWorks_SortsOnCallAndBlockingBreaksApart()
     {
         var works = RecoverySnapshotBuilder.BuildWorks(
-            [BreakCell(OnCallAbsence)], OnCallIds, out var breakDays);
+            [BreakCell(OnCallAbsence)], OnCallIds, new HashSet<Guid>(), out var breakDays);
 
         breakDays.OnCall.ShouldContain((AgentA, Sunday));
         breakDays.Blocking.ShouldBeEmpty();
@@ -43,7 +43,7 @@ public sealed class RecoverySnapshotBuilderOnCallTests
     [Test]
     public void BuildWorks_NonOnCallBreak_StaysBlocking()
     {
-        RecoverySnapshotBuilder.BuildWorks([BreakCell(SickAbsence)], OnCallIds, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks([BreakCell(SickAbsence)], OnCallIds, new HashSet<Guid>(), out var breakDays);
 
         breakDays.Blocking.ShouldContain((AgentA, Sunday));
         breakDays.OnCall.ShouldBeEmpty();
@@ -101,7 +101,7 @@ public sealed class RecoverySnapshotBuilderOnCallTests
     [Test]
     public void OnCallWithFreeKeyword_StaysBlocked()
     {
-        RecoverySnapshotBuilder.BuildWorks([BreakCell(OnCallAbsence)], OnCallIds, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks([BreakCell(OnCallAbsence)], OnCallIds, new HashSet<Guid>(), out var breakDays);
         var keywords = new Dictionary<(Guid AgentId, DateOnly Date), ScheduleCommandKeyword>
         {
             [(AgentA, Sunday)] = ScheduleCommandKeyword.Free
@@ -117,7 +117,7 @@ public sealed class RecoverySnapshotBuilderOnCallTests
     [Test]
     public void OnCallWithOnlyEarlyAndOnlyLateOnTheSameDay_StaysBlocked()
     {
-        RecoverySnapshotBuilder.BuildWorks([BreakCell(OnCallAbsence)], OnCallIds, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks([BreakCell(OnCallAbsence)], OnCallIds, new HashSet<Guid>(), out var breakDays);
         var commands = new List<ScheduleCommand>
         {
             new() { ClientId = AgentA, CurrentDate = Sunday, CommandKeyword = "EARLY" },
@@ -138,7 +138,7 @@ public sealed class RecoverySnapshotBuilderOnCallTests
     private static DayAvailability Availability(
         List<ScheduleCell> cells, Dictionary<Guid, EffectiveContractData> contracts)
     {
-        RecoverySnapshotBuilder.BuildWorks(cells, OnCallIds, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks(cells, OnCallIds, cells.Select(c => c.SourceId).ToHashSet(), out var breakDays);
         return RecoverySnapshotBuilder.BuildAvailability(
             [AgentA], contracts, breakDays,
             new Dictionary<(Guid AgentId, DateOnly Date), ScheduleCommandKeyword>(), Sunday, Sunday)[new CellKey(AgentA, Sunday)];

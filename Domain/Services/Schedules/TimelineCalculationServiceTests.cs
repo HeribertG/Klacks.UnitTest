@@ -483,6 +483,66 @@ public class TimelineCalculationServiceTests
     }
 
     [Test]
+    public void AWholeWithinReplacement_LeavesTheOwnerNoWorkBlock()
+    {
+        var work = CreateWork(new TimeOnly(14, 0), new TimeOnly(22, 0));
+        var standIn = Guid.NewGuid();
+
+        var blocks = _service.CalculateScheduleBlocks(
+            [work], [WithinReplacement(work, standIn, new TimeOnly(14, 0), new TimeOnly(22, 0))], []);
+
+        blocks.ShouldNotContain(b => b.BlockType == ScheduleBlockType.Work);
+        blocks.ShouldHaveSingleItem().ClientId.ShouldBe(standIn);
+    }
+
+    [Test]
+    public void AWithinReplacementInTheMiddle_LeavesTheOwnerTheTimeAroundIt()
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+
+        var blocks = _service.CalculateScheduleBlocks(
+            [work], [WithinReplacement(work, Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(12, 0))], []);
+
+        var workBlocks = blocks.Where(b => b.BlockType == ScheduleBlockType.Work).OrderBy(b => b.Start).ToList();
+        workBlocks.Count.ShouldBe(2);
+        workBlocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(10, 0)));
+        workBlocks[1].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(12, 0)));
+    }
+
+    [Test]
+    public void AWithinReplacementAfterMidnight_CutsTheNightShiftOnTheNextDay()
+    {
+        var work = CreateWork(new TimeOnly(22, 0), new TimeOnly(6, 0));
+
+        var blocks = _service.CalculateScheduleBlocks(
+            [work], [WithinReplacement(work, Guid.NewGuid(), new TimeOnly(2, 0), new TimeOnly(6, 0))], []);
+
+        blocks.Single(b => b.BlockType == ScheduleBlockType.Work).End.ShouldBe(BaseDate.AddDays(1).ToDateTime(new TimeOnly(2, 0)));
+    }
+
+    [Test]
+    public void AWithinReplacementWithoutAPerson_LeavesTheWorkWhole()
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var change = WithinReplacement(work, Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(12, 0));
+        change.ReplaceClientId = null;
+
+        var blocks = _service.CalculateScheduleBlocks([work], [change], []);
+
+        blocks.ShouldHaveSingleItem().BlockType.ShouldBe(ScheduleBlockType.Work);
+    }
+
+    private static WorkChange WithinReplacement(Work work, Guid standIn, TimeOnly start, TimeOnly end) => new()
+    {
+        Id = Guid.NewGuid(),
+        WorkId = work.Id,
+        Type = WorkChangeType.ReplacementWithin,
+        StartTime = start,
+        EndTime = end,
+        ReplaceClientId = standIn
+    };
+
+    [Test]
     public void Constructor_DstAwareWithEmptyTimeZoneId_LogsErrorAndTreatsDstAwareAsOff()
     {
         var logger = new RecordingLogger<TimelineCalculationService>();

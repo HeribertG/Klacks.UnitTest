@@ -171,6 +171,8 @@ public class AnalyseScenarioServiceCharacterizationTests
         var cloneShift = AddShift(_token, realShift.Id);
         var promoted = AddWork(_token, cloneShift.Id, Day, null);
         promoted.ClonedFromWorkId = Guid.NewGuid();
+        var movedFrom = Guid.NewGuid();
+        promoted.MovedFromClientId = movedFrom;
         var promotedChange = AddWorkChange(promoted.Id, _token);
         var promotedExpense = AddExpense(promoted.Id, _token);
         var boundary = AddWork(_token, cloneShift.Id, BoundaryDay, null);
@@ -194,6 +196,7 @@ public class AnalyseScenarioServiceCharacterizationTests
         promotedRow.IsDeleted.ShouldBeFalse();
         promotedRow.AnalyseToken.ShouldBeNull();
         promotedRow.ClonedFromWorkId.ShouldBeNull();
+        promotedRow.MovedFromClientId.ShouldBe(movedFrom);
         promotedRow.ShiftId.ShouldBe(realShift.Id);
         (await _context.WorkChange.IgnoreQueryFilters().SingleAsync(wc => wc.Id == promotedChange.Id)).AnalyseToken.ShouldBeNull();
         (await _context.Expenses.IgnoreQueryFilters().SingleAsync(e => e.Id == promotedExpense.Id)).AnalyseToken.ShouldBeNull();

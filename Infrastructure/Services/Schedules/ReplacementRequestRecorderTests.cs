@@ -164,6 +164,33 @@ public class ReplacementRequestRecorderTests
     }
 
     [Test]
+    public async Task RecordManual_NamesTheWork_AsAReplacement()
+    {
+        var work = Work(ShiftId, null);
+
+        await _recorder.RecordManualReplacementAsync(work, Change(work, WorkChangeType.ReplacementWithin, null));
+        await _context.SaveChangesAsync();
+
+        var row = await _context.ReplacementRequests.SingleAsync();
+        row.WorkId.ShouldBe(work.Id);
+        row.Kind.ShouldBe(ReplacementRequestKind.Replacement);
+    }
+
+    [Test]
+    public async Task RecordProposals_NamesTheWork_AndTheKindOfTheCover()
+    {
+        var workId = Guid.NewGuid();
+
+        await _recorder.RecordProposalsAsync(
+            Context(Guid.NewGuid()), [Slot(CandidateId, ShiftId) with { WorkId = workId, Kind = ReplacementRequestKind.Move }]);
+        await _context.SaveChangesAsync();
+
+        var row = await _context.ReplacementRequests.SingleAsync();
+        row.WorkId.ShouldBe(workId);
+        row.Kind.ShouldBe(ReplacementRequestKind.Move);
+    }
+
+    [Test]
     public async Task RecordManual_ReplacementOnTheRealPlan_IsAppliedImmediately()
     {
         var work = Work(ShiftId, null);

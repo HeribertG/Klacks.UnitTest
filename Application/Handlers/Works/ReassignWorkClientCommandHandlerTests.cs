@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for ReassignWorkClientCommandHandler: verifies the dedicated cross-client
 /// reassign path (single request, no client-side GET+PUT round trip) mutates ClientId in
-/// place, cascades to children via the new client, tracks both the old and new position,
+/// place, cascades to children via the new client, recalculates for the new owner, tracks both the old and new position,
 /// and splits the returned schedule entries by client.
 /// </summary>
 
@@ -14,6 +14,7 @@ using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
@@ -35,6 +36,7 @@ public class ReassignWorkClientCommandHandlerTests
     private IScheduleCompletionService _completionService = null!;
     private IWorkNotificationFacade _notificationFacade = null!;
     private IContainerWorkCascadeService _cascadeService = null!;
+    private IContainerWorkChildrenManager _childrenManager = null!;
     private ISelectedGroupContextResolver _groupContextResolver = null!;
     private IDayLockService _dayLockService = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -61,6 +63,8 @@ public class ReassignWorkClientCommandHandlerTests
         _completionService = Substitute.For<IScheduleCompletionService>();
         _notificationFacade = Substitute.For<IWorkNotificationFacade>();
         _cascadeService = Substitute.For<IContainerWorkCascadeService>();
+        _childrenManager = Substitute.For<IContainerWorkChildrenManager>();
+        _childrenManager.RecalculateForNewOwnerAsync(Arg.Any<Work>(), Arg.Any<CancellationToken>()).Returns(true);
         _groupContextResolver = Substitute.For<ISelectedGroupContextResolver>();
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -101,7 +105,7 @@ public class ReassignWorkClientCommandHandlerTests
             _scheduleEntriesService,
             _completionService,
             _notificationFacade,
-            _cascadeService,
+            new WorkHandOverService(_cascadeService, _childrenManager),
             _groupContextResolver,
             _dayLockService,
             _unitOfWork,
@@ -162,6 +166,31 @@ public class ReassignWorkClientCommandHandlerTests
         result.ShouldNotBeNull();
         result!.Work!.ClientId.ShouldBe(_targetClientId);
         await _cascadeService.Received(1).MoveChildrenAsync(_workId, _date, _targetClientId);
+    }
+
+    [Test]
+    public async Task Handle_WhenTheRecalculationFails_RefusesAndWritesNothing()
+    {
+        _childrenManager.RecalculateForNewOwnerAsync(Arg.Any<Work>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None));
+
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _unitOfWork.Received(1).DiscardTrackedChanges();
+    }
+
+    [Test]
+    public async Task Handle_RecalculatesForTheNewOwner_BeforeTheCommit()
+    {
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            _childrenManager.RecalculateForNewOwnerAsync(
+                Arg.Is<Work>(w => w.Id == _workId && w.ClientId == _targetClientId), Arg.Any<CancellationToken>());
+            _unitOfWork.CompleteAsync();
+        });
     }
 
     [Test]

@@ -289,6 +289,40 @@ public class AnalyseScenarioServiceCloneSourceTests
     }
 
     [Test]
+    public async Task AChildScenario_CarriesTheMovedWork_AndItsBookRow()
+    {
+        var sourceToken = await CreateSourceScenarioAsync();
+        var sourceWork = (await WorksOf(sourceToken)).First(w => w.CurrentDate == Day);
+        sourceWork.MovedFromClientId = AbsentId;
+        var reversedAt = new DateTime(2026, 11, 2, 8, 0, 0, DateTimeKind.Utc);
+        _context.ReplacementRequests.Add(new ReplacementRequest
+        {
+            Id = Guid.NewGuid(),
+            AbsentClientId = AbsentId,
+            CandidateClientId = ReplacementId,
+            ShiftId = _realShiftId,
+            Date = Day,
+            Outcome = ReplacementRequestOutcome.Proposed,
+            AnalyseToken = sourceToken,
+            WorkId = sourceWork.Id,
+            Kind = ReplacementRequestKind.Move,
+            ReversedAtUtc = reversedAt
+        });
+        await _context.SaveChangesAsync();
+        var childToken = Guid.NewGuid();
+
+        await _service.CloneScenarioDataWithMapsAsync(null, Day, SourceUntil, childToken, null, sourceToken, CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        var childWork = (await WorksOf(childToken)).Single(w => w.ClonedFromWorkId == sourceWork.Id);
+        childWork.MovedFromClientId.ShouldBe(AbsentId);
+        var childRequest = await _context.ReplacementRequests.SingleAsync(r => r.AnalyseToken == childToken);
+        childRequest.WorkId.ShouldBe(childWork.Id);
+        childRequest.Kind.ShouldBe(ReplacementRequestKind.Move);
+        childRequest.ReversedAtUtc.ShouldBe(reversedAt);
+    }
+
+    [Test]
     public async Task ResolveRootShiftIds_MapsClonesToTheirRoot_AndLeavesRealShiftsOut()
     {
         var cloneId = Guid.NewGuid();

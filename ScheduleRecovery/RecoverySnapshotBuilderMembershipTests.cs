@@ -68,7 +68,7 @@ public sealed class RecoverySnapshotBuilderMembershipTests
     [Test]
     public void AgentWithoutMembershipRow_IsUnrestricted()
     {
-        RecoverySnapshotBuilder.BuildWorks([], new HashSet<Guid> { OnCallAbsence }, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks([], new HashSet<Guid> { OnCallAbsence }, new HashSet<Guid>(), out var breakDays);
 
         var cells = RecoverySnapshotBuilder.BuildAvailability(
             [AgentA], AllDaysContract(), breakDays, NoKeywords(), Saturday, Monday, new Dictionary<Guid, MembershipWindow>());
@@ -97,7 +97,7 @@ public sealed class RecoverySnapshotBuilderMembershipTests
     private static Dictionary<CellKey, DayAvailability> Availability(
         MembershipWindow window, List<ScheduleCell> cells, DateOnly from, DateOnly until)
     {
-        RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid> { OnCallAbsence }, out var breakDays);
+        RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid> { OnCallAbsence }, cells.Select(c => c.SourceId).ToHashSet(), out var breakDays);
         var contract = cells.Count == 0 ? AllDaysContract() : WeekdayContract();
         return RecoverySnapshotBuilder.BuildAvailability(
             [AgentA], contract, breakDays, NoKeywords(), from, until, new Dictionary<Guid, MembershipWindow> { [AgentA] = window });

@@ -65,6 +65,66 @@ public class WorkMacroServiceTests
     public void TearDown() => _context.Dispose();
 
     [Test]
+    public async Task ProcessWorkMacroAsync_WithoutAMacro_Succeeds()
+    {
+        var work = await AddWorkAsync(shiftMacroId: null);
+
+        (await _sut.ProcessWorkMacroAsync(work)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ProcessWorkMacroAsync_AWorkingMacro_Succeeds()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        _macroDataProvider.GetMacroDataAsync(work).Returns(new MacroData());
+        _macroCompilationService.CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(true, 1m));
+
+        (await _sut.ProcessWorkMacroAsync(work)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ProcessWorkMacroAsync_AFailingMacro_ReportsIt_LogsAnError_AndKeepsTheSurcharges()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid(), surcharges: 0.8m);
+        _macroDataProvider.GetMacroDataAsync(work).Returns(new MacroData());
+        _macroCompilationService.CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(false, null));
+
+        (await _sut.ProcessWorkMacroAsync(work)).ShouldBeFalse();
+
+        work.Surcharges.ShouldBe(0.8m);
+        _logger.ReceivedCalls().Count(call => call.GetArguments()[0] is LogLevel.Error).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ProcessWorkMacroAsync_AnExceptionInTheMacro_ReportsIt()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        _macroDataProvider.GetMacroDataAsync(work).Returns<MacroData>(_ => throw new InvalidOperationException("boom"));
+
+        (await _sut.ProcessWorkMacroAsync(work)).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_AFailingMacro_ReportsIt_AndLogsAnError()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var change = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id, Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m, Surcharges = 0.3m
+        };
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(change, work).Returns(new MacroData());
+        _macroCompilationService.CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(false, null));
+
+        (await _sut.ProcessWorkChangeMacroAsync(change)).ShouldBeFalse();
+
+        change.Surcharges.ShouldBe(0.3m);
+        _logger.ReceivedCalls().Count(call => call.GetArguments()[0] is LogLevel.Error).ShouldBe(1);
+    }
+
+    [Test]
     public async Task ProcessWorkChangeMacroAsync_WithMacro_SetsSurchargesFromMacroResult()
     {
         var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());

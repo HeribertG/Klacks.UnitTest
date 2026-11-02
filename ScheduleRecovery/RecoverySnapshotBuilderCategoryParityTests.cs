@@ -29,7 +29,8 @@ public sealed class RecoverySnapshotBuilderCategoryParityTests
     {
         for (var hour = 0; hour < 24; hour++)
         {
-            var works = RecoverySnapshotBuilder.BuildWorks([Cell(hour)], new HashSet<Guid>(), out _);
+            var cell = Cell(hour);
+            var works = RecoverySnapshotBuilder.BuildWorks([cell], new HashSet<Guid>(), new HashSet<Guid> { cell.SourceId }, out _);
 
             var category = works[new CellKey(ClientId, Day)].Single().Category;
 
@@ -71,7 +72,8 @@ public sealed class RecoverySnapshotBuilderCategoryParityTests
 
     private static ShiftCategory Category(string start, string end)
     {
-        var works = RecoverySnapshotBuilder.BuildWorks([Cell(TimeSpan.Parse(start), TimeSpan.Parse(end))], new HashSet<Guid>(), out _);
+        var cell = Cell(TimeSpan.Parse(start), TimeSpan.Parse(end));
+        var works = RecoverySnapshotBuilder.BuildWorks([cell], new HashSet<Guid>(), new HashSet<Guid> { cell.SourceId }, out _);
         return works[new CellKey(ClientId, Day)].Single().Category;
     }
 

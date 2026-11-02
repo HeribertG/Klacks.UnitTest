@@ -13,6 +13,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.TestHelpers;
@@ -257,7 +258,7 @@ public class WorkThreeDayRefreshCharacterizationTests
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
-            _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
+            _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, TestWorkHandOver.Over(_cascadeService),
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard, Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());

@@ -43,6 +43,19 @@ public sealed class RecoverySnapshotBuilderWorksTests
         };
 
     [Test]
+    public void A_work_without_a_scenario_clone_is_immutable_so_no_swap_can_touch_it()
+    {
+        var cloned = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+        var foreign = Cell((int)ScheduleEntryType.Work, Substitute, 8, 16);
+
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [cloned, foreign], new HashSet<Guid>(), new HashSet<Guid> { cloned.SourceId }, out _);
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().IsLocked.ShouldBeFalse();
+        works[new CellKey(Substitute, Day)].ShouldHaveSingleItem().IsLocked.ShouldBeTrue();
+    }
+
+    [Test]
     public void Replacement_workchange_becomes_immutable_occupancy_for_the_substitute()
     {
         var cells = new List<ScheduleCell>
@@ -53,7 +66,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             Cell((int)ScheduleEntryType.Break, BreakOwner, 0, 0),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out var breakDays);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out var breakDays);
 
         // The substitute's replacement cover is present and immutable.
         works.ContainsKey(new CellKey(Substitute, Day)).ShouldBeTrue();
@@ -80,7 +93,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
                 isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         // The original only still works 08:00-10:00 and 12:00-16:00 → two segments, not the full shift.
         var segments = works[new CellKey(Original, Day)];
@@ -101,7 +114,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             Cell((int)ScheduleEntryType.WorkChange, Substitute, 8, 16, isReplacementEntry: true),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         // The original is fully covered → no demand would be raised for them.
         works.ContainsKey(new CellKey(Original, Day)).ShouldBeFalse();

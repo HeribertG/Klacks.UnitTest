@@ -14,6 +14,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
@@ -35,12 +36,18 @@ public class WorkLockLevelWriteTests
     private IUnitOfWork _unitOfWork = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IContainerWorkCascadeService _cascadeService = null!;
+    private IPreCommitConflictChecker _conflictChecker = null!;
 
     [SetUp]
     public void SetUp()
     {
         _workRepository = Substitute.For<IWorkRepository>();
         _cascadeService = Substitute.For<IContainerWorkCascadeService>();
+        _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(PreCommitCheckResult.Empty);
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -56,6 +63,21 @@ public class WorkLockLevelWriteTests
             .ReturnsForAnyArgs(Task.FromException(new InvalidRequestException(PassedGuardSentinel)));
 
         WorksTestHelpers.GivenUserIsAdmin(_httpContextAccessor, UserName);
+    }
+
+    [Test]
+    public async Task Put_KeepsTheStoredMoveMarker()
+    {
+        var movedFrom = Guid.NewGuid();
+        var stored = GivenStoredWork(WorkLockLevel.None, null);
+        stored.MovedFromClientId = movedFrom;
+        _dayLockService.EnsureNotLockedAsync(default, default, default, default).ReturnsForAnyArgs(Task.CompletedTask);
+        Work? written = null;
+        _workRepository.Put(Arg.Do<Work>(work => written = work)).Returns((Work?)null);
+
+        await NewPutHandler().Handle(new PutCommand<WorkResource>(NewResource(stored)), CancellationToken.None);
+
+        written.ShouldNotBeNull().MovedFromClientId.ShouldBe(movedFrom);
     }
 
     [Test]
@@ -257,7 +279,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(Substitute.For<IPreCommitConflictChecker>()),
+            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -274,9 +296,9 @@ public class WorkLockLevelWriteTests
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
-            Substitute.For<IWorkNotificationFacade>(), _cascadeService,
+            Substitute.For<IWorkNotificationFacade>(), TestWorkHandOver.Over(_cascadeService),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(Substitute.For<IPreCommitConflictChecker>()),
+            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 

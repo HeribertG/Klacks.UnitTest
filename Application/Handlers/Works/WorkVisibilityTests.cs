@@ -15,6 +15,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Works;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
@@ -690,7 +691,7 @@ public class WorkVisibilityTests
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
-            _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
+            _scheduleEntriesService, _completionService, _notificationFacade, TestWorkHandOver.Over(_cascadeService),
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(),

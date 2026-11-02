@@ -40,7 +40,8 @@ public class ContainerWorkChildrenManagerEnvelopeTests
             new EntityCollectionUpdateService(_context),
             Substitute.For<IWorkMacroService>(),
             Substitute.For<IMacroDataProvider>(),
-            Substitute.For<IMacroCompilationService>());
+            Substitute.For<IMacroCompilationService>(),
+            Substitute.For<Microsoft.Extensions.Logging.ILogger<ContainerWorkChildrenManager>>());
 
         _parentId = Guid.NewGuid();
         _context.Work.Add(new Work

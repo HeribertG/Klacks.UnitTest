@@ -233,6 +233,26 @@ public class ReplacementRequestHandlersTests
     }
 
     [Test]
+    public async Task RecordContact_NewAlternative_TakesTheWorkAndKindOfItsSlot()
+    {
+        var token = Guid.NewGuid();
+        var workId = Guid.NewGuid();
+        var proposalId = await SeedAsync(HiddenCandidateId, token);
+        var proposal = await _context.ReplacementRequests.SingleAsync(r => r.Id == proposalId);
+        proposal.WorkId = workId;
+        proposal.Kind = ReplacementRequestKind.Move;
+        await _context.SaveChangesAsync();
+
+        await ContactHandler().Handle(
+            new RecordReplacementContactCommand(Contact(VisibleCandidateId, token, ReplacementRequestOutcome.NotReached)),
+            CancellationToken.None);
+
+        var row = await _context.ReplacementRequests.SingleAsync(r => r.CandidateClientId == VisibleCandidateId);
+        row.WorkId.ShouldBe(workId);
+        row.Kind.ShouldBe(ReplacementRequestKind.Move);
+    }
+
+    [Test]
     public async Task RecordContact_SameSlotAgain_UpdatesTheExistingRow()
     {
         var token = Guid.NewGuid();
