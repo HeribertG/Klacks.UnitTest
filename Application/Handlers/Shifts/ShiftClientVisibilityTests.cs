@@ -210,6 +210,7 @@ public class ShiftClientVisibilityTests
             ShiftVisibilityGuards.AllowAll(),
             new ClientReferenceGuard(_clientVisibilityGuard, _clientRepository),
             Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
+            Substitute.For<Klacks.Api.Application.Interfaces.IShiftFamilyEndService>(),
             Substitute.For<ILogger<PutCommandHandler>>());
         return handler.Handle(new PutCommand<ShiftResource>(resource), CancellationToken.None);
     }

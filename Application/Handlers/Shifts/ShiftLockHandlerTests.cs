@@ -30,6 +30,7 @@ public class ShiftLockHandlerTests
     private ScheduleMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private PutCommandHandler _putHandler = null!;
+    private Klacks.Api.Application.Interfaces.IShiftFamilyEndService _shiftFamilyEndService = null!;
     private DeleteCommandHandler _deleteHandler = null!;
 
     [SetUp]
@@ -39,6 +40,9 @@ public class ShiftLockHandlerTests
         _mapper = new ScheduleMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
+        _shiftFamilyEndService = Substitute.For<Klacks.Api.Application.Interfaces.IShiftFamilyEndService>();
+        _shiftFamilyEndService.EndFamilyAsync(Arg.Any<Shift>(), Arg.Any<DateOnly>(), Arg.Any<Func<Task>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Func<Task>?>()!());
         _putHandler = new PutCommandHandler(
             _shiftRepository,
             Substitute.For<IShiftRequiredQualificationRepository>(),
@@ -47,6 +51,7 @@ public class ShiftLockHandlerTests
             ShiftVisibilityGuards.AllowAll(),
             Substitute.For<IClientReferenceGuard>(),
             Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
+            _shiftFamilyEndService,
             Substitute.For<ILogger<PutCommandHandler>>());
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns((HttpContext?)null);
@@ -132,6 +137,34 @@ public class ShiftLockHandlerTests
 
         result.ShouldNotBeNull();
         await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _shiftFamilyEndService.Received(1).EndFamilyAsync(
+            Arg.Is<Shift>(shift => shift.Id == stored.Id), new DateOnly(2026, 12, 31), Arg.Any<Func<Task>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Put_WithoutAFirstEndDate_SavesTheRowAlone()
+    {
+        var stored = Stored(ShiftStatus.SealedOrder);
+        var resource = _mapper.ToShiftResource(stored);
+        resource.MacroId = Guid.NewGuid();
+
+        await _putHandler.Handle(new PutCommand<ShiftResource>(resource), CancellationToken.None);
+
+        await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _shiftFamilyEndService.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
+    }
+
+    [Test]
+    public async Task Put_AFirstEndDateOnADraftOrder_SavesTheRowAlone()
+    {
+        var stored = Stored(ShiftStatus.OriginalOrder);
+        var resource = _mapper.ToShiftResource(stored);
+        resource.UntilDate = new DateOnly(2026, 12, 31);
+
+        await _putHandler.Handle(new PutCommand<ShiftResource>(resource), CancellationToken.None);
+
+        await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _shiftFamilyEndService.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
     }
 
     [Test]
