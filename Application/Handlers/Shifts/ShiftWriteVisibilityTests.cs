@@ -126,7 +126,7 @@ public class ShiftWriteVisibilityTests
     {
         _shiftRepository.GetSealedOrder(ShiftId).Returns(StoredShift());
         var handler = new GetResetDateRangeQueryHandler(
-            _shiftRepository, ShiftVisibilityGuards.HideAll(), Substitute.For<IVariantShiftWriteGuard>(),
+            _shiftRepository, ShiftVisibilityGuards.HideAll(), Substitute.For<IVariantShiftWriteGuard>(), Substitute.For<IOrderFamilyEndRepository>(),
             Substitute.For<ILogger<GetResetDateRangeQueryHandler>>());
 
         var error = await Should.ThrowAsync<KeyNotFoundException>(

@@ -151,6 +151,25 @@ public class SealedOrderDetailsLoaderTests
         _context.Dispose();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task LoadAsync_ReturnsNull_ForASealedOrderWithoutACustomer(bool withEmployee)
+    {
+        var id = Guid.NewGuid();
+        _context.Shift.Add(new Shift
+        {
+            Id = id,
+            Status = ShiftStatus.SealedOrder,
+            Name = "Refuelling",
+            Abbreviation = "RF",
+            ClientId = withEmployee ? _openEmployeeId : null,
+            FromDate = new DateOnly(2026, 1, 1),
+        });
+        _context.SaveChanges();
+
+        (await _loader.LoadAsync(id, null, null)).ShouldBeNull();
+    }
+
     [Test]
     public async Task LoadAsync_ReturnsNull_WhenIdIsNotASealedOrder()
     {

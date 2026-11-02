@@ -41,6 +41,7 @@ public class ShiftCutFacadeVariantTests
     private IShiftValidator _shiftValidator = null!;
     private IVariantShiftWriteGuard _variantGuard = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IOrderFamilyEndRepository _familyRepository = null!;
     private ShiftCutFacade _facade = null!;
 
     private readonly Guid _sealedOrderId = Guid.NewGuid();
@@ -64,6 +65,13 @@ public class ShiftCutFacadeVariantTests
         _shiftValidator = Substitute.For<IShiftValidator>();
         _variantGuard = Substitute.For<IVariantShiftWriteGuard>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<List<Shift>>>>())
+            .Returns(call => call.Arg<Func<Task<List<Shift>>>>()());
+        _familyRepository = Substitute.For<IOrderFamilyEndRepository>();
+        _familyRepository.FindShiftIdsWithRealWorkAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+        _familyRepository.GetUsageAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(call => new OrderFamilyUsage(call.Arg<IReadOnlyList<Guid>>(), false, false, false));
         var requirements = Substitute.For<IShiftRequiredQualificationRepository>();
         requirements.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<EffectiveShiftRequirement>());
@@ -83,7 +91,15 @@ public class ShiftCutFacadeVariantTests
             _shiftRepository,
             requirements,
             _shiftTreeService,
-            new ShiftResetService(_shiftRepository, Substitute.For<ILogger<ShiftResetService>>()),
+            new ShiftFamilyReset(
+                _shiftRepository,
+                _familyRepository,
+                expenses,
+                new ShiftResetService(_shiftRepository, Substitute.For<ILogger<ShiftResetService>>()),
+                _shiftTreeService,
+                ShiftVisibilityGuards.AllowAll(),
+                _unitOfWork,
+                Substitute.For<ILogger<ShiftFamilyReset>>()),
             _shiftValidator,
             new ScheduleMapper(),
             _unitOfWork,
@@ -255,7 +271,7 @@ public class ShiftCutFacadeVariantTests
     }
 
     [Test]
-    public async Task Reset_InAKey_ReadsAndRewritesRowsOfTheKeyOnly_AndTheNewPlannableCopyKeepsTheToken()
+    public async Task Reset_InAKey_RemovesRowsOfTheKeyOnly_NumbersNoTree_AndTheNewPlannableCopyKeepsTheToken()
     {
         var sealedOrder = Stored(_sealedOrderId, ShiftStatus.SealedOrder, null, _keyToken);
         sealedOrder.GroupItems = [new GroupItem { GroupId = _groupId, AnalyseToken = _keyToken }];
@@ -264,36 +280,40 @@ public class ShiftCutFacadeVariantTests
         var freshList = new List<Shift> { plannable, cut };
         _shiftRepository.Get(_sealedOrderId).Returns(sealedOrder);
         _shiftRepository.GetSealedOrder(_sealedOrderId, _keyToken).Returns(sealedOrder);
-        _shiftRepository.CutList(_sealedOrderId, ResetDate, true, _keyToken).Returns([plannable, cut]);
+        _shiftRepository.CutList(_sealedOrderId, null, true, _keyToken).Returns([plannable, cut]);
         _shiftRepository.CutList(_sealedOrderId, null, false, _keyToken).Returns(freshList);
 
         var result = await _facade.ResetCutsAsync(_sealedOrderId, ResetDate);
 
         result.ShouldBeSameAs(freshList);
-        cut.UntilDate.ShouldBe(ResetDate.AddDays(-1));
+        await _shiftRepository.Received(1).DeleteOrderFamilyAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(_originalShiftId) && ids.Contains(_pieceId)),
+            Arg.Any<CancellationToken>());
         var added = _tracked.Values.Single();
         added.Status.ShouldBe(ShiftStatus.OriginalShift);
         added.OriginalId.ShouldBe(_sealedOrderId);
-        added.FromDate.ShouldBe(ResetDate);
+        added.FromDate.ShouldBe(sealedOrder.FromDate);
         added.AnalyseToken.ShouldBe(_keyToken);
         added.GroupItems.Count.ShouldBe(1);
         added.GroupItems.ShouldAllBe(item => item.AnalyseToken == _keyToken);
         await _unitOfWork.Received(1).CompleteAsync();
+        await _shiftTreeService.DidNotReceiveWithAnyArgs().RecalculateTreesAsync(default!, default);
     }
 
     [Test]
     public async Task Reset_InTheRealPlan_ReadsTheRealWorld_WithoutAnExtraLookupOrTheVariantGuard()
     {
         var sealedOrder = Stored(_sealedOrderId, ShiftStatus.SealedOrder, null, null);
-        var plannable = Stored(_originalShiftId, ShiftStatus.OriginalShift, _sealedOrderId, null);
+        var cut = Stored(_pieceId, ShiftStatus.SplitShift, _sealedOrderId, null);
+        var fresh = Stored(_originalShiftId, ShiftStatus.OriginalShift, _sealedOrderId, null);
         _shiftRepository.GetSealedOrder(_sealedOrderId, null).Returns(sealedOrder);
-        _shiftRepository.CutList(_sealedOrderId, ResetDate, true, null).Returns([plannable]);
-        _shiftRepository.CutList(_sealedOrderId, null, false, null).Returns([plannable]);
+        _shiftRepository.CutList(_sealedOrderId, null, true, null).Returns([cut]);
+        _shiftRepository.CutList(_sealedOrderId, null, false, null).Returns([fresh]);
 
         var result = await _facade.ResetCutsAsync(_sealedOrderId, ResetDate);
 
         result.Count.ShouldBe(1);
-        result[0].ShouldBeSameAs(plannable);
+        result[0].ShouldBeSameAs(fresh);
         _tracked.Values.Single().AnalyseToken.ShouldBeNull();
         await _shiftRepository.DidNotReceive().Get(_sealedOrderId);
         await _variantGuard.DidNotReceiveWithAnyArgs().EnsureOpenIfVariantAsync(default, default, default);
@@ -400,7 +420,7 @@ public class ShiftCutFacadeVariantTests
         _shiftRepository.GetSealedOrder(_sealedOrderId, _keyToken).Returns(sealedOrder);
         _variantGuard.EnsureInsideVariantPeriodAsync(
                 _keyToken,
-                Arg.Is<IReadOnlyCollection<(DateOnly From, DateOnly? Until)>>(ranges => IsSingleRange(ranges, ResetDate, ResetDate.AddDays(10))),
+                Arg.Is<IReadOnlyCollection<(DateOnly From, DateOnly? Until)>>(ranges => ranges.Any(range => range.From == ResetDate && range.Until == ResetDate.AddDays(10))),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new BadRequestException(VariantShiftWriteGuard.PeriodOutsideVariantMessage));
 
@@ -414,7 +434,7 @@ public class ShiftCutFacadeVariantTests
     {
         var sealedOrder = Stored(_sealedOrderId, ShiftStatus.SealedOrder, null, null);
         _shiftRepository.GetSealedOrder(_sealedOrderId).Returns(sealedOrder);
-        _shiftRepository.CutList(_sealedOrderId, ResetDate, true, null).Returns([]);
+        _shiftRepository.CutList(_sealedOrderId, null, true, null).Returns([]);
 
         await _facade.ResetCutsAsync(_sealedOrderId, ResetDate);
 
