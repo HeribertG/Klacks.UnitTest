@@ -6,6 +6,8 @@
 /// </summary>
 
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Services.ShiftSchedule;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -14,6 +16,7 @@ namespace Klacks.UnitTest.Skills;
 public class ListShiftCutsSkillTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IShiftGroupFilterService _groupFilter = null!;
     private ListShiftCutsSkill _skill = null!;
 
     private static readonly Guid SealedOrderId = Guid.NewGuid();
@@ -24,7 +27,30 @@ public class ListShiftCutsSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.AllowAll());
+        _groupFilter = Substitute.For<IShiftGroupFilterService>();
+        _groupFilter.ResolveShiftListGroupIdsAsync(null).Returns((List<Guid>?)null);
+        _skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.AllowAll(), _groupFilter);
+    }
+
+    [Test]
+    public async Task LeavesOutAPieceOfAGroupTheCallerMayNotSee()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var order = new Shift { Id = SealedOrderId, Name = "Order", Status = ShiftStatus.SealedOrder };
+        var visible = new Shift { Id = PartAId, OriginalId = SealedOrderId, Name = "Visible", Status = ShiftStatus.SplitShift };
+        visible.GroupItems.Add(new GroupItem { GroupId = visibleGroupId, ShiftId = PartAId });
+        var hidden = new Shift { Id = PartBId, OriginalId = SealedOrderId, Name = "Hidden", Status = ShiftStatus.SplitShift };
+        hidden.GroupItems.Add(new GroupItem { GroupId = Guid.NewGuid(), ShiftId = PartBId });
+        _shiftRepository.Get(SealedOrderId).Returns(order);
+        _shiftRepository.GetSealedOrder(SealedOrderId).Returns(order);
+        _shiftRepository.CutList(SealedOrderId).Returns([visible, hidden]);
+        _groupFilter.ResolveShiftListGroupIdsAsync(null).Returns([visibleGroupId]);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(SealedOrderId));
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("1 piece(s)");
+        System.Text.Json.JsonSerializer.Serialize(result.Data).ShouldNotContain("Hidden");
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -115,7 +141,7 @@ public class ListShiftCutsSkillTests
     public async Task AHiddenShift_IsAnsweredLikeAMissingOne_WithoutItsName()
     {
         _shiftRepository.Get(PartAId).Returns(new Shift { Id = PartAId, Name = "Secret order", Status = ShiftStatus.OriginalShift });
-        var skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.Hiding(PartAId));
+        var skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.Hiding(PartAId), _groupFilter);
 
         var result = await skill.ExecuteAsync(Ctx(), Params(PartAId));
 
