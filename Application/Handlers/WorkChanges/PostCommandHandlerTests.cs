@@ -10,12 +10,15 @@
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.WorkChanges;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
@@ -52,6 +55,7 @@ public class PostCommandHandlerTests
     private IPreCommitConflictChecker _conflictChecker = null!;
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IReplacementRequestRecorder _recorder = null!;
+    private IClientRepository _clientRepository = null!;
     private PostCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -74,6 +78,9 @@ public class PostCommandHandlerTests
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _recorder = Substitute.For<IReplacementRequestRecorder>();
+        _clientRepository = Substitute.For<IClientRepository>();
+        _clientRepository.GetTypeAndDisplayNameAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Substitute"));
 
         _workRepository.GetNoTracking(_workId).Returns(ParentWork(null));
         _periodHoursService.GetPeriodBoundariesAsync(_date)
@@ -94,10 +101,9 @@ public class PostCommandHandlerTests
             _resultService,
             _httpContextAccessor,
             _dayLockService,
-            _conflictChecker,
-            _overrideAuthorizer,
             _recorder,
             new ParentWorkLockGuard(new WorkLockLevelService()),
+            new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer),
             Substitute.For<ILogger<PostCommandHandler>>());
     }
 
@@ -297,6 +303,91 @@ public class PostCommandHandlerTests
         await _conflictChecker.Received(1).CheckAsync(
             Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => IsOnly(rows, Row(_date.AddDays(1), TwoAm, FiveAm))),
             null, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(WorkChangeType.ReplacementStart)]
+    [TestCase(WorkChangeType.ReplacementEnd)]
+    [TestCase(WorkChangeType.ReplacementWithin)]
+    public async Task Handle_ReplacementWithoutAPerson_IsRefusedWithAClearMessage(WorkChangeType type)
+    {
+        var command = new PostCommand<WorkChangeResource>(new WorkChangeResource
+        {
+            WorkId = _workId,
+            Type = type,
+            ReplaceClientId = null,
+            ChangeTime = HalfShiftHours,
+            StartTime = ChangeStart,
+            EndTime = ChangeEnd,
+        });
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        exception.Message.ShouldBe(ReplacementWriteMessages.PersonRequired);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+        await _recorder.DidNotReceiveWithAnyArgs().RecordManualReplacementAsync(
+            Arg.Any<Work>(), Arg.Any<WorkChange>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithACustomer_IsRefused()
+    {
+        _clientRepository.GetTypeAndDisplayNameAsync(_replaceClientId, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Customer, "Customer"));
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None));
+
+        exception.Message.ShouldBe(ReplacementWriteMessages.PersonNotAnEmployee);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithADeletedOrUnknownPerson_IsRefused()
+    {
+        _clientRepository.GetTypeAndDisplayNameAsync(_replaceClientId, Arg.Any<CancellationToken>())
+            .Returns((ClientTypeAndDisplayName?)null);
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None));
+
+        exception.Message.ShouldBe(ReplacementWriteMessages.PersonNotFound);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_ReplacementWithAnExternalEmployee_IsAccepted()
+    {
+        _clientRepository.GetTypeAndDisplayNameAsync(_replaceClientId, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.ExternEmp, "External"));
+
+        await _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None);
+
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_ScenarioReplacementWithoutAPerson_IsRefusedToo()
+    {
+        _workRepository.GetNoTracking(_workId).Returns(ParentWork(Guid.NewGuid()));
+        var command = new PostCommand<WorkChangeResource>(new WorkChangeResource
+        {
+            WorkId = _workId,
+            Type = WorkChangeType.ReplacementStart,
+            ChangeTime = HalfShiftHours,
+        });
+
+        await Should.ThrowAsync<InvalidRequestException>(() => _handler.Handle(command, CancellationToken.None));
+
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_CorrectionWithoutAPerson_StaysAllowed()
+    {
+        await _handler.Handle(CorrectionCommand(), CancellationToken.None);
+
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
     [Test]

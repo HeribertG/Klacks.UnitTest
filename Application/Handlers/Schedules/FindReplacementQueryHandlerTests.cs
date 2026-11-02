@@ -215,6 +215,23 @@ public class FindReplacementQueryHandlerTests
     };
 
     [Test]
+    public async Task CustomerUnderTheRoot_IsNeitherEligibleNorExcluded()
+    {
+        var anna = Guid.NewGuid();
+        var customer = Guid.NewGuid();
+        var externalEmployee = Guid.NewGuid();
+        SetMembers(
+            Member(anna, "Anna"),
+            new Client { Id = customer, Name = "Customer", FirstName = string.Empty, Type = EntityTypeEnum.Customer },
+            new Client { Id = externalEmployee, Name = "External", FirstName = string.Empty, Type = EntityTypeEnum.ExternEmp });
+
+        var result = await Find();
+
+        result.Eligible.Select(c => c.ClientId).ShouldBe(new[] { anna, externalEmployee }, ignoreOrder: true);
+        result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task CandidateWhoseNightBlockTheCoverCloses_RanksBeforeALonelyNight()
     {
         // Arrange: equally clean candidates; Zora works nights the day before and after, Anna is free around.

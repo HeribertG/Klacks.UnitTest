@@ -299,20 +299,16 @@ public class WorkChangeScopeTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkChangeResultService>(), Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             Substitute.For<IReplacementRequestRecorder>(), _httpContextAccessor, NewGuard(),
-            Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private PostCommandHandler NewPostHandler()
     {
-        var conflictChecker = Substitute.For<IPreCommitConflictChecker>();
-        conflictChecker.CheckAsync(
-                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(PreCommitCheckResult.Empty);
         return new(
             _workChangeRepository, _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IPeriodHoursService>(), Substitute.For<IWorkNotificationService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkChangeResultService>(),
-            _httpContextAccessor, _dayLockService, conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>(),
-            Substitute.For<IReplacementRequestRecorder>(), NewGuard(), Substitute.For<ILogger<PostCommandHandler>>());
+            _httpContextAccessor, _dayLockService, Substitute.For<IReplacementRequestRecorder>(), NewGuard(),
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PostCommandHandler>>());
     }
 
     private DeleteCommandHandler NewDeleteHandler()

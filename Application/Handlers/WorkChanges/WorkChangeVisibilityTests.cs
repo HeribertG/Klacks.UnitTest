@@ -377,16 +377,16 @@ public class WorkChangeVisibilityTests
         => new(
             _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
-            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IPreCommitConflictChecker>(),
-            Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IReplacementRequestRecorder>(),
-            Substitute.For<IParentWorkLockGuard>(), Substitute.For<ILogger<PostCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(),
+            Substitute.For<IParentWorkLockGuard>(), Substitute.For<IReplacementWriteGuard>(),
+            Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler()
         => new(
             _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _completionService, _resultService, Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             _recorder, Substitute.For<IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
-            Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, ShiftId = Guid.NewGuid(), CurrentDate = Day };
