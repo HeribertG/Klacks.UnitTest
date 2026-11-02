@@ -150,6 +150,22 @@ public class FindReplacementQueryHandlerTests
         result.Eligible[0].IsOnCall.ShouldBeTrue();
     }
 
+    [Test]
+    public async Task LeadTrailAndExtraPaidHours_ReachTheCandidateCheck()
+    {
+        SetMembers(Member(Guid.NewGuid(), "Anna"), Member(Guid.NewGuid(), "Bea"));
+
+        await _handler.Handle(
+            new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, false, 1.5m, 0.5m, 2m),
+            CancellationToken.None);
+
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows =>
+                rows.Count == 2 && rows.All(r => r.LeadHours == 1.5m && r.TrailHours == 0.5m && r.ExtraPaidHours == 2m)),
+            (Guid?)null,
+            CancellationToken.None);
+    }
+
     private void SetPeriodHours(Dictionary<Guid, PeriodHoursResource>? byClient = null)
         => _periodHours.GetPeriodHoursAsync(
                 Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())

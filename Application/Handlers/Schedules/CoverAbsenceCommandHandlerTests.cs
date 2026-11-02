@@ -520,6 +520,29 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
+    public async Task LeadTrailAndExtraPaidHoursOfTheCover_ReachTheComplianceCheck()
+    {
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Bob")
+            .PaddedWork(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m,
+                leadHours: 1m, trailHours: 0.5m, extraPaidHours: 1.5m, workIds: [WorkId])
+            .Build());
+
+        var outcome = await Cover();
+
+        outcome.Covered.Count.ShouldBe(1);
+        await _conflictChecker.Received().CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Any(r =>
+                r.ClientId == CandidateId && r.LeadHours == 1m && r.TrailHours == 0.5m && r.ExtraPaidHours == 1.5m)),
+            Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task StructuralBlock_NeverOverridable_ReportedAsUncovered_EvenWhenOverrideAuthorized()
     {
         var structuralCheck = new PreCommitCheckResult(

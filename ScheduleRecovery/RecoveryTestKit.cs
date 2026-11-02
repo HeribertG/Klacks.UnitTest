@@ -126,6 +126,26 @@ internal sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder PaddedWork(
+        Guid agentId,
+        DateOnly date,
+        Guid shiftId,
+        ShiftCategory category,
+        DateTime startAt,
+        DateTime endAt,
+        decimal hours,
+        decimal leadHours = 0m,
+        decimal trailHours = 0m,
+        decimal extraPaidHours = 0m,
+        bool locked = false,
+        params Guid[] workIds)
+    {
+        Add(agentId, date, new RecoveryWork(
+            category, shiftId, locked, startAt, endAt, hours, workIds.Length > 0 ? workIds : null,
+            leadHours, trailHours, extraPaidHours));
+        return this;
+    }
+
     public SnapshotBuilder Break(Guid agentId, DateOnly date)
     {
         Add(agentId, date, new RecoveryWork(ShiftCategory.Break, null, true));
