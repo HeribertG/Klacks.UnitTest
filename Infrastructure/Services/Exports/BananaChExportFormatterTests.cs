@@ -9,6 +9,7 @@
 using System.Text;
 using Shouldly;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -44,7 +45,7 @@ public class BananaChExportFormatterTests
             o.ExternalOrderReference = "ERP-42";
             o.WorkEntries[0].Changes =
             [
-                new WorkChangeExportEntry { ChangeTime = 1m, Surcharges = 0.25m },
+                new WorkChangeExportEntry { Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m, Surcharges = 0.25m },
             ];
             o.WorkEntries[0].Expenses =
             [

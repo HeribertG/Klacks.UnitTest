@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for the Stormware PAMICA/POHODA dochazka_zamestnance formatter: ZIP-of-one-document-
 /// per-employee packaging, root element and version attribute, cislo_pracovniho_pomeru matching key,
-/// presence-vs-absence section assignment, unmapped-absence skipping and Windows-1250 encoding.
+/// presence-vs-absence section assignment, both absence mapping shapes (Kod and the common WageType), absence hours in
+/// rozvrh, unmapped and empty-mapped absence skipping and Windows-1250 encoding.
 /// </summary>
 using System.IO.Compression;
 using System.Text;
@@ -221,6 +222,121 @@ public class PohodaCzExportFormatterTests
         document.Root.Element(Pritomnost)!.Elements().ShouldBeEmpty();
         result.RecordCount.ShouldBe(1);
         result.SkippedAbsenceCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void Format_CommonMappingShape_UsesWageTypeAsKod_AndKodWinsWhenBothAreSet()
+    {
+        var commonId = Guid.NewGuid();
+        var bothId = Guid.NewGuid();
+        var mapping = $"{{\"{commonId}\":{{\"WageType\":\"N01\",\"Ausfallschluessel\":\"K\"}},"
+            + $"\"{bothId}\":{{\"WageType\":\"N01\",\"Kod\":\"N05\"}}}}";
+
+        var data = DataWith(
+            "Muster, Max",
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 20), Kind = PayrollEntryKind.Absence, Quantity = 8m, AbsenceId = commonId },
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 21), Kind = PayrollEntryKind.Absence, Quantity = 8m, AbsenceId = bothId });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var document = ParseSingleEntry(result.Content);
+
+        document.Root!.Element(Nepritomnosti)!.Elements(Nepritomnost)
+            .Select(e => e.Element(Kod)!.Value).ToList()
+            .ShouldBe(new List<string> { "N01", "N05" });
+        result.RecordCount.ShouldBe(2);
+        result.SkippedAbsenceCount.ShouldBe(0);
+    }
+
+    [TestCase("{{\"{0}\":{{\"WageType\":\"\"}}}}")]
+    [TestCase("{{\"{0}\":{{\"Kod\":\" \",\"WageType\":\"  \"}}}}")]
+    [TestCase("{{\"{0}\":{{\"Ausfallschluessel\":\"K\"}}}}")]
+    public void Format_AbsenceMappedToEmptyKod_IsSkippedAndCounted_AndAddsNoHoursToRozvrh(string mappingTemplate)
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = string.Format(System.Globalization.CultureInfo.InvariantCulture, mappingTemplate, absenceId);
+
+        var data = DataWith("Muster, Max", new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 20),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var document = ParseSingleEntry(result.Content);
+
+        document.Root!.Element(Nepritomnosti)!.Elements(Nepritomnost).ShouldBeEmpty();
+        UvazekByDate(document)["2026-01-20"].ShouldBe("0:00");
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_MappedAbsenceHours_AreAddedToThatDaysUvazek()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"WageType\":\"N01\"}}}}";
+
+        var data = DataWith(
+            "Muster, Max",
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 4.5m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.Absence, Quantity = 3.75m, AbsenceId = absenceId },
+            new PayrollDayEntry { Date = new DateOnly(2026, 1, 20), Kind = PayrollEntryKind.Absence, Quantity = 8m, AbsenceId = absenceId },
+            new PayrollDayEntry
+            {
+                Date = new DateOnly(2026, 1, 22),
+                Kind = PayrollEntryKind.Absence,
+                Quantity = 1m,
+                Unit = PayrollQuantityUnit.Days,
+                AbsenceId = absenceId,
+            });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var uvazekByDate = UvazekByDate(ParseSingleEntry(result.Content));
+
+        uvazekByDate["2026-01-15"].ShouldBe("8:15");
+        uvazekByDate["2026-01-20"].ShouldBe("8:00");
+        uvazekByDate["2026-01-22"].ShouldBe("0:00");
+        uvazekByDate["2026-01-21"].ShouldBe("0:00");
+        uvazekByDate.Count.ShouldBe(31);
+        result.RecordCount.ShouldBe(4);
+    }
+
+    [Test]
+    public void Format_MappedAbsence_WritesExactNepritomnostElement()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"WageType\":\"N01\",\"Ausfallschluessel\":\"K\"}}}}";
+
+        var data = DataWith("Muster, Max", new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 20),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var text = Encoding.GetEncoding(PayrollExportConstants.Windows1250CodePage)
+            .GetString(ExtractZipEntries(result.Content)[0].Content);
+
+        text.ShouldContain(
+            "    <uvazek datum=\"2026-01-20\">8:00</uvazek>\r\n");
+        text.ShouldContain(
+            "  <nepritomnosti>\r\n"
+            + "    <nepritomnost>\r\n"
+            + "      <kod>N01</kod>\r\n"
+            + "      <od>2026-01-20</od>\r\n"
+            + "      <do>2026-01-20</do>\r\n"
+            + "    </nepritomnost>\r\n"
+            + "  </nepritomnosti>\r\n");
+    }
+
+    private static Dictionary<string, string> UvazekByDate(XDocument document)
+    {
+        return document.Root!.Element(Rozvrh)!.Elements(Uvazek)
+            .ToDictionary(e => e.Attribute("datum")!.Value, e => e.Value);
     }
 
     [Test]

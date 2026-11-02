@@ -6,7 +6,9 @@
 /// shift's group; days with an entry or an active membership that no Closed seal locks raise DayNotLocked (a day
 /// approval of Level Approved never counts, a global seal locks everybody, a person without a group needs a global
 /// close); an export of an overlapping period raises OverlappingExport; scenario and deleted rows, customers and
-/// persons without entries are ignored; the client filter, the ordering and the 500 cap hold.
+/// persons without entries are ignored; the client filter, the ordering and the 500 cap hold. A replacing person is
+/// checked on the replaced work's day (lock level of the work, day lock of the substitute or of the work's shift
+/// group), and a soft-deleted person's entries are still checked.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Exports;
@@ -480,6 +482,98 @@ public class PayrollCompletenessGateTests
         result.IsComplete.ShouldBeFalse();
     }
 
+    [Test]
+    public async Task ReplacementOnAnOpenWork_RaisesEntryNotClosed_ForTheSubstituteToo()
+    {
+        var original = AddClient(140, name: "Aaa");
+        var substitute = AddClient(141, name: "Bbb");
+        var workId = AddWork(original, Day1, _shiftA, WorkLockLevel.Approved);
+        AddReplacement(workId, substitute);
+        SealPeriod(null);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        result.Blockers
+            .Select(b => (b.ClientId, b.Date, b.Reason))
+            .ShouldBe(new (Guid, DateOnly?, PayrollExportBlockReason)[]
+            {
+                (original, Day1, PayrollExportBlockReason.EntryNotClosed),
+                (substitute, Day1, PayrollExportBlockReason.EntryNotClosed),
+            });
+        var substituteBlocker = result.Blockers[1];
+        substituteBlocker.IdNumber.ShouldBe(141);
+        substituteBlocker.GroupId.ShouldBe(_groupA);
+    }
+
+    [Test]
+    public async Task ReplacementOnAnOpenWork_WithClientFilterOnTheSubstitute_BlocksTheSubstitute()
+    {
+        var original = AddClient(142);
+        var substitute = AddClient(143);
+        var workId = AddWork(original, Day1, _shiftA, WorkLockLevel.Approved);
+        AddReplacement(workId, substitute);
+        SealPeriod(null);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, [substitute], CancellationToken.None);
+
+        var blocker = result.Blockers.ShouldHaveSingleItem();
+        blocker.ClientId.ShouldBe(substitute);
+        blocker.Reason.ShouldBe(PayrollExportBlockReason.EntryNotClosed);
+    }
+
+    [Test]
+    public async Task ReplacementDayOfTheSubstituteThatNoSealLocks_RaisesDayNotLocked()
+    {
+        var original = AddMember(144, _groupA);
+        var substitute = AddClient(145);
+        var workId = AddWork(original, Day1, _shiftUngrouped, WorkLockLevel.Closed);
+        AddReplacement(workId, substitute);
+        SealPeriod(_groupA);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        var blocker = result.Blockers.ShouldHaveSingleItem();
+        blocker.ClientId.ShouldBe(substitute);
+        blocker.Date.ShouldBe(Day1);
+        blocker.Reason.ShouldBe(PayrollExportBlockReason.DayNotLocked);
+        blocker.RequiresGlobalClose.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ReplacementOnAClosedWorkWhoseShiftGroupIsSealed_IsComplete()
+    {
+        var original = AddClient(146);
+        var substitute = AddClient(147);
+        var workId = AddWork(original, Day1, _shiftA, WorkLockLevel.Closed);
+        AddReplacement(workId, substitute);
+        AddSeal(Day1, _groupA, WorkLockLevel.Closed);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        result.IsComplete.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SoftDeletedPersonWithAnOpenEntry_IsStillBlocked()
+    {
+        var person = AddClient(148, name: "Gone", isDeleted: true);
+        AddWork(person, Day1, _shiftA, WorkLockLevel.Approved);
+        SealPeriod(null);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        var blocker = result.Blockers.ShouldHaveSingleItem();
+        blocker.ClientId.ShouldBe(person);
+        blocker.IdNumber.ShouldBe(148);
+        blocker.ClientName.ShouldBe("Gone, Test");
+        blocker.Reason.ShouldBe(PayrollExportBlockReason.EntryNotClosed);
+    }
+
     private Guid AddGroup(string name)
     {
         var id = Guid.NewGuid();
@@ -494,7 +588,11 @@ public class PayrollCompletenessGateTests
         return shiftId;
     }
 
-    private Guid AddClient(int idNumber, EntityTypeEnum type = EntityTypeEnum.Employee, string? name = null)
+    private Guid AddClient(
+        int idNumber,
+        EntityTypeEnum type = EntityTypeEnum.Employee,
+        string? name = null,
+        bool isDeleted = false)
     {
         var clientId = Guid.NewGuid();
         _context.Client.Add(new Client
@@ -504,6 +602,7 @@ public class PayrollCompletenessGateTests
             IdNumber = idNumber,
             Name = name ?? $"Employee{idNumber}",
             FirstName = "Test",
+            IsDeleted = isDeleted,
         });
         return clientId;
     }
@@ -521,7 +620,7 @@ public class PayrollCompletenessGateTests
         return clientId;
     }
 
-    private void AddWork(
+    private Guid AddWork(
         Guid clientId,
         DateOnly date,
         Guid shiftId,
@@ -529,9 +628,10 @@ public class PayrollCompletenessGateTests
         Guid? analyseToken = null,
         bool isDeleted = false)
     {
+        var workId = Guid.NewGuid();
         _context.Work.Add(new Work
         {
-            Id = Guid.NewGuid(),
+            Id = workId,
             ClientId = clientId,
             ShiftId = shiftId,
             CurrentDate = date,
@@ -541,6 +641,21 @@ public class PayrollCompletenessGateTests
             LockLevel = lockLevel,
             AnalyseToken = analyseToken,
             IsDeleted = isDeleted,
+        });
+        return workId;
+    }
+
+    private void AddReplacement(Guid workId, Guid substituteId)
+    {
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = workId,
+            Type = WorkChangeType.ReplacementStart,
+            ChangeTime = 2m,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(10, 0),
+            ReplaceClientId = substituteId,
         });
     }
 

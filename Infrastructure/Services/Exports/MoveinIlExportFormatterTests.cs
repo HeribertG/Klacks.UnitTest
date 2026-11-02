@@ -2,10 +2,12 @@
 
 /// <summary>
 /// Unit tests for MoveinIlExportFormatter verifying the 180-character fixed-width detailed-method
-/// layout: exact line length, field positions (date, currency, text, accounts, amounts) and CRLF.
+/// layout: exact line length, field positions (date, currency, text, accounts, amounts) and CRLF, Decimal(9.2)
+/// amounts with a dot, debit/credit swap for negative amounts, ILS fallback and hour-bearing changes only.
 /// </summary>
 using System.Text;
 using Shouldly;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -76,14 +78,14 @@ public class MoveinIlExportFormatterTests
     }
 
     [Test]
-    public void Format_WritesBalancedDebitAndCreditAmounts_AsCentsZeroPadded()
+    public void Format_WritesBalancedDebitAndCreditAmounts_AsDecimalWithDotRightAligned()
     {
-        var line = FormatLines(BuildData(o => { o.WorkEntries[0].WorkTime = 8m; o.WorkEntries[0].Surcharges = 1.5m; }))[0];
+        var line = FormatLines(BuildData(o => { o.WorkEntries[0].WorkTime = 8m; o.WorkEntries[0].Surcharges = 1.75m; }))[0];
 
         var sollBetrag1 = line.Substring(82, 12);
         var habenBetrag1 = line.Substring(106, 12);
-        sollBetrag1.ShouldBe("000000000950");
-        habenBetrag1.ShouldBe("000000000950");
+        sollBetrag1.ShouldBe("        9.75");
+        habenBetrag1.ShouldBe("        9.75");
     }
 
     [Test]
@@ -91,10 +93,75 @@ public class MoveinIlExportFormatterTests
     {
         var line = FormatLines(BuildData(_ => { }))[0];
 
-        line.Substring(130, 12).ShouldBe("000000000000");
-        line.Substring(142, 12).ShouldBe("000000000000");
-        line.Substring(154, 12).ShouldBe("000000000000");
-        line.Substring(166, 12).ShouldBe("000000000000");
+        line.Substring(130, 12).ShouldBe("        0.00");
+        line.Substring(142, 12).ShouldBe("        0.00");
+        line.Substring(154, 12).ShouldBe("        0.00");
+        line.Substring(166, 12).ShouldBe("        0.00");
+    }
+
+    [Test]
+    public void Format_NegativeAmount_SwapsDebitAndCreditAccounts()
+    {
+        var line = FormatLines(BuildData(o =>
+        {
+            o.WorkEntries[0].EmployeeIdNumber = 42;
+            o.WorkEntries[0].WorkTime = -2.5m;
+        }))[0];
+
+        line.Substring(50, 8).Trim().ShouldBe("3600");
+        line.Substring(66, 8).Trim().ShouldBe("42");
+        line.Substring(82, 12).ShouldBe("        2.50");
+        line.Substring(106, 12).ShouldBe("        2.50");
+    }
+
+    [Test]
+    public void Format_PositiveAmount_KeepsEmployeeAsDebitAccount()
+    {
+        var line = FormatLines(BuildData(o => o.WorkEntries[0].EmployeeIdNumber = 42))[0];
+
+        line.Substring(50, 8).Trim().ShouldBe("42");
+        line.Substring(66, 8).Trim().ShouldBe("3600");
+    }
+
+    [Test]
+    public void Format_GlobalDefaultCurrencyEur_FallsBackToIls()
+    {
+        var line = FormatLines(BuildData(_ => { }), currencyCode: "EUR")[0];
+
+        line.Substring(25, 3).ShouldBe("ILS");
+    }
+
+    [Test]
+    public void Format_ReplacementChange_DoesNotAddHours()
+    {
+        var line = FormatLines(BuildData(o => o.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.ReplacementWithin, ChangeTime = 3m, Surcharges = 1m },
+        ]))[0];
+
+        line.Substring(82, 12).ShouldBe("        8.00");
+    }
+
+    [Test]
+    public void Format_BriefingChange_DoesNotAddHours()
+    {
+        var line = FormatLines(BuildData(o => o.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.Briefing, ChangeTime = 0.5m },
+        ]))[0];
+
+        line.Substring(82, 12).ShouldBe("        8.00");
+    }
+
+    [Test]
+    public void Format_CorrectionChange_AddsHours()
+    {
+        var line = FormatLines(BuildData(o => o.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m, Surcharges = 0.25m },
+        ]))[0];
+
+        line.Substring(82, 12).ShouldBe("        9.25");
     }
 
     [Test]

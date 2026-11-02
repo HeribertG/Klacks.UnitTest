@@ -4,11 +4,13 @@
 /// Unit tests for BmdExportFormatter verifying that the trailing ERP reference columns
 /// (extbelegnr, quellsystem, extkundenref) are declared in the header and populated per row,
 /// and that the free-text OrderAbbreviation is escaped (separator quoting + formula neutralisation)
-/// so it cannot shift columns or inject spreadsheet formulas.
+/// so it cannot shift columns or inject spreadsheet formulas. Also covers the auftragsname column (no BMD kost),
+/// the 40-character Text limit and that only hour-bearing changes add to the amount.
 /// </summary>
 using System.Text;
 using Shouldly;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -85,6 +87,61 @@ public class BmdExportFormatterErpReferencesTests
         var lines = FormatLines(BuildData(order => order.OrderAbbreviation = "=danger"));
 
         lines[1].ShouldContain(";Night Watch;'=danger;8,00;");
+    }
+
+    [Test]
+    public void Format_WritesOrderName_IntoAuftragsnameColumn_NotIntoBmdKost()
+    {
+        var lines = FormatLines(BuildData(_ => { }));
+
+        var headers = lines[0].Split(';');
+        headers.ShouldNotContain("kost");
+        headers[16].ShouldBe("auftragsname");
+        lines[1].Split(';')[16].ShouldBe("Night Watch");
+    }
+
+    [Test]
+    public void Format_TruncatesText_ToFortyCharacters()
+    {
+        var lines = FormatLines(BuildData(order =>
+            order.OrderName = "A very long order name that exceeds the BMD text limit"));
+
+        var text = lines[1].Split(';')[12];
+        text.Length.ShouldBe(40);
+        text.ShouldBe("Worker One - A very long order name that");
+    }
+
+    [Test]
+    public void Format_ReplacementChange_DoesNotAddHours()
+    {
+        var lines = FormatLines(BuildData(order => order.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.ReplacementStart, ChangeTime = 2m, Surcharges = 1m },
+        ]));
+
+        lines[1].Split(';')[9].ShouldBe("-8,00");
+    }
+
+    [Test]
+    public void Format_BriefingChange_DoesNotAddHours()
+    {
+        var lines = FormatLines(BuildData(order => order.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.Debriefing, ChangeTime = 0.5m },
+        ]));
+
+        lines[1].Split(';')[9].ShouldBe("-8,00");
+    }
+
+    [Test]
+    public void Format_CorrectionChange_AddsHours()
+    {
+        var lines = FormatLines(BuildData(order => order.WorkEntries[0].Changes =
+        [
+            new WorkChangeExportEntry { Type = WorkChangeType.CorrectionStart, ChangeTime = 1.5m, Surcharges = 0.5m },
+        ]));
+
+        lines[1].Split(';')[9].ShouldBe("-10,00");
     }
 
     private string[] FormatLines(OrderExportData data)

@@ -110,7 +110,15 @@ public class PayrollPeriodExportServiceTests
             _overrideApplier,
             _storage,
             unitOfWork ?? new UnitOfWork(_context, Substitute.For<ILogger<UnitOfWork>>()),
-            Substitute.For<ILogger<PayrollPeriodExportService>>());
+            Substitute.For<ILogger<PayrollPeriodExportService>>(),
+            CompanyInfoLoaderStub());
+    }
+
+    private static ICompanyInfoLoader CompanyInfoLoaderStub()
+    {
+        var loader = Substitute.For<ICompanyInfoLoader>();
+        loader.LoadAsync(Arg.Any<CancellationToken>()).Returns(new CompanyInfo());
+        return loader;
     }
 
     private static PayrollDayEntry Entry(int day, decimal hours, PayrollQuantityUnit unit = PayrollQuantityUnit.Hours) => new()

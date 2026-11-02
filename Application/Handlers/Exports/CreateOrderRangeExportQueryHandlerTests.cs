@@ -3,7 +3,9 @@
 /// <summary>
 /// Unit tests for CreateOrderRangeExportQueryHandler verifying format validation, the ZIP
 /// structure (one entry per exportable order plus a client period entry), entry-name
-/// sanitization and collision handling, and the period-closed filtering of works and breaks.
+/// sanitization and collision handling, and the period-closed filtering of works and breaks - including, with the
+/// real PeriodClosedEntryFilter, that a Closed work of a non-member pool employee on a shift of a group-closed group
+/// is exported in both the order and the client period export.
 /// </summary>
 using System.IO.Compression;
 using Shouldly;
@@ -19,6 +21,7 @@ using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using System.Security.Claims;
@@ -270,6 +273,102 @@ public class CreateOrderRangeExportQueryHandlerTests
             Arg.Is<IReadOnlyCollection<Guid>>(ids => !ids.Contains(_closedEmployeeId)), Arg.Any<CancellationToken>());
         await _exportLogRepository.Received(1).AddAsync(
             Arg.Is<ExportLog>(e => e.RecordCount == 0), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ExportsWorkOfNonMemberOnAShiftOfTheClosedGroup_WithTheRealPeriodClosedFilter()
+    {
+        var poolEmployeeId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var groupShiftId = Guid.NewGuid();
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Klacks.Api.Infrastructure.Persistence.DataBaseContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new Klacks.Api.Infrastructure.Persistence.DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        context.GroupItem.Add(new Klacks.Api.Domain.Models.Associations.GroupItem
+        {
+            Id = Guid.NewGuid(),
+            GroupId = groupId,
+            ShiftId = groupShiftId,
+        });
+        context.Work.Add(new Klacks.Api.Domain.Models.Schedules.Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = poolEmployeeId,
+            ShiftId = groupShiftId,
+            CurrentDate = ClosedDate,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8m,
+            LockLevel = WorkLockLevel.Closed,
+        });
+        context.SealedDay.Add(new Klacks.Api.Domain.Models.Schedules.SealedDay
+        {
+            Id = Guid.NewGuid(),
+            Date = ClosedDate,
+            GroupId = groupId,
+            Level = WorkLockLevel.Closed,
+        });
+        await context.SaveChangesAsync();
+
+        _periodClosedEntryFilter = new Klacks.Api.Infrastructure.Services.Exports.PeriodClosedEntryFilter(context);
+        _orderDataLoader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new OrderExportData
+            {
+                StartDate = FromDate,
+                EndDate = UntilDate,
+                Orders =
+                [
+                    new OrderGroup
+                    {
+                        OrderShiftId = Guid.NewGuid(),
+                        OrderName = "Order",
+                        OrderAbbreviation = "ORD",
+                        ExternalOrderReference = "PO-POOL",
+                        WorkEntries =
+                        [
+                            new WorkExportEntry
+                            {
+                                WorkId = Guid.NewGuid(),
+                                EmployeeId = poolEmployeeId,
+                                EmployeeName = "Pool, Employee",
+                                WorkDate = ClosedDate,
+                                StartTime = new TimeOnly(8, 0),
+                                EndTime = new TimeOnly(16, 0),
+                                WorkTime = 8m,
+                            },
+                        ],
+                    },
+                ],
+            });
+        _clientPeriodDataLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ClientPeriodExportData
+            {
+                StartDate = FromDate,
+                EndDate = UntilDate,
+                Clients =
+                [
+                    new ClientPeriodGroup
+                    {
+                        ClientId = poolEmployeeId,
+                        ClientName = "Pool, Employee",
+                        WorkEntries = [new ClientWorkExportEntry { WorkId = Guid.NewGuid(), WorkDate = ClosedDate, WorkTime = 8m }],
+                    },
+                ],
+            });
+        var formattedOrders = new List<OrderExportData>();
+        _formatter.Format(Arg.Do<OrderExportData>(formattedOrders.Add), Arg.Any<ExportOptions>()).Returns([1, 2, 3]);
+        ClientPeriodExportData? formattedClientData = null;
+        _clientPeriodFormatter.Format(Arg.Do<ClientPeriodExportData>(d => formattedClientData = d), Arg.Any<ExportOptions>()).Returns([4, 5, 6]);
+        var handler = CreateHandler(TestGroupWriteVisibility.AllClientsVisible());
+
+        var result = await handler.Handle(new CreateOrderRangeExportQuery(BuildFilter()), CancellationToken.None);
+
+        ReadZipEntryNames(result.FileContent).ShouldContain("order_PO-POOL.xml");
+        formattedOrders.ShouldHaveSingleItem().Orders.ShouldHaveSingleItem().WorkEntries.ShouldHaveSingleItem()
+            .EmployeeId.ShouldBe(poolEmployeeId);
+        formattedClientData.ShouldNotBeNull();
+        formattedClientData.Clients.ShouldHaveSingleItem().WorkEntries.ShouldHaveSingleItem().WorkDate.ShouldBe(ClosedDate);
     }
 
     private static OrderRangeExportFilter BuildFilter()

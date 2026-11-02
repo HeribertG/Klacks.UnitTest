@@ -4,7 +4,9 @@
 /// Unit tests for the person-based PayrollExportDataLoader against an in-memory EF Core database: every person with
 /// closed entries is exported exactly once whatever groups they belong to (or none), employees and external
 /// employees are included, customers, scenario, soft-deleted and unsealed entries stay out, a break is exported once,
-/// and an on-call absence is one day.
+/// and an on-call absence is one day. WorkChanges follow the period-hours rules: corrections, travel and the
+/// briefing rows of the container expansion add hours, a replacement moves hours from the work's employee to the
+/// replacing person; break surcharges count; a soft-deleted person's closed entries are still exported.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Exports.Payroll;
@@ -358,11 +360,161 @@ public class PayrollExportDataLoaderTests
         var data = await _loader.LoadAsync(FromDate, UntilDate, null);
         var result = new DatevLugBewegungsdatenFormatter().Format(data, config);
 
-        var line = Encoding.GetEncoding(PayrollExportConstants.Windows1252CodePage)
-            .GetString(result.Content)
-            .Replace(PayrollExportConstants.LineEnding, string.Empty);
-        line.ShouldBe("101;18012026;;4711;;1,00;;;;;");
+        var content = Encoding.GetEncoding(PayrollExportConstants.Windows1252CodePage).GetString(result.Content);
+        content.ShouldBe(";;01/2026\r\n101;;;4711;;;1,00;;;;\r\n");
         result.SkippedAbsenceCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task LoadAsync_CorrectionOnClosedWork_AddsItsHoursToTheDay()
+    {
+        var clientId = AddClient(130);
+        var workId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        AddWorkChange(workId, WorkChangeType.CorrectionEnd, 1.5m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var entry = data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem();
+        entry.Kind.ShouldBe(PayrollEntryKind.WorkHours);
+        entry.Quantity.ShouldBe(9.5m);
+    }
+
+    [Test]
+    public async Task LoadAsync_TravelOnClosedWork_AddsItsHoursAndSurcharges()
+    {
+        var clientId = AddClient(131);
+        var workId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        AddWorkChange(workId, WorkChangeType.TravelStart, 0.5m, surcharges: 0.25m);
+        AddWorkChange(workId, WorkChangeType.TravelWithin, 0.25m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(8.75m);
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.Surcharge).Quantity.ShouldBe(0.25m);
+    }
+
+    [Test]
+    public async Task LoadAsync_ContainerBriefingRows_CountLikeThePeriodHours()
+    {
+        var clientId = AddClient(132);
+        var workId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        AddWorkChange(workId, WorkChangeType.CorrectionStart, 0.5m, description: "briefing_time");
+        AddWorkChange(workId, WorkChangeType.CorrectionEnd, 0.25m, description: "debriefing_time");
+        AddWorkChange(workId, WorkChangeType.Briefing, 3m);
+        AddWorkChange(workId, WorkChangeType.Debriefing, 3m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem().Quantity.ShouldBe(8.75m);
+    }
+
+    [Test]
+    public async Task LoadAsync_Replacement_MovesTheHoursToTheReplacingPersonOnThatDay()
+    {
+        var original = AddClient(133, name: "Aaa");
+        var substitute = AddClient(134, EntityTypeEnum.ExternEmp, name: "Bbb");
+        var workId = AddWork(original, WorkDay, _shiftAId, workTime: 8m);
+        AddWorkChange(workId, WorkChangeType.ReplacementStart, 3m, replaceClientId: substitute, surcharges: 1m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.Select(e => e.ClientId).ShouldBe([original, substitute]);
+        var originalEntries = data.Employees[0].Entries;
+        originalEntries.Single(e => e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(5m);
+        originalEntries.Single(e => e.Kind == PayrollEntryKind.Surcharge).Quantity.ShouldBe(-1m);
+        var substituteEmployee = data.Employees[1];
+        substituteEmployee.IdNumber.ShouldBe(134);
+        var hours = substituteEmployee.Entries.Single(e => e.Kind == PayrollEntryKind.WorkHours);
+        hours.Date.ShouldBe(WorkDay);
+        hours.Quantity.ShouldBe(3m);
+        substituteEmployee.Entries.Single(e => e.Kind == PayrollEntryKind.Surcharge).Quantity.ShouldBe(1m);
+    }
+
+    [Test]
+    public async Task LoadAsync_ReplacementWithClientFilterOnTheSubstitute_ExportsOnlyTheSubstitute()
+    {
+        var original = AddClient(135);
+        var substitute = AddClient(136);
+        var workId = AddWork(original, WorkDay, _shiftAId, workTime: 8m);
+        AddWorkChange(workId, WorkChangeType.ReplacementWithin, 2m, replaceClientId: substitute);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, [substitute]);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.ClientId.ShouldBe(substitute);
+        employee.Entries.ShouldHaveSingleItem().Quantity.ShouldBe(2m);
+    }
+
+    [Test]
+    public async Task LoadAsync_WorkChangesOfUnclosedScenarioOrDeletedRows_AreIgnored()
+    {
+        var clientId = AddClient(137);
+        var substitute = AddClient(138);
+        var closedWorkId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        var openWorkId = AddWork(clientId, WorkDay.AddDays(1), _shiftAId, workTime: 8m, lockLevel: WorkLockLevel.Approved);
+        AddWorkChange(openWorkId, WorkChangeType.ReplacementStart, 2m, replaceClientId: substitute);
+        AddWorkChange(closedWorkId, WorkChangeType.CorrectionEnd, 1m, isDeleted: true);
+        AddWorkChange(closedWorkId, WorkChangeType.CorrectionEnd, 1m, analyseToken: Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.ClientId.ShouldBe(clientId);
+        employee.Entries.ShouldHaveSingleItem().Quantity.ShouldBe(8m);
+    }
+
+    [Test]
+    public async Task LoadAsync_BreakSurcharges_AreAddedToTheDaySurcharge()
+    {
+        var clientId = AddClient(139);
+        AddBreak(clientId, _vacationAbsenceId, VacationMonday, workTime: 8m, surcharges: 0.5m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.Absence).Quantity.ShouldBe(8m);
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.Surcharge).Quantity.ShouldBe(0.5m);
+        employee.Entries.ShouldNotContain(e => e.Kind == PayrollEntryKind.WorkHours);
+    }
+
+    [Test]
+    public async Task LoadAsync_SoftDeletedPerson_ClosedEntriesAreStillExportedWithNameAndIdNumber()
+    {
+        var clientId = AddClient(140, name: "Gone", isDeleted: true);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        AddBreak(clientId, _vacationAbsenceId, VacationMonday, workTime: 4m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.ClientId.ShouldBe(clientId);
+        employee.IdNumber.ShouldBe(140);
+        employee.LastName.ShouldBe("Gone");
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(8m);
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.Absence).Quantity.ShouldBe(4m);
+    }
+
+    [Test]
+    public async Task LoadAsync_SoftDeletedPerson_DeletedAndUnclosedEntriesStayOut()
+    {
+        var clientId = AddClient(141, isDeleted: true);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m, isDeleted: true);
+        AddWork(clientId, WorkDay.AddDays(1), _shiftAId, workTime: 8m, lockLevel: WorkLockLevel.Approved);
+        AddWork(clientId, WorkDay.AddDays(2), _shiftAId, workTime: 8m, analyseToken: Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
     }
 
     private static Absence NewAbsence(Guid id, string abbreviation, bool isOnCall)
@@ -377,7 +529,11 @@ public class PayrollExportDataLoaderTests
         };
     }
 
-    private Guid AddClient(int idNumber, EntityTypeEnum type = EntityTypeEnum.Employee, string? name = null)
+    private Guid AddClient(
+        int idNumber,
+        EntityTypeEnum type = EntityTypeEnum.Employee,
+        string? name = null,
+        bool isDeleted = false)
     {
         var clientId = Guid.NewGuid();
         _context.Client.Add(new Client
@@ -387,6 +543,7 @@ public class PayrollExportDataLoaderTests
             IdNumber = idNumber,
             Name = name ?? $"Employee{idNumber}",
             FirstName = "Test",
+            IsDeleted = isDeleted,
         });
         return clientId;
     }
@@ -411,7 +568,7 @@ public class PayrollExportDataLoaderTests
         });
     }
 
-    private void AddWork(
+    private Guid AddWork(
         Guid clientId,
         DateOnly date,
         Guid shiftId,
@@ -420,9 +577,10 @@ public class PayrollExportDataLoaderTests
         Guid? analyseToken = null,
         WorkLockLevel lockLevel = WorkLockLevel.Closed)
     {
+        var workId = Guid.NewGuid();
         _context.Work.Add(new Work
         {
-            Id = Guid.NewGuid(),
+            Id = workId,
             ClientId = clientId,
             ShiftId = shiftId,
             CurrentDate = date,
@@ -433,6 +591,33 @@ public class PayrollExportDataLoaderTests
             AnalyseToken = analyseToken,
             IsDeleted = isDeleted,
         });
+        return workId;
+    }
+
+    private void AddWorkChange(
+        Guid workId,
+        WorkChangeType type,
+        decimal changeTime,
+        Guid? replaceClientId = null,
+        decimal surcharges = 0m,
+        string description = "",
+        bool isDeleted = false,
+        Guid? analyseToken = null)
+    {
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = workId,
+            Type = type,
+            ChangeTime = changeTime,
+            Surcharges = surcharges,
+            StartTime = new TimeOnly(16, 0),
+            EndTime = new TimeOnly(17, 0),
+            ReplaceClientId = replaceClientId,
+            Description = description,
+            IsDeleted = isDeleted,
+            AnalyseToken = analyseToken,
+        });
     }
 
     private void AddBreak(
@@ -442,7 +627,8 @@ public class PayrollExportDataLoaderTests
         decimal workTime,
         bool isDeleted = false,
         Guid? analyseToken = null,
-        WorkLockLevel lockLevel = WorkLockLevel.Closed)
+        WorkLockLevel lockLevel = WorkLockLevel.Closed,
+        decimal surcharges = 0m)
     {
         _context.Break.Add(new Break
         {
@@ -453,6 +639,7 @@ public class PayrollExportDataLoaderTests
             StartTime = new TimeOnly(0, 0),
             EndTime = new TimeOnly(23, 59),
             WorkTime = workTime,
+            Surcharges = surcharges,
             LockLevel = lockLevel,
             AnalyseToken = analyseToken,
             IsDeleted = isDeleted,
