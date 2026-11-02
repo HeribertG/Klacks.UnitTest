@@ -86,4 +86,56 @@ public class SettingValueValidatorTests
         Should.Throw<InvalidRequestException>(
             () => _sut.Validate(SettingKeys.KlacksyProactiveAutonomyLevel, value));
     }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("1001")]
+    [TestCase(" 12345 ")]
+    [TestCase("9999999")]
+    public void Validate_DatevConsultantNumberEmptyOrInRange_DoesNotThrow(string value)
+    {
+        Should.NotThrow(() => _sut.Validate(SettingKeys.DatevConsultantNumber, value));
+    }
+
+    [TestCase("1000")]
+    [TestCase("0")]
+    [TestCase("10000000")]
+    [TestCase("-1001")]
+    [TestCase("+1001")]
+    [TestCase("12A45")]
+    [TestCase("1001.5")]
+    [TestCase("99999999999")]
+    public void Validate_DatevConsultantNumberOutOfRangeOrNotWholeNumber_Throws(string value)
+    {
+        Should.Throw<InvalidRequestException>(() => _sut.Validate(SettingKeys.DatevConsultantNumber, value));
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("1")]
+    [TestCase(" 500 ")]
+    [TestCase("99999")]
+    public void Validate_DatevClientNumberEmptyOrInRange_DoesNotThrow(string value)
+    {
+        Should.NotThrow(() => _sut.Validate(SettingKeys.DatevClientNumber, value));
+    }
+
+    [TestCase("0")]
+    [TestCase("100000")]
+    [TestCase("-1")]
+    [TestCase("+1")]
+    [TestCase("1.5")]
+    [TestCase("abc")]
+    [TestCase("99999999999")]
+    public void Validate_DatevClientNumberOutOfRangeOrNotWholeNumber_Throws(string value)
+    {
+        Should.Throw<InvalidRequestException>(() => _sut.Validate(SettingKeys.DatevClientNumber, value));
+    }
+
+    [Test]
+    public void Validate_DatevNumbersNullValue_IsTreatedAsEmptyAndDoesNotThrow()
+    {
+        Should.NotThrow(() => _sut.Validate(SettingKeys.DatevConsultantNumber, null!));
+        Should.NotThrow(() => _sut.Validate(SettingKeys.DatevClientNumber, null!));
+    }
 }

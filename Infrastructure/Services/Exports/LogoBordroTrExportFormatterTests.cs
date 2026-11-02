@@ -77,10 +77,11 @@ public class LogoBordroTrExportFormatterTests
     }
 
     [Test]
-    public void Format_SplitsCompoundFirstName_OnFirstComma()
+    public void Format_WritesCompoundFirstName_FromStructuredFields()
     {
         var data = BuildData();
-        data.Employees[0].FullName = "Kaya, Mehmet Ali";
+        data.Employees[0].FirstName = "Mehmet Ali";
+        data.Employees[0].LastName = "Kaya";
 
         var sheet = OpenSheet(_formatter.Format(data, Config()));
 
@@ -143,6 +144,8 @@ public class LogoBordroTrExportFormatterTests
                     ClientId = Guid.NewGuid(),
                     IdNumber = 7,
                     FullName = "Ayse Yilmaz",
+                    FirstName = "Ayse",
+                    LastName = "Yilmaz",
                     Entries =
                     [
                         new PayrollDayEntry { Date = new DateOnly(2026, 1, 5), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },
@@ -195,6 +198,8 @@ public class LogoBordroTrExportFormatterTests
                     ClientId = Guid.NewGuid(),
                     IdNumber = 42,
                     FullName = "Yilmaz, Mehmet",
+                    FirstName = "Mehmet",
+                    LastName = "Yilmaz",
                     Entries =
                     [
                         new PayrollDayEntry { Date = new DateOnly(2026, 1, 5), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },

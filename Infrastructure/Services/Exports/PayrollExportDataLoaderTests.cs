@@ -96,6 +96,21 @@ public class PayrollExportDataLoaderTests
     }
 
     [Test]
+    public async Task LoadAsync_ProvidesStructuredFirstAndLastName()
+    {
+        var clientId = AddClient(103, name: "  Muster, Meier ");
+        AddWork(clientId, WorkDay, Guid.NewGuid(), workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.LastName.ShouldBe("Muster, Meier");
+        employee.FirstName.ShouldBe("Test");
+        employee.FullName.ShouldBe("Muster, Meier, Test");
+    }
+
+    [Test]
     public async Task LoadAsync_ExternEmp_IsIncluded()
     {
         var clientId = AddClient(103, EntityTypeEnum.ExternEmp);
