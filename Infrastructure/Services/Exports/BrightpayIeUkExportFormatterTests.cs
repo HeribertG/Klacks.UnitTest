@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for the BrightPay IE/UK "Import Hourly Payments" CSV formatter: header row, works-number
-/// join key, normal-hours vs time-and-a-half column placement, surcharge gating and unmapped-absence
-/// skipping.
+/// Unit tests for the BrightPay IE/UK "Import Hourly Payments" CSV formatter: "Employee works number" plus five
+/// "Payment n - Description" / "Payment n - Number of normal hours" blocks, one row per employee with per-description
+/// period totals, continuation row after five descriptions, fixed comma delimiter, surcharges as normal hours under
+/// SurchargeWageType, and the skip counters for unmapped wage types, unmapped absences and day-based entries.
 /// </summary>
 
 using System.Text;
@@ -18,6 +19,14 @@ namespace Klacks.UnitTest.Infrastructure.Services.Exports;
 [TestFixture]
 public class BrightpayIeUkExportFormatterTests
 {
+    private const string Header =
+        "Employee works number," +
+        "Payment 1 - Description,Payment 1 - Number of normal hours," +
+        "Payment 2 - Description,Payment 2 - Number of normal hours," +
+        "Payment 3 - Description,Payment 3 - Number of normal hours," +
+        "Payment 4 - Description,Payment 4 - Number of normal hours," +
+        "Payment 5 - Description,Payment 5 - Number of normal hours";
+
     private BrightpayIeUkExportFormatter _formatter = null!;
 
     [OneTimeSetUp]
@@ -50,6 +59,17 @@ public class BrightpayIeUkExportFormatterTests
         };
     }
 
+    private static PayrollDayEntry Hours(PayrollEntryKind kind, int day, decimal quantity, Guid? absenceId = null)
+    {
+        return new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, day),
+            Kind = kind,
+            Quantity = quantity,
+            AbsenceId = absenceId,
+        };
+    }
+
     private static PayrollExportData DataWith(params PayrollDayEntry[] entries)
     {
         return new PayrollExportData
@@ -69,134 +89,194 @@ public class BrightpayIeUkExportFormatterTests
         };
     }
 
-    private static string[] Lines(byte[] content, string encoding = "utf-8")
+    private static string Text(byte[] content, string encoding = "utf-8")
     {
-        return Encoding.GetEncoding(encoding).GetString(content)
-            .Split(PayrollExportConstants.LineEnding, StringSplitOptions.RemoveEmptyEntries);
+        return Encoding.GetEncoding(encoding).GetString(content);
+    }
+
+    private static string Csv(params string[] lines)
+    {
+        return string.Concat(lines.Select(line => line + PayrollExportConstants.LineEnding));
     }
 
     [Test]
-    public void Format_WritesHeaderRow_WithFourColumns()
+    public void Format_NoEntries_WritesOnlyTheHeaderRow()
     {
         var result = _formatter.Format(DataWith(), Config());
-        var lines = Lines(result.Content);
 
-        lines[0].ShouldBe("Works number,Description,Number of normal hours,Number of time and a half hours");
+        Text(result.Content).ShouldBe(Csv(Header));
+        result.RecordCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
     }
 
     [Test]
-    public void Format_WorkHours_ProducesRowWithWorksNumberDescriptionAndNormalHours()
+    public void Format_WorkHours_ProducesOneRowWithWorksNumberDescriptionAndNormalHours()
     {
-        var data = DataWith(new PayrollDayEntry
-        {
-            Date = new DateOnly(2026, 1, 15),
-            Kind = PayrollEntryKind.WorkHours,
-            Quantity = 8.5m,
-        });
+        var data = DataWith(Hours(PayrollEntryKind.WorkHours, 15, 8.5m));
 
         var result = _formatter.Format(data, Config(baseWageType: "Basic Pay"));
-        var fields = Lines(result.Content)[1].Split(',');
 
-        fields[0].ShouldBe("42");
-        fields[1].ShouldBe("Basic Pay");
-        fields[2].ShouldBe("8.50");
-        fields[3].ShouldBe(string.Empty);
+        Text(result.Content).ShouldBe(Csv(Header, "42,Basic Pay,8.50,,,,,,,,"));
         result.RecordCount.ShouldBe(1);
-        result.SkippedAbsenceCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(1);
+        result.TotalSkippedCount.ShouldBe(0);
     }
 
     [Test]
-    public void Format_UsesConfiguredDelimiter()
-    {
-        var data = DataWith(new PayrollDayEntry
-        {
-            Date = new DateOnly(2026, 1, 15),
-            Kind = PayrollEntryKind.WorkHours,
-            Quantity = 8m,
-        });
-
-        var result = _formatter.Format(data, Config(delimiter: "|", baseWageType: "Basic Pay"));
-        var lines = Lines(result.Content);
-
-        lines[0].ShouldBe("Works number|Description|Number of normal hours|Number of time and a half hours");
-        lines[1].Split('|').Length.ShouldBe(4);
-    }
-
-    [Test]
-    public void Format_Surcharge_IsOmittedWhenNoSurchargeWageTypeConfigured()
-    {
-        var data = DataWith(new PayrollDayEntry
-        {
-            Date = new DateOnly(2026, 1, 15),
-            Kind = PayrollEntryKind.Surcharge,
-            Quantity = 2m,
-        });
-
-        var result = _formatter.Format(data, Config(surchargeWageType: string.Empty));
-
-        result.RecordCount.ShouldBe(0);
-        Lines(result.Content).Length.ShouldBe(1);
-    }
-
-    [Test]
-    public void Format_Surcharge_IsEmittedInTimeAndAHalfColumnWhenConfigured()
-    {
-        var data = DataWith(new PayrollDayEntry
-        {
-            Date = new DateOnly(2026, 1, 15),
-            Kind = PayrollEntryKind.Surcharge,
-            Quantity = 2m,
-        });
-
-        var result = _formatter.Format(data, Config(surchargeWageType: "Overtime Premium"));
-        var fields = Lines(result.Content)[1].Split(',');
-
-        result.RecordCount.ShouldBe(1);
-        fields[1].ShouldBe("Overtime Premium");
-        fields[2].ShouldBe(string.Empty);
-        fields[3].ShouldBe("2.00");
-    }
-
-    [Test]
-    public void Format_MappedAbsence_UsesConfiguredDescriptionInNormalHoursColumn()
+    public void Format_SeveralDays_AreSummedPerDescription_InFirstSeenOrder()
     {
         var absenceId = Guid.NewGuid();
         var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"Sick Pay\"}}}}";
+        var data = DataWith(
+            Hours(PayrollEntryKind.WorkHours, 15, 8.5m),
+            Hours(PayrollEntryKind.Surcharge, 15, 1.25m),
+            Hours(PayrollEntryKind.WorkHours, 16, 7.75m),
+            Hours(PayrollEntryKind.Absence, 20, 8m, absenceId),
+            Hours(PayrollEntryKind.Surcharge, 21, 0.5m),
+            Hours(PayrollEntryKind.Absence, 22, 4m, absenceId));
 
-        var data = DataWith(new PayrollDayEntry
+        var result = _formatter.Format(data, Config(surchargeWageType: "Premium", absenceMappingJson: mapping));
+
+        Text(result.Content).ShouldBe(Csv(Header, "42,Basic Pay,16.25,Premium,1.75,Sick Pay,12.00,,,,"));
+        result.RecordCount.ShouldBe(1);
+        result.EmittedEntryCount.ShouldBe(6);
+        result.TotalSkippedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void Format_MoreThanFiveDescriptions_ContinuesOnASecondRowWithTheSameWorksNumber()
+    {
+        var ids = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
+        var mapping = "{" + string.Join(",", ids.Select((id, i) => $"\"{id}\":{{\"wageType\":\"A{i + 1}\"}}")) + "}";
+        var entries = new List<PayrollDayEntry> { Hours(PayrollEntryKind.WorkHours, 2, 8m) };
+        entries.AddRange(ids.Select((id, i) => Hours(PayrollEntryKind.Absence, i + 3, i + 1, id)));
+
+        var result = _formatter.Format(DataWith(entries.ToArray()), Config(absenceMappingJson: mapping));
+
+        Text(result.Content).ShouldBe(Csv(
+            Header,
+            "42,Basic Pay,8.00,A1,1.00,A2,2.00,A3,3.00,A4,4.00",
+            "42,A5,5.00,,,,,,,,"));
+        result.RecordCount.ShouldBe(2);
+        result.EmittedEntryCount.ShouldBe(6);
+    }
+
+    [Test]
+    public void Format_OneRowPerEmployee_InEmployeeOrder()
+    {
+        var data = new PayrollExportData
         {
-            Date = new DateOnly(2026, 1, 20),
-            Kind = PayrollEntryKind.Absence,
-            Quantity = 8m,
-            AbsenceId = absenceId,
-        });
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 1, 31),
+            Employees =
+            [
+                new PayrollEmployee { ClientId = Guid.NewGuid(), IdNumber = 42, Entries = [Hours(PayrollEntryKind.WorkHours, 15, 8m)] },
+                new PayrollEmployee { ClientId = Guid.NewGuid(), IdNumber = 7, Entries = [] },
+                new PayrollEmployee { ClientId = Guid.NewGuid(), IdNumber = 77, Entries = [Hours(PayrollEntryKind.WorkHours, 16, 6m)] },
+            ],
+        };
+
+        var result = _formatter.Format(data, Config());
+
+        Text(result.Content).ShouldBe(Csv(Header, "42,Basic Pay,8.00,,,,,,,,", "77,Basic Pay,6.00,,,,,,,,"));
+        result.RecordCount.ShouldBe(2);
+    }
+
+    [Test]
+    public void Format_IgnoresConfiguredDelimiter_AndAlwaysWritesComma()
+    {
+        var data = DataWith(Hours(PayrollEntryKind.WorkHours, 15, 8m));
+
+        var result = _formatter.Format(data, Config(delimiter: ";"));
+
+        Text(result.Content).ShouldBe(Csv(Header, "42,Basic Pay,8.00,,,,,,,,"));
+    }
+
+    [Test]
+    public void Format_DescriptionWithCommaQuoteOrFormulaTrigger_IsSanitised()
+    {
+        var data = DataWith(Hours(PayrollEntryKind.WorkHours, 15, 8m));
+
+        var result = _formatter.Format(data, Config(baseWageType: "=Basic, \"Pay\""));
+
+        Text(result.Content).ShouldBe(Csv(Header, "42,'=Basic Pay,8.00,,,,,,,,"));
+    }
+
+    [Test]
+    public void Format_Surcharge_IsSkippedAndCountedWhenNoSurchargeWageTypeConfigured()
+    {
+        var data = DataWith(Hours(PayrollEntryKind.Surcharge, 15, 2m));
+
+        var result = _formatter.Format(data, Config(surchargeWageType: string.Empty));
+
+        Text(result.Content).ShouldBe(Csv(Header));
+        result.RecordCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_Surcharge_IsWrittenAsNormalHoursUnderSurchargeWageType()
+    {
+        var data = DataWith(Hours(PayrollEntryKind.Surcharge, 15, 2m));
+
+        var result = _formatter.Format(data, Config(surchargeWageType: "Overtime Premium"));
+
+        Text(result.Content).ShouldBe(Csv(Header, "42,Overtime Premium,2.00,,,,,,,,"));
+        result.RecordCount.ShouldBe(1);
+        result.EmittedEntryCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_WorkHours_IsSkippedAndCountedWhenNoBaseWageTypeConfigured()
+    {
+        var data = DataWith(Hours(PayrollEntryKind.WorkHours, 15, 8m));
+
+        var result = _formatter.Format(data, Config(baseWageType: "  "));
+
+        Text(result.Content).ShouldBe(Csv(Header));
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedBaseWageCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_MappedAbsence_UsesConfiguredDescriptionAsNormalHours()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"Sick Pay\"}}}}";
+        var data = DataWith(Hours(PayrollEntryKind.Absence, 20, 8m, absenceId));
 
         var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
-        var fields = Lines(result.Content)[1].Split(',');
 
+        Text(result.Content).ShouldBe(Csv(Header, "42,Sick Pay,8.00,,,,,,,,"));
         result.RecordCount.ShouldBe(1);
         result.SkippedAbsenceCount.ShouldBe(0);
-        fields[1].ShouldBe("Sick Pay");
-        fields[2].ShouldBe("8.00");
-        fields[3].ShouldBe(string.Empty);
+    }
+
+    [Test]
+    public void Format_MappedAbsenceWithBlankWageType_IsSkippedAndCountedAsAbsence()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"K\",\"wageType\":\"\"}}}}";
+        var data = DataWith(Hours(PayrollEntryKind.Absence, 20, 8m, absenceId));
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+
+        Text(result.Content).ShouldBe(Csv(Header));
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(1);
     }
 
     [Test]
     public void Format_UnmappedAbsence_IsSkippedAndCounted()
     {
-        var data = DataWith(new PayrollDayEntry
-        {
-            Date = new DateOnly(2026, 1, 20),
-            Kind = PayrollEntryKind.Absence,
-            Quantity = 8m,
-            AbsenceId = Guid.NewGuid(),
-        });
+        var data = DataWith(Hours(PayrollEntryKind.Absence, 20, 8m, Guid.NewGuid()));
 
         var result = _formatter.Format(data, Config(absenceMappingJson: "{}"));
 
+        Text(result.Content).ShouldBe(Csv(Header));
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(1);
-        Lines(result.Content).Length.ShouldBe(1);
     }
 
     [Test]
@@ -204,15 +284,7 @@ public class BrightpayIeUkExportFormatterTests
     {
         var result = _formatter.Format(DataWith(), Config(encoding: string.Empty));
 
-        Lines(result.Content, "utf-8")[0].ShouldBe("Works number,Description,Number of normal hours,Number of time and a half hours");
-    }
-
-    [Test]
-    public void Format_DefaultsToCommaDelimiter_WhenDelimiterUnset()
-    {
-        var result = _formatter.Format(DataWith(), Config(delimiter: string.Empty));
-
-        Lines(result.Content)[0].ShouldBe("Works number,Description,Number of normal hours,Number of time and a half hours");
+        Text(result.Content, "utf-8").ShouldBe(Csv(Header));
     }
 
     [Test]
@@ -238,9 +310,8 @@ public class BrightpayIeUkExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
-        var lines = Lines(result.Content);
 
-        lines.Length.ShouldBe(1);
+        Text(result.Content).ShouldBe(Csv(Header));
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(0);
         result.SkippedUnsupportedUnitCount.ShouldBe(1);
