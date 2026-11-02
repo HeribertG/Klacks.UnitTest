@@ -78,6 +78,85 @@ public class ShiftVisibilityGuardTests
     }
 
     [Test]
+    public async Task FindFirstNotReferable_Unrestricted_FindsAMissingOrTokenedId()
+    {
+        Unrestricted();
+        var real = Guid.NewGuid();
+        var notReal = Guid.NewGuid();
+        _repository.FilterRealShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), CancellationToken.None).Returns([real]);
+
+        (await _guard.FindFirstNotReferableAsync([real, notReal], CancellationToken.None)).ShouldBe(notReal);
+    }
+
+    [Test]
+    public async Task FindFirstNotReferable_Restricted_FindsAHiddenRealId()
+    {
+        Restricted();
+        var visible = Guid.NewGuid();
+        var hidden = Guid.NewGuid();
+        VisibleShiftsAre(visible);
+        _repository.FilterRealShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), CancellationToken.None).Returns([visible, hidden]);
+
+        (await _guard.FindFirstNotReferableAsync([visible, hidden], CancellationToken.None)).ShouldBe(hidden);
+    }
+
+    [Test]
+    public async Task FindFirstNotReferable_WhenAllAreRealAndVisible_ReturnsNull()
+    {
+        Restricted();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        VisibleShiftsAre(first, second);
+        _repository.FilterRealShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), CancellationToken.None).Returns([first, second]);
+
+        (await _guard.FindFirstNotReferableAsync([first, second], CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task FindFirstNotReferable_WithoutIds_ReturnsNull_WithoutAQuery()
+    {
+        Unrestricted();
+
+        (await _guard.FindFirstNotReferableAsync([], CancellationToken.None)).ShouldBeNull();
+
+        await _repository.DidNotReceiveWithAnyArgs().FilterRealShiftIdsAsync(default!, default);
+    }
+
+    [Test]
+    public async Task FindFirstTokened_Unrestricted_StillAsksTheReader_AndReturnsItsAnswer()
+    {
+        Unrestricted();
+        var tokened = Guid.NewGuid();
+        var ids = new[] { Guid.NewGuid(), tokened };
+        _repository.FindFirstTokenedShiftIdAsync(ids, CancellationToken.None).Returns(tokened);
+
+        (await _guard.FindFirstTokenedAsync(ids, CancellationToken.None)).ShouldBe(tokened);
+
+        await _repository.Received(1).FindFirstTokenedShiftIdAsync(ids, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task FindFirstTokened_Restricted_AnswersFromTheReaderToo()
+    {
+        Restricted();
+        var tokened = Guid.NewGuid();
+        var ids = new[] { tokened };
+        _repository.FindFirstTokenedShiftIdAsync(ids, CancellationToken.None).Returns(tokened);
+
+        (await _guard.FindFirstTokenedAsync(ids, CancellationToken.None)).ShouldBe(tokened);
+    }
+
+    [Test]
+    public async Task FindFirstTokened_WhenNoShiftCarriesAToken_ReturnsNull()
+    {
+        Unrestricted();
+        var ids = new[] { Guid.NewGuid() };
+        _repository.FindFirstTokenedShiftIdAsync(ids, CancellationToken.None).Returns((Guid?)null);
+
+        (await _guard.FindFirstTokenedAsync(ids, CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Test]
     public async Task FilterVisible_Restricted_ReturnsOnlyWhatTheReaderPasses_WithOneQuery()
     {
         Restricted();

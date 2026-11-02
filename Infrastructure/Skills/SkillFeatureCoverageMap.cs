@@ -133,6 +133,7 @@ public static class SkillFeatureCoverageMap
         ["RecoveryController"] = Covered("cover_absence", "get_replacement_status"),
         ["ScheduleCommandsController"] = Covered("add_schedule_command"),
         ["ScheduleNotesController"] = Covered("list_schedule_notes", "add_schedule_note", "delete_schedule_note"),
+        ["ScenarioVariantsController"] = Gap("virtual shift keys for scenarios (scenario variants)"),
         ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details", "assign_macro_to_shift"),
         ["WizardController"] = Covered("start_wizard1", "list_open_wizard_jobs", "cancel_wizard_job"),
         ["WorkChangesController"] = Covered("add_workchange"),

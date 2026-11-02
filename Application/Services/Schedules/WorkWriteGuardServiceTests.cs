@@ -12,6 +12,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Shifts;
 
@@ -25,6 +26,7 @@ public class WorkWriteGuardServiceTests
     private IShiftRepository _shiftRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
+    private IShiftVisibilityReader _shiftVisibilityReader = null!;
     private WorkWriteGuardService _sut = null!;
 
     private readonly Guid _shiftId = Guid.NewGuid();
@@ -39,8 +41,85 @@ public class WorkWriteGuardServiceTests
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
         _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
-        _sut = new WorkWriteGuardService(_shiftRepository, _workRepository, _conflictChecker);
+        _shiftVisibilityReader = Substitute.For<IShiftVisibilityReader>();
+        _sut = new WorkWriteGuardService(_shiftRepository, _workRepository, _conflictChecker, _shiftVisibilityReader);
     }
+
+    [Test]
+    public async Task FindShiftOutsideWorkWorld_RealShift_IsInEveryWorld_ThePlanAndAnyScenario()
+    {
+        var realWork = (_shiftId, (Guid?)null);
+        var scenarioWork = (_shiftId, (Guid?)Guid.NewGuid());
+
+        (await _sut.FindShiftOutsideWorkWorldAsync([realWork, scenarioWork], CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task FindShiftOutsideWorkWorld_CloneOfTheWorksScenario_IsInItsWorld()
+    {
+        var token = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(_shiftId, token, IsVariant: false));
+
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, token)], CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task FindShiftOutsideWorkWorld_CloneOfAnotherScenario_IsOutside_ForARealAndAForeignScenarioWork()
+    {
+        GivenWorlds(new ShiftWorld(_shiftId, Guid.NewGuid(), IsVariant: false));
+
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, null)], CancellationToken.None)).ShouldBe(_shiftId);
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, Guid.NewGuid())], CancellationToken.None)).ShouldBe(_shiftId);
+    }
+
+    [Test]
+    public async Task FindShiftOutsideWorkWorld_KeyShift_IsOutsideEveryWorld_ItsOwnTokenIncluded()
+    {
+        var keyToken = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(_shiftId, keyToken, IsVariant: true));
+
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, null)], CancellationToken.None)).ShouldBe(_shiftId);
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, Guid.NewGuid())], CancellationToken.None)).ShouldBe(_shiftId);
+        (await _sut.FindShiftOutsideWorkWorldAsync([(_shiftId, keyToken)], CancellationToken.None)).ShouldBe(_shiftId);
+    }
+
+    [Test]
+    public async Task FindShiftOutsideWorkWorld_AsksOnceForTheWholeBatch_AndNamesTheShiftOutside()
+    {
+        var realShiftId = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(_shiftId, Guid.NewGuid(), IsVariant: true));
+
+        var outside = await _sut.FindShiftOutsideWorkWorldAsync(
+            [(realShiftId, null), (_shiftId, null), (_shiftId, null)], CancellationToken.None);
+
+        outside.ShouldBe(_shiftId);
+        await _shiftVisibilityReader.Received(1).GetTokenedShiftWorldsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnsureShiftsInWorkWorld_KeyShift_ReadsExactlyLikeAMissingShift()
+    {
+        GivenWorlds(new ShiftWorld(_shiftId, Guid.NewGuid(), IsVariant: true));
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => _sut.EnsureShiftsInWorkWorldAsync([(_shiftId, null)], CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _shiftId));
+    }
+
+    [Test]
+    public async Task EnsureShiftsInWorkWorld_NothingToCheck_AsksNothing()
+    {
+        await _sut.EnsureShiftsInWorkWorldAsync([], CancellationToken.None);
+
+        await _shiftVisibilityReader.DidNotReceiveWithAnyArgs().GetTokenedShiftWorldsAsync(default!, default);
+    }
+
+    private void GivenWorlds(params ShiftWorld[] worlds)
+        => _shiftVisibilityReader
+            .GetTokenedShiftWorldsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(worlds);
 
     [Test]
     public async Task EnsureNoSporadicConflictAsync_NonSporadicShift_NeverQueriesCapacity()

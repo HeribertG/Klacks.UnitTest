@@ -15,6 +15,7 @@ namespace Klacks.UnitTest.Queries.Shifts;
 public class GetResetDateRangeQueryHandlerTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IVariantShiftWriteGuard _variantGuard = null!;
     private ILogger<GetResetDateRangeQueryHandler> _logger = null!;
     private GetResetDateRangeQueryHandler _handler = null!;
 
@@ -22,13 +23,65 @@ public class GetResetDateRangeQueryHandlerTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _variantGuard = Substitute.For<IVariantShiftWriteGuard>();
         _logger = Substitute.For<ILogger<GetResetDateRangeQueryHandler>>();
 
         _handler = new GetResetDateRangeQueryHandler(
             _shiftRepository,
             ShiftVisibilityGuards.AllowAll(),
+            _variantGuard,
             _logger
         );
+    }
+
+    [Test]
+    public async Task Handle_OrderInAnOpenKey_IsFoundThroughTheStoredToken()
+    {
+        var originalId = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var sealedOrder = new Shift
+        {
+            Id = originalId,
+            Status = ShiftStatus.SealedOrder,
+            FromDate = new DateOnly(2025, 3, 1),
+            UntilDate = new DateOnly(2025, 9, 30),
+            AnalyseToken = token
+        };
+        _shiftRepository.Get(originalId).Returns(sealedOrder);
+        _variantGuard.IsReadableVariantAsync(token, CancellationToken.None).Returns(true);
+        _shiftRepository.GetSealedOrder(originalId, token).Returns(sealedOrder);
+
+        var result = await _handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None);
+
+        result.EarliestResetDate.ShouldBe(sealedOrder.FromDate);
+        result.UntilDate.ShouldBe(sealedOrder.UntilDate);
+    }
+
+    [Test]
+    public async Task Handle_OrderOfAScenarioClone_IsAnsweredLikeAMissingOrder()
+    {
+        var originalId = Guid.NewGuid();
+        var cloneToken = Guid.NewGuid();
+        _shiftRepository.Get(originalId).Returns(new Shift { Id = originalId, Status = ShiftStatus.SealedOrder, AnalyseToken = cloneToken });
+
+        var error = await Should.ThrowAsync<KeyNotFoundException>(
+            () => _handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None));
+
+        error.Message.ShouldBe($"SealedOrder with OriginalId {originalId} not found");
+        await _shiftRepository.DidNotReceive().GetSealedOrder(originalId, cloneToken);
+    }
+
+    [Test]
+    public async Task Handle_RealOrder_NeverAsksForTheStoredShiftOrTheVariantGuard()
+    {
+        var originalId = Guid.NewGuid();
+        _shiftRepository.GetSealedOrder(originalId).Returns(
+            new Shift { Id = originalId, Status = ShiftStatus.SealedOrder, FromDate = new DateOnly(2025, 3, 1) });
+
+        await _handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None);
+
+        await _shiftRepository.DidNotReceive().Get(originalId);
+        await _variantGuard.DidNotReceiveWithAnyArgs().IsReadableVariantAsync(default, default);
     }
 
     [Test]

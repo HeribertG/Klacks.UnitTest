@@ -73,6 +73,39 @@ public class ScenarioGroupVisibilityTests
     }
 
     [Test]
+    public async Task EnsureScenarioVisible_VariantOfVisibleGroup_ThrowsTheMissingScenarioMessageEvenForAnUnrestrictedCaller()
+    {
+        var variant = Scenario(_visibleGroupId);
+        variant.Kind = AnalyseScenarioKind.Variant;
+
+        var act = () => TestGroupWriteVisibility.UnrestrictedGroups().EnsureScenarioVisibleAsync(variant, variant.Id);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"AnalyseScenario with ID {variant.Id} not found");
+    }
+
+    [Test]
+    public async Task IsScenarioRowVisible_AcceptsOnlyScenarioKindOfAVisibleGroup()
+    {
+        var variant = Scenario(_visibleGroupId);
+        variant.Kind = AnalyseScenarioKind.Variant;
+
+        (await _restricted.IsScenarioRowVisibleAsync(Scenario(_visibleGroupId))).ShouldBeTrue();
+        (await _restricted.IsScenarioRowVisibleAsync(Scenario(_hiddenGroupId))).ShouldBeFalse();
+        (await _restricted.IsScenarioRowVisibleAsync(variant)).ShouldBeFalse();
+        (await TestGroupWriteVisibility.UnrestrictedGroups().IsScenarioRowVisibleAsync(variant)).ShouldBeFalse();
+        (await TestGroupWriteVisibility.UnrestrictedGroups().IsScenarioRowVisibleAsync(null)).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task IsScenarioVisible_StillFollowsTheGroupForAVariant()
+    {
+        var variant = Scenario(_visibleGroupId);
+        variant.Kind = AnalyseScenarioKind.Variant;
+
+        (await _restricted.IsScenarioVisibleAsync(variant)).ShouldBeTrue();
+    }
+
+    [Test]
     public async Task EnsureScenarioScopeWritable_HiddenGroup_ThrowsNotFound()
     {
         var act = () => _restricted.EnsureScenarioScopeWritableAsync(_hiddenGroupId);

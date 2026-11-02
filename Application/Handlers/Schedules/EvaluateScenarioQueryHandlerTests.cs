@@ -93,6 +93,34 @@ public class EvaluateScenarioQueryHandlerTests
     }
 
     [Test]
+    public async Task NotFound_WhenTheTokenBelongsToAVariant_AndNothingIsRead()
+    {
+        var variant = Scenario();
+        variant.Kind = AnalyseScenarioKind.Variant;
+        _scenarioRepo.GetByTokenAsync(Token, Arg.Any<CancellationToken>()).Returns(variant);
+
+        var result = await Handler().Handle(new EvaluateScenarioQuery(null, Token), CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        await _entries.DidNotReceiveWithAnyArgs().GetScheduleEntriesAsync(default!, default);
+        await _loader.DidNotReceiveWithAnyArgs().LoadAsync(default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task NotFound_WhenTheIdBelongsToAVariant_AndNothingIsRead()
+    {
+        var variant = Scenario();
+        variant.Kind = AnalyseScenarioKind.Variant;
+        _scenarioRepo.Get(variant.Id).Returns(variant);
+
+        var result = await Handler().Handle(new EvaluateScenarioQuery(variant.Id, null), CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        await _entries.DidNotReceiveWithAnyArgs().GetScheduleEntriesAsync(default!, default);
+        await _loader.DidNotReceiveWithAnyArgs().LoadAsync(default, default, default, default, default, default);
+    }
+
+    [Test]
     public async Task ResolvesById_WhenTokenOmitted()
     {
         var scenario = Scenario();

@@ -9,14 +9,26 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.TestHelpers;
 
 internal static class TestWorkWriteGuard
 {
-    public static IWorkWriteGuard Over(IPreCommitConflictChecker conflictChecker)
+    public static IWorkWriteGuard Over(IPreCommitConflictChecker conflictChecker, IShiftVisibilityReader? shiftVisibilityReader = null)
         => new WorkWriteGuardService(
             Substitute.For<IShiftRepository>(),
             Substitute.For<IWorkRepository>(),
-            conflictChecker);
+            conflictChecker,
+            shiftVisibilityReader ?? Substitute.For<IShiftVisibilityReader>());
+
+    public static IShiftVisibilityReader ReaderServing(params ShiftWorld[] worlds)
+    {
+        var reader = Substitute.For<IShiftVisibilityReader>();
+        reader.GetTokenedShiftWorldsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(call => (IReadOnlyList<ShiftWorld>)worlds
+                .Where(world => call.Arg<IReadOnlyCollection<Guid>>().Contains(world.ShiftId))
+                .ToList());
+        return reader;
+    }
 }

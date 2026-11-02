@@ -209,6 +209,7 @@ public class ShiftClientVisibilityTests
             _unitOfWork,
             ShiftVisibilityGuards.AllowAll(),
             new ClientReferenceGuard(_clientVisibilityGuard, _clientRepository),
+            Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
             Substitute.For<ILogger<PutCommandHandler>>());
         return handler.Handle(new PutCommand<ShiftResource>(resource), CancellationToken.None);
     }
@@ -221,6 +222,7 @@ public class ShiftClientVisibilityTests
         _orderSealingService,
         ShiftVisibilityGuards.AllowAll(),
         new ClientReferenceGuard(_clientVisibilityGuard, _clientRepository),
+        Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
         Substitute.For<ILogger<PostCommandHandler>>());
 
     private static Shift StoredDraft(Guid? clientId) => new()

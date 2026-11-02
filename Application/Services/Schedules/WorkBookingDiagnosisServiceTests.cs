@@ -123,6 +123,21 @@ public class WorkBookingDiagnosisServiceTests
     }
 
     [Test]
+    public async Task ShiftOfAnotherWorld_IsNotFound_LikeAHiddenOne_AndNamesNothing()
+    {
+        _writeGuard
+            .FindShiftOutsideWorkWorldAsync(
+                Arg.Any<IReadOnlyCollection<(Guid ShiftId, Guid? AnalyseToken)>>(), Arg.Any<CancellationToken>())
+            .Returns(_shiftId);
+
+        var diagnosis = await DiagnoseAsync();
+
+        diagnosis.ShouldBeSameAs(WorkBookingDiagnosis.NotFound);
+        await _shifts.DidNotReceiveWithAnyArgs().Get(default);
+        await AssertNoCheckRanAsync();
+    }
+
+    [Test]
     public async Task MissingEmployee_IsNotFound_LikeAHiddenOne()
     {
         _clients.Get(_clientId).Returns((Client?)null);

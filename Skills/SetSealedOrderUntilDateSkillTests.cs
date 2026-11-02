@@ -42,6 +42,20 @@ public class SetSealedOrderUntilDateSkillTests
             .Returns(false);
     }
 
+    [Test]
+    public async Task Execute_AShiftWithAnAnalyseToken_IsAnsweredLikeAMissingOne_AndWritesNothing()
+    {
+        var keyOrder = OpenEndedSealedOrder();
+        keyOrder.AnalyseToken = Guid.NewGuid();
+        _shiftRepository.Get(OrderId).Returns(keyOrder);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Order with ID {OrderId} not found.");
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),

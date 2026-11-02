@@ -10,6 +10,8 @@
 using System.Text.Json;
 using Klacks.Api.Application.Commands.Geocoding;
 using Klacks.Api.Application.DTOs.Geocoding;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.UserBackend;
@@ -31,6 +33,12 @@ public class RouteOptimizationControllerGeocodeAllTests
         _controller = new RouteOptimizationController(
             Substitute.For<IRouteOptimizationService>(),
             Substitute.For<IContainerAutofillService>(),
+            Substitute.For<IRouteShiftVisibilityFilter>(),
+            Substitute.For<IContainerVisibilityGuard>(),
+            new ContainerAutofillRequestLimiter(
+                Substitute.For<IContainerAvailableTasksService>(),
+                Substitute.For<IShiftVisibilityGuard>(),
+                Substitute.For<IRouteShiftVisibilityFilter>()),
             _mediator,
             NullLogger<RouteOptimizationController>.Instance);
     }

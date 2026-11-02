@@ -117,6 +117,16 @@ public class ReplacementContactValidatorTests
     }
 
     [Test]
+    public async Task VariantTokenOfAVisibleGroup_IsNotFound()
+    {
+        var variantToken = Guid.NewGuid();
+        _scenarioRepository.GetByTokenAsync(variantToken, Arg.Any<CancellationToken>())
+            .Returns(new AnalyseScenario { Token = variantToken, GroupId = GroupId, Kind = AnalyseScenarioKind.Variant });
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => _validator.ValidateAsync(Request() with { AnalyseToken = variantToken }));
+    }
+
+    [Test]
     public async Task UnknownAbsenceType_IsNotFound()
     {
         await Should.ThrowAsync<KeyNotFoundException>(() => _validator.ValidateAsync(Request() with { AbsenceId = Guid.NewGuid() }));

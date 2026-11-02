@@ -81,8 +81,8 @@ public class HarmonizerApplyServiceCaptureTests
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same
         // or the apply would silently produce nothing.
         _unitOfWork
-            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>())
-            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>()());
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>()());
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
         _scenarioComplianceService = Substitute.For<IScenarioComplianceService>();
         _scenarioComplianceService

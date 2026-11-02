@@ -27,6 +27,7 @@ public class AnalyseScenarioVisibilityTests
     private static readonly DateOnly Until = new(2026, 3, 31);
 
     private IAnalyseScenarioRepository _repository = null!;
+    private IScenarioVariantRepository _variantRepository = null!;
     private IAnalyseScenarioService _scenarioService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
@@ -38,6 +39,10 @@ public class AnalyseScenarioVisibilityTests
     public void SetUp()
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
+        _variantRepository = Substitute.For<IScenarioVariantRepository>();
+        _variantRepository.GetVariantIdsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<Guid>());
+        _variantRepository.GetVariantIdsByScenarioTokensAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, List<Guid>>());
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
@@ -67,6 +72,13 @@ public class AnalyseScenarioVisibilityTests
         return scenario;
     }
 
+    private AnalyseScenario Variant(Guid? groupId)
+    {
+        var variant = Scenario(groupId);
+        variant.Kind = AnalyseScenarioKind.Variant;
+        return variant;
+    }
+
     private static string NotFoundMessage(Guid id) => $"AnalyseScenario with ID {id} not found";
 
     [Test]
@@ -74,7 +86,7 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(_visibleGroupId);
         var handler = new GetAnalyseScenarioQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
 
         var result = await handler.Handle(new GetAnalyseScenarioQuery(scenario.Id), CancellationToken.None);
 
@@ -87,7 +99,7 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(_hiddenGroupId);
         var handler = new GetAnalyseScenarioQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
 
         var result = await handler.Handle(new GetAnalyseScenarioQuery(scenario.Id), CancellationToken.None);
 
@@ -99,7 +111,7 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(null);
         var handler = new GetAnalyseScenarioQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
 
         var result = await handler.Handle(new GetAnalyseScenarioQuery(scenario.Id), CancellationToken.None);
 
@@ -111,7 +123,7 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(null);
         var handler = new GetAnalyseScenarioQueryHandler(
-            _repository, TestGroupWriteVisibility.UnrestrictedGroups(), Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+            _repository, _variantRepository, TestGroupWriteVisibility.UnrestrictedGroups(), Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
 
         var result = await handler.Handle(new GetAnalyseScenarioQuery(scenario.Id), CancellationToken.None);
 
@@ -149,7 +161,7 @@ public class AnalyseScenarioVisibilityTests
     public async Task List_OfHiddenGroup_IsEmptyAndDoesNotQuery()
     {
         var handler = new ListAnalyseScenariosQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
 
         var result = await handler.Handle(new ListAnalyseScenariosQuery(_hiddenGroupId), CancellationToken.None);
 
@@ -161,7 +173,7 @@ public class AnalyseScenarioVisibilityTests
     public async Task List_OfGrouplessScenarios_IsEmptyForARestrictedCaller()
     {
         var handler = new ListAnalyseScenariosQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
 
         var result = await handler.Handle(new ListAnalyseScenariosQuery(null), CancellationToken.None);
 
@@ -176,7 +188,7 @@ public class AnalyseScenarioVisibilityTests
         _repository.GetByGroupAsync(_visibleGroupId, Arg.Any<CancellationToken>())
             .Returns(new List<AnalyseScenario> { scenario });
         var handler = new ListAnalyseScenariosQueryHandler(
-            _repository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>());
 
         var result = await handler.Handle(new ListAnalyseScenariosQuery(_visibleGroupId), CancellationToken.None);
 
@@ -365,7 +377,7 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(_hiddenGroupId);
         var handler = new RenameAnalyseScenarioCommandHandler(
-            _repository, _unitOfWork, _guard, Substitute.For<ILogger<RenameAnalyseScenarioCommandHandler>>());
+            _repository, _variantRepository, _unitOfWork, _guard, Substitute.For<ILogger<RenameAnalyseScenarioCommandHandler>>());
 
         var act = () => handler.Handle(new RenameAnalyseScenarioCommand(scenario.Id, "Renamed"), CancellationToken.None);
 
@@ -379,12 +391,108 @@ public class AnalyseScenarioVisibilityTests
     {
         var scenario = Scenario(_visibleGroupId);
         var handler = new RenameAnalyseScenarioCommandHandler(
-            _repository, _unitOfWork, _guard, Substitute.For<ILogger<RenameAnalyseScenarioCommandHandler>>());
+            _repository, _variantRepository, _unitOfWork, _guard, Substitute.For<ILogger<RenameAnalyseScenarioCommandHandler>>());
 
         var result = await handler.Handle(new RenameAnalyseScenarioCommand(scenario.Id, "Renamed"), CancellationToken.None);
 
         result.Name.ShouldBe("Renamed");
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Get_VariantOfVisibleGroup_IsAnsweredLikeAMissingScenario()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = new GetAnalyseScenarioQueryHandler(
+            _repository, _variantRepository, _guard, Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+
+        var result = await handler.Handle(new GetAnalyseScenarioQuery(variant.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Get_VariantIsHiddenFromAnUnrestrictedCaller()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = new GetAnalyseScenarioQueryHandler(
+            _repository, _variantRepository, TestGroupWriteVisibility.UnrestrictedGroups(), Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>());
+
+        var result = await handler.Handle(new GetAnalyseScenarioQuery(variant.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Summary_VariantIsHiddenFromAnUnrestrictedCallerWithoutBuildingIt()
+    {
+        var variant = Variant(_visibleGroupId);
+        var summaryBuilder = Substitute.For<IScenarioSummaryBuilder>();
+        var handler = new GetScenarioSummaryQueryHandler(
+            _repository, summaryBuilder, TestGroupWriteVisibility.UnrestrictedGroups(),
+            Substitute.For<ILogger<GetScenarioSummaryQueryHandler>>());
+
+        var result = await handler.Handle(new GetScenarioSummaryQuery(variant.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await summaryBuilder.DidNotReceiveWithAnyArgs().BuildAsync(default, default);
+    }
+
+    [Test]
+    public async Task Accept_VariantIsAnsweredLikeAMissingScenarioEvenForAnUnrestrictedCaller()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = AcceptHandler(TestGroupWriteVisibility.UnrestrictedGroups());
+
+        var act = () => handler.Handle(new AcceptAnalyseScenarioCommand(variant.Id), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe(NotFoundMessage(variant.Id));
+        await _scenarioService.DidNotReceiveWithAnyArgs().SoftDeleteRealScheduleDataAsync(default, default, default, default, default);
+        await _scenarioService.DidNotReceiveWithAnyArgs().PromoteScenarioWorksAsync(default, default, default, default);
+        variant.Status.ShouldBe(AnalyseScenarioStatus.Active);
+    }
+
+    [Test]
+    public async Task Reject_VariantIsAnsweredLikeAMissingScenarioEvenForAnUnrestrictedCaller()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = RejectHandler(TestGroupWriteVisibility.UnrestrictedGroups());
+
+        var act = () => handler.Handle(new RejectAnalyseScenarioCommand(variant.Id), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe(NotFoundMessage(variant.Id));
+        await _scenarioService.DidNotReceiveWithAnyArgs().SoftDeleteScenarioDataAsync(default, default);
+        variant.Status.ShouldBe(AnalyseScenarioStatus.Active);
+    }
+
+    [Test]
+    public async Task Rename_VariantIsAnsweredLikeAMissingScenarioEvenForAnUnrestrictedCaller()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = new RenameAnalyseScenarioCommandHandler(
+            _repository, _variantRepository, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            Substitute.For<ILogger<RenameAnalyseScenarioCommandHandler>>());
+
+        var act = () => handler.Handle(new RenameAnalyseScenarioCommand(variant.Id, "Renamed"), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe(NotFoundMessage(variant.Id));
+        variant.Name.ShouldBe("Proposal");
+        await _repository.DidNotReceiveWithAnyArgs().Put(default!);
+    }
+
+    [Test]
+    public async Task Delete_VariantIsAnsweredLikeAMissingScenarioEvenForAnUnrestrictedCaller()
+    {
+        var variant = Variant(_visibleGroupId);
+        var handler = new DeleteAnalyseScenarioCommandHandler(
+            _repository, _scenarioService, _unitOfWork, _captureRepository, TestGroupWriteVisibility.UnrestrictedGroups(),
+            Substitute.For<ILogger<DeleteAnalyseScenarioCommandHandler>>());
+
+        var act = () => handler.Handle(new DeleteAnalyseScenarioCommand(variant.Id), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe(NotFoundMessage(variant.Id));
+        await _scenarioService.DidNotReceiveWithAnyArgs().SoftDeleteScenarioDataAsync(default, default);
+        await _repository.DidNotReceiveWithAnyArgs().Delete(default);
     }
 
     private static CreateAnalyseScenarioRequest CreateRequest(Guid? groupId) => new()
@@ -396,13 +504,13 @@ public class AnalyseScenarioVisibilityTests
     };
 
     private CreateAnalyseScenarioCommandHandler CreateHandler(IGroupVisibilityGuard guard) => new(
-        _repository, _scenarioService, _unitOfWork, guard, Substitute.For<ILogger<CreateAnalyseScenarioCommandHandler>>());
+        _repository, _variantRepository, _scenarioService, _unitOfWork, guard, Substitute.For<ILogger<CreateAnalyseScenarioCommandHandler>>());
 
     private DeleteAllAnalyseScenariosCommandHandler DeleteAllHandler() => new(
         _repository, _scenarioService, _unitOfWork, _captureRepository, _guard,
         Substitute.For<ILogger<DeleteAllAnalyseScenariosCommandHandler>>());
 
-    private RejectAnalyseScenarioCommandHandler RejectHandler() => new(
+    private RejectAnalyseScenarioCommandHandler RejectHandler(IGroupVisibilityGuard? guard = null) => new(
         _repository,
         _scenarioService,
         _unitOfWork,
@@ -410,10 +518,10 @@ public class AnalyseScenarioVisibilityTests
         Substitute.For<IAgentConditionRepository>(),
         Substitute.For<IAgentConditionLedgerService>(),
         Substitute.For<IHttpContextAccessor>(),
-        _guard,
+        guard ?? _guard,
         Substitute.For<ILogger<RejectAnalyseScenarioCommandHandler>>());
 
-    private AcceptAnalyseScenarioCommandHandler AcceptHandler() => new(
+    private AcceptAnalyseScenarioCommandHandler AcceptHandler(IGroupVisibilityGuard? guard = null) => new(
         _repository,
         _scenarioService,
         _unitOfWork,
@@ -427,6 +535,6 @@ public class AnalyseScenarioVisibilityTests
         Substitute.For<IPeriodHoursService>(),
         Substitute.For<IWorkNotificationService>(),
         Substitute.For<IEscalationChainService>(),
-        _guard,
+        guard ?? _guard,
         Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
 }

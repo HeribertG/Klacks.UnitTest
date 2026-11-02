@@ -17,7 +17,9 @@ namespace Klacks.UnitTest.Domain.Services.RouteOptimization.VisitScheduling;
 /// ContainerTemplateRouteService.applyOptimizedRoute; a byte-identical copy of the case file lives in Klacks.Ui and both
 /// sides pin the same SHA-256. Each case runs ContainerVisitScheduler, ContainerAbsenceTimeBlocks and
 /// ContainerTemplateItemOrder the way ContainerRouteWriteService combines them and renders the result in the Ui's text
-/// form (clock times HH:mm:ss, travel HH:MM), so every expected string must match exactly.
+/// form (clock times HH:mm:ss, travel HH:MM), so every expected string must match exactly. The Ui side runs the autofill
+/// variant (keepUnroutedItems = false). A visit missing from the route drops out of the schedule here too, and neither
+/// writer stores that: ContainerRouteWriteService and ContainerVisitPlanner refuse when a visit could not be placed.
 /// </summary>
 [TestFixture]
 public class ContainerVisitScheduleCharacterizationTests

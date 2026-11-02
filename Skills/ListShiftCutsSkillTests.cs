@@ -2,10 +2,11 @@
 
 /// <summary>
 /// Unit tests for ListShiftCutsSkill: the cut tree projection reports readable status labels and the
-/// order name it belongs to, and an unknown shiftId is rejected before any cut list is read.
+/// order name it belongs to, and an unknown, hidden or tokened shiftId is rejected the same way before any cut list is read.
 /// </summary>
 
 using Klacks.Api.Application.Skills;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -23,7 +24,7 @@ public class ListShiftCutsSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _skill = new ListShiftCutsSkill(_shiftRepository);
+        _skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.AllowAll());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -107,6 +108,37 @@ public class ListShiftCutsSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("not found"));
+        await _shiftRepository.DidNotReceive().CutList(Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task AHiddenShift_IsAnsweredLikeAMissingOne_WithoutItsName()
+    {
+        _shiftRepository.Get(PartAId).Returns(new Shift { Id = PartAId, Name = "Secret order", Status = ShiftStatus.OriginalShift });
+        var skill = new ListShiftCutsSkill(_shiftRepository, ShiftVisibilityGuards.Hiding(PartAId));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params(PartAId));
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo($"Shift with ID {PartAId} not found."));
+        await _shiftRepository.DidNotReceive().CutList(Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task AShiftWithAToken_IsAnsweredLikeAMissingOne_ForAnUnrestrictedCallerToo()
+    {
+        _shiftRepository.Get(PartAId).Returns(new Shift
+        {
+            Id = PartAId,
+            Name = "Confidential key shift",
+            Status = ShiftStatus.SealedOrder,
+            AnalyseToken = Guid.NewGuid()
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartAId));
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo($"Shift with ID {PartAId} not found."));
         await _shiftRepository.DidNotReceive().CutList(Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<bool>());
     }
 }

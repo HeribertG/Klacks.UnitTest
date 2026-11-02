@@ -44,7 +44,7 @@ public class PlaceWorkSkillTests
 
     private static (PlaceWorkSkill skill, IMediator mediator, IPreCommitConflictChecker checker) Build(
         PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null, bool daySealed = false,
-        bool outsidePeriod = false, IShiftVisibilityGuard? shiftVisibilityGuard = null)
+        bool outsidePeriod = false, IShiftVisibilityGuard? shiftVisibilityGuard = null, IWorkWriteGuard? workWriteGuard = null)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -74,7 +74,34 @@ public class PlaceWorkSkillTests
             outsidePeriod
                 ? TestPlanningPeriodGuard.Violating((ClientId, PlacementDay))
                 : TestPlanningPeriodGuard.NoViolations(),
-            shiftVisibilityGuard ?? ShiftVisibilityGuards.AllowAll()), mediator, checker);
+            shiftVisibilityGuard ?? ShiftVisibilityGuards.AllowAll(),
+            workWriteGuard ?? Substitute.For<IWorkWriteGuard>()), mediator, checker);
+    }
+
+    [Test]
+    public async Task ShiftOfAnotherWorld_ReadsLikeAnUnknownShift_BeforeAnyCheckNamesIt_AndDoesNotCommit()
+    {
+        var token = Guid.NewGuid();
+        var workWriteGuard = Substitute.For<IWorkWriteGuard>();
+        workWriteGuard
+            .FindShiftOutsideWorkWorldAsync(
+                Arg.Is<IReadOnlyCollection<(Guid ShiftId, Guid? AnalyseToken)>>(
+                    placements => placements.Count == 1
+                        && placements.Single().ShiftId == ShiftId
+                        && placements.Single().AnalyseToken == token),
+                Arg.Any<CancellationToken>())
+            .Returns(ShiftId);
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty, workWriteGuard: workWriteGuard);
+        var parameters = Params();
+        parameters["analyseToken"] = token.ToString();
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift {ShiftId} not found.");
+        await checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -8,6 +8,7 @@
 
 using Klacks.Api.Application.Commands.ClientShiftPreferences;
 using Klacks.Api.Application.Handlers.ClientShiftPreferences;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
@@ -15,6 +16,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -45,7 +47,7 @@ public class SetShiftPreferencesTests
         var repo = Substitute.For<IClientShiftPreferenceRepository>();
         repo.GetByClientAndShiftAsync(ClientId, ShiftId, Arg.Any<CancellationToken>()).Returns((ClientShiftPreference?)null);
         var uow = Substitute.For<IUnitOfWork>();
-        var handler = new SetShiftPreferenceCommandHandler(repo, VisibleGuard(), uow);
+        var handler = new SetShiftPreferenceCommandHandler(repo, VisibleGuard(), ShiftVisibilityGuards.AllowAll(), uow);
 
         await handler.Handle(new SetShiftPreferenceCommand(ClientId, ShiftId, ShiftPreferenceType.Preferred), CancellationToken.None);
 
@@ -64,7 +66,7 @@ public class SetShiftPreferencesTests
         var repo = Substitute.For<IClientShiftPreferenceRepository>();
         repo.GetByClientAndShiftAsync(ClientId, ShiftId, Arg.Any<CancellationToken>()).Returns(existing);
         var uow = Substitute.For<IUnitOfWork>();
-        var handler = new SetShiftPreferenceCommandHandler(repo, VisibleGuard(), uow);
+        var handler = new SetShiftPreferenceCommandHandler(repo, VisibleGuard(), ShiftVisibilityGuards.AllowAll(), uow);
 
         var id = await handler.Handle(new SetShiftPreferenceCommand(ClientId, ShiftId, ShiftPreferenceType.Blacklist), CancellationToken.None);
 
@@ -80,12 +82,32 @@ public class SetShiftPreferencesTests
         var uow = Substitute.For<IUnitOfWork>();
         var guard = Substitute.For<IClientVisibilityGuard>();
         guard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(false);
-        var handler = new SetShiftPreferenceCommandHandler(repo, guard, uow);
+        var handler = new SetShiftPreferenceCommandHandler(repo, guard, ShiftVisibilityGuards.AllowAll(), uow);
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new SetShiftPreferenceCommand(ClientId, ShiftId, ShiftPreferenceType.Blacklist), CancellationToken.None));
 
         ex.Message.ShouldBe($"Client with ID {ClientId} not found");
+        await repo.DidNotReceive().GetByClientAndShiftAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await repo.DidNotReceive().Add(Arg.Any<ClientShiftPreference>());
+        await uow.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handler_AShiftThatMayNotBeReferenced_IsRefusedLikeAMissingShift_NothingWritten()
+    {
+        var repo = Substitute.For<IClientShiftPreferenceRepository>();
+        var uow = Substitute.For<IUnitOfWork>();
+        var shiftGuard = ShiftVisibilityGuards.AllowAll();
+        shiftGuard.FindFirstNotReferableAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { ShiftId })), Arg.Any<CancellationToken>())
+            .Returns(ShiftId);
+        var handler = new SetShiftPreferenceCommandHandler(repo, VisibleGuard(), shiftGuard, uow);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new SetShiftPreferenceCommand(ClientId, ShiftId, ShiftPreferenceType.Preferred), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, ShiftId));
         await repo.DidNotReceive().GetByClientAndShiftAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         await repo.DidNotReceive().Add(Arg.Any<ClientShiftPreference>());
         await uow.DidNotReceive().CompleteAsync();

@@ -28,6 +28,30 @@ public class ResetShiftCutsSkillTests
     private static readonly DateOnly OrderFrom = new(2026, 1, 1);
     private static readonly DateOnly OrderUntil = new(2026, 12, 31);
 
+    [Test]
+    public async Task Execute_AShiftWithAnAnalyseToken_IsAnsweredLikeAMissingOne_AndWritesNothing()
+    {
+        var keyShiftId = Guid.NewGuid();
+        _shiftRepository.Get(keyShiftId).Returns(new Shift
+        {
+            Id = keyShiftId,
+            Name = "Key order",
+            Status = ShiftStatus.SealedOrder,
+            AnalyseToken = Guid.NewGuid()
+        });
+        var parameters = new Dictionary<string, object>
+        {
+            ["shiftId"] = keyShiftId.ToString(),
+            ["newStartDate"] = OrderFrom
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift with ID {keyShiftId} not found.");
+        await _mediator.DidNotReceive().Send(Arg.Any<PostResetCutsCommand>(), Arg.Any<CancellationToken>());
+    }
+
     [SetUp]
     public void Setup()
     {

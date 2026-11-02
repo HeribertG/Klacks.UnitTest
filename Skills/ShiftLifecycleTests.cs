@@ -5,7 +5,8 @@
 /// fields (times/weekdays survive when only the name is changed) and writes exactly one shift through the handler, which
 /// refuses locked content; delete_shift refuses cuts (redirecting to the cut editor) and active works, lets an administrator
 /// delete a whole sealed order family and leaves every other non-draft shift to the handler; the shift delete handler
-/// soft-deletes a draft via the repository and applies the same rules.
+/// soft-deletes a draft via the repository and applies the same rules. Both skills answer a shift with an analyse token
+/// like a missing one, so a variant (key) stays out of reach of the assistant although the handlers accept it.
 /// </summary>
 
 using Klacks.UnitTest.TestHelpers;
@@ -141,9 +142,9 @@ public class ShiftLifecycleTests
     [Test]
     public async Task Update_CutParent_WithAnEndDate_IsRefusedAndPointsToTheCutEditorReset()
     {
-        var parent = ExistingShift(lft: 1, rgt: 6);
         var repo = Substitute.For<IShiftRepository>();
-        repo.Get(ShiftId).Returns(parent);
+        repo.Get(ShiftId).Returns(ExistingShift());
+        repo.HasChildrenAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(true);
         var mediator = Substitute.For<IMediator>();
         var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
@@ -180,10 +181,11 @@ public class ShiftLifecycleTests
     }
 
     [Test]
-    public async Task Delete_ShiftWithCuts_Refuses()
+    public async Task Delete_ShiftWithChildRows_Refuses_AlsoWhenItsNestedSetValuesAreMissing()
     {
         var repo = Substitute.For<IShiftRepository>();
-        repo.Get(ShiftId).Returns(ExistingShift(lft: 1, rgt: 4));
+        repo.Get(ShiftId).Returns(ExistingShift(lft: null, rgt: null));
+        repo.HasChildrenAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(true);
         var mediator = Substitute.For<IMediator>();
         var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>(), ShiftVisibilityGuards.AllowAll());
 
@@ -191,6 +193,44 @@ public class ShiftLifecycleTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("cuts");
+        await mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Update_ShiftWithAnalyseToken_IsAnsweredLikeMissing_AndSendsNothing()
+    {
+        var repo = Substitute.For<IShiftRepository>();
+        var shift = ExistingShift(status: ShiftStatus.SealedOrder);
+        shift.AnalyseToken = Guid.NewGuid();
+        repo.Get(ShiftId).Returns(shift);
+        var mediator = Substitute.For<IMediator>();
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["shiftId"] = ShiftId.ToString(),
+            ["name"] = "Renamed"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ShiftResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_ShiftWithAnalyseToken_IsAnsweredLikeMissing_AndSendsNothing()
+    {
+        var repo = Substitute.For<IShiftRepository>();
+        var shift = ExistingShift(status: ShiftStatus.SealedOrder);
+        shift.AnalyseToken = Guid.NewGuid();
+        repo.Get(ShiftId).Returns(shift);
+        var mediator = Substitute.For<IMediator>();
+        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>(), ShiftVisibilityGuards.AllowAll());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
         await mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>());
     }
 
@@ -326,7 +366,7 @@ public class ShiftLifecycleTests
         accessor.HttpContext.Returns(context);
         return new DeleteCommandHandler(
             repo, new ScheduleMapper(), uow ?? Substitute.For<IUnitOfWork>(), familyDeletion, accessor, ShiftVisibilityGuards.AllowAll(),
-            Substitute.For<ILogger<DeleteCommandHandler>>());
+            Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), Substitute.For<ILogger<DeleteCommandHandler>>());
     }
 
     [Test]

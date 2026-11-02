@@ -348,4 +348,23 @@ public class CreateContainerTemplateSkillTests
         result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
         _api.Calls.ShouldBeEmpty();
     }
+
+    [Test]
+    public async Task AContainerWithAToken_IsAnsweredLikeAMissingOne_AndTheApiIsNeverCalled()
+    {
+        _shiftRepository.Get(ContainerId).Returns(new Shift
+        {
+            Id = ContainerId,
+            Name = "Confidential key container",
+            ShiftType = ShiftType.IsContainer,
+            Status = ShiftStatus.OriginalShift,
+            AnalyseToken = Guid.NewGuid()
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        _api.Calls.ShouldBeEmpty();
+    }
 }

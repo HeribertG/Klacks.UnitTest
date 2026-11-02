@@ -12,6 +12,8 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.Handlers.ClientShiftPreferences;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ClientShiftPreferences;
+using Klacks.Api.Application.Services.Shifts;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Handlers.ClientShiftPreferences;
@@ -60,7 +62,7 @@ public class ClientShiftPreferenceVisibilityTests
         _groupItemRepository.GetGroupTreeIdsForClientAsync(_hiddenClientId, Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { Guid.NewGuid() });
         var handler = new GetAvailableShiftsQueryHandler(
-            _groupItemRepository, _clientVisibilityGuard, Substitute.For<ILogger<GetAvailableShiftsQueryHandler>>());
+            _groupItemRepository, _clientVisibilityGuard, ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<GetAvailableShiftsQueryHandler>>());
 
         var result = await handler.Handle(new GetAvailableShiftsQuery(_hiddenClientId), CancellationToken.None);
 
@@ -72,9 +74,7 @@ public class ClientShiftPreferenceVisibilityTests
     [Test]
     public async Task Save_HiddenClient_IsRefusedLikeAMissingClient_NothingDeletedOrWritten()
     {
-        var handler = new SaveClientShiftPreferencesCommandHandler(
-            _repository, _clientVisibilityGuard, new ClientShiftPreferenceMapper(), _unitOfWork,
-            Substitute.For<ILogger<SaveClientShiftPreferencesCommandHandler>>());
+        var handler = NewSaveHandler(ShiftVisibilityGuards.AllowAll());
         var command = new SaveClientShiftPreferencesCommand(
             _hiddenClientId,
             [new ClientShiftPreferenceResource { ShiftId = Guid.NewGuid(), PreferenceType = ShiftPreferenceType.Blacklist }]);
@@ -87,4 +87,57 @@ public class ClientShiftPreferenceVisibilityTests
         await _repository.DidNotReceive().Add(Arg.Any<ClientShiftPreference>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
+
+    [Test]
+    public async Task Save_ANewShiftThatMayNotBeReferenced_IsRefusedLikeAMissingShift_NothingDeletedOrWritten()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var refusedShiftId = Guid.NewGuid();
+        _clientVisibilityGuard.IsVisibleAsync(visibleClientId, Arg.Any<CancellationToken>()).Returns(true);
+        _repository.GetByClientIdAsync(visibleClientId, Arg.Any<CancellationToken>()).Returns(new List<ClientShiftPreference>());
+        var shiftGuard = ShiftVisibilityGuards.AllowAll();
+        shiftGuard.FindFirstNotReferableAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(refusedShiftId)), Arg.Any<CancellationToken>())
+            .Returns(refusedShiftId);
+        var command = new SaveClientShiftPreferencesCommand(
+            visibleClientId,
+            [new ClientShiftPreferenceResource { ShiftId = refusedShiftId, PreferenceType = ShiftPreferenceType.Preferred }]);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => NewSaveHandler(shiftGuard).Handle(command, CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, refusedShiftId));
+        await _repository.DidNotReceive().DeleteAllByClientIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().Add(Arg.Any<ClientShiftPreference>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Save_ChecksOnlyShiftsTheClientDoesNotAlreadyPrefer_SoAStoredHiddenShiftStaysSaveable()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var storedShiftId = Guid.NewGuid();
+        var newShiftId = Guid.NewGuid();
+        _clientVisibilityGuard.IsVisibleAsync(visibleClientId, Arg.Any<CancellationToken>()).Returns(true);
+        _repository.GetByClientIdAsync(visibleClientId, Arg.Any<CancellationToken>())
+            .Returns(new List<ClientShiftPreference> { new() { Id = Guid.NewGuid(), ClientId = visibleClientId, ShiftId = storedShiftId } });
+        var shiftGuard = ShiftVisibilityGuards.AllowAll();
+        var command = new SaveClientShiftPreferencesCommand(
+            visibleClientId,
+            [
+                new ClientShiftPreferenceResource { ShiftId = storedShiftId, PreferenceType = ShiftPreferenceType.Preferred },
+                new ClientShiftPreferenceResource { ShiftId = newShiftId, PreferenceType = ShiftPreferenceType.Blacklist },
+            ]);
+
+        await NewSaveHandler(shiftGuard).Handle(command, CancellationToken.None);
+
+        await shiftGuard.Received(1).FindFirstNotReferableAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { newShiftId })), Arg.Any<CancellationToken>());
+        await _repository.Received(1).DeleteAllByClientIdAsync(visibleClientId, Arg.Any<CancellationToken>());
+    }
+
+    private SaveClientShiftPreferencesCommandHandler NewSaveHandler(IShiftVisibilityGuard shiftGuard) =>
+        new(
+            _repository, _clientVisibilityGuard, shiftGuard, new ClientShiftPreferenceMapper(), _unitOfWork,
+            Substitute.For<ILogger<SaveClientShiftPreferencesCommandHandler>>());
 }

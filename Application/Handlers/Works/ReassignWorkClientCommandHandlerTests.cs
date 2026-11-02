@@ -14,6 +14,7 @@ using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Exceptions;
@@ -46,6 +47,7 @@ public class ReassignWorkClientCommandHandlerTests
     private readonly Guid _sourceClientId = Guid.NewGuid();
     private readonly Guid _targetClientId = Guid.NewGuid();
     private readonly Guid _shiftId = Guid.NewGuid();
+    private readonly Guid _keyShiftId = Guid.NewGuid();
     private readonly DateOnly _date = new(2027, 3, 1);
     private readonly DateOnly _periodStart = new(2027, 3, 1);
     private readonly DateOnly _periodEnd = new(2027, 3, 31);
@@ -104,11 +106,25 @@ public class ReassignWorkClientCommandHandlerTests
             _dayLockService,
             _unitOfWork,
             _overtimeCascadeService,
-            TestWorkWriteGuard.Over(_conflictChecker),
+            TestWorkWriteGuard.Over(_conflictChecker, TestWorkWriteGuard.ReaderServing(new ShiftWorld(_keyShiftId, Guid.NewGuid(), IsVariant: true))),
             Substitute.For<IHttpContextAccessor>(),
             new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard,
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+    }
+
+    [Test]
+    public async Task Handle_WorkOnAKeyShift_ReadsLikeAMissingShift_AndWritesNothing()
+    {
+        var workOnKey = new Work { Id = _workId, ClientId = _sourceClientId, CurrentDate = _date, ShiftId = _keyShiftId };
+        _workRepository.GetNoTracking(_workId).Returns(workOnKey);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _keyShiftId));
+        await _workRepository.DidNotReceive().Get(_workId);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]

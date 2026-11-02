@@ -102,18 +102,92 @@ public class GroupItemWriteVisibilityTests
     }
 
     [Test]
+    public async Task Post_ShiftThatCarriesAToken_IsAnsweredLikeAMissingShift_AlsoForAnUnrestrictedCaller()
+    {
+        var tokenedShiftId = Guid.NewGuid();
+        var shifts = ShiftVisibilityGuards.AllowAll();
+        shifts.FindFirstTokenedAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { tokenedShiftId })), CancellationToken.None)
+            .Returns(tokenedShiftId);
+        var handler = new GroupItemPostHandler(
+            _repository, new GroupMapper(), _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(), shifts, NullLogger<GroupItemPostHandler>.Instance);
+        var link = Link(_visibleGroupId, null);
+        link.ShiftId = tokenedShiftId;
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new PostCommand<GroupItemResource>(link), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Shift with ID {tokenedShiftId} not found");
+        await NothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Post_ShiftWithoutAToken_IsLinked()
+    {
+        var shiftId = Guid.NewGuid();
+        var handler = new GroupItemPostHandler(
+            _repository, new GroupMapper(), _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(), ShiftVisibilityGuards.AllowAll(), NullLogger<GroupItemPostHandler>.Instance);
+        var link = Link(_visibleGroupId, null);
+        link.ShiftId = shiftId;
+
+        await handler.Handle(new PostCommand<GroupItemResource>(link), CancellationToken.None);
+
+        await _repository.Received(1).Add(Arg.Is<GroupItem>(item => item.ShiftId == shiftId));
+    }
+
+    [Test]
     public async Task Delete_LinkOfHiddenGroup_IsAnsweredLikeAMissingLink()
     {
         var linkId = Guid.NewGuid();
         _repository.Get(linkId).Returns(new GroupItem { Id = linkId, GroupId = _hiddenGroupId });
         var handler = new GroupItemDeleteHandler(
             _repository, new GroupMapper(), _unitOfWork, GroupsVisibleExcept(_hiddenGroupId),
-            NullLogger<GroupItemDeleteHandler>.Instance);
+            ShiftVisibilityGuards.AllowAll(), NullLogger<GroupItemDeleteHandler>.Instance);
 
         var result = await handler.Handle(new DeleteCommand<GroupItemResource>(linkId), CancellationToken.None);
 
         result.ShouldBeNull();
         await _repository.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task Delete_LinkOfAShiftThatCarriesAToken_IsAnsweredLikeAMissingLink_AlsoForAnUnrestrictedCaller()
+    {
+        var linkId = Guid.NewGuid();
+        var tokenedShiftId = Guid.NewGuid();
+        _repository.Get(linkId).Returns(new GroupItem { Id = linkId, GroupId = _visibleGroupId, ShiftId = tokenedShiftId });
+        var shifts = ShiftVisibilityGuards.AllowAll();
+        shifts.FindFirstTokenedAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { tokenedShiftId })), CancellationToken.None)
+            .Returns(tokenedShiftId);
+        var handler = new GroupItemDeleteHandler(
+            _repository, new GroupMapper(), _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            shifts, NullLogger<GroupItemDeleteHandler>.Instance);
+
+        var result = await handler.Handle(new DeleteCommand<GroupItemResource>(linkId), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _repository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Delete_LinkOfAShiftWithoutAToken_IsRemoved()
+    {
+        var linkId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var stored = new GroupItem { Id = linkId, GroupId = _visibleGroupId, ShiftId = shiftId };
+        _repository.Get(linkId).Returns(stored);
+        _repository.Delete(linkId).Returns(stored);
+        var handler = new GroupItemDeleteHandler(
+            _repository, new GroupMapper(), _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            ShiftVisibilityGuards.AllowAll(), NullLogger<GroupItemDeleteHandler>.Instance);
+
+        var result = await handler.Handle(new DeleteCommand<GroupItemResource>(linkId), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await _repository.Received(1).Delete(linkId);
     }
 
     [Test]

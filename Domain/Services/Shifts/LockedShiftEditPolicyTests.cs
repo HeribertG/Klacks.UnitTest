@@ -260,6 +260,7 @@ public class LockedShiftEditPolicyTests
             [nameof(Shift.SourceSystemId)] = "ERP reference; the repository keeps the stored value on a form save.",
             [nameof(Shift.ExternalOrderReference)] = "ERP reference; the repository keeps the stored value on a form save.",
             [nameof(Shift.SupersedesOrderId)] = "ERP reference; the repository keeps the stored value on a form save.",
+            [nameof(Shift.CopiedFromShiftId)] = "Variant copy reference; the repository keeps the stored value on a form save.",
             [nameof(Shift.Id)] = "Identity of the row.",
             [nameof(Shift.CreateTime)] = "Audit field written by the database context.",
             [nameof(Shift.CurrentUserCreated)] = "Audit field written by the database context.",

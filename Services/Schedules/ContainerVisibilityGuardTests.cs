@@ -6,7 +6,8 @@
 /// references (in its templates or overrides) stay allowed, so a container mixing groups stays saveable, and the stored
 /// baseline is only read when the requested set contains a shift the caller may not touch. ExistsAndVisibleAsync of the
 /// shift guard asks exactly one shift query for every caller: existence for an unrestricted caller, visibility for a
-/// restricted one.
+/// restricted one. A shift of a variant (key) is refused for every caller, stored or not, and a scenario clone is left to the
+/// expansion.
 /// </summary>
 
 using Klacks.Api.Application.Services.Schedules;
@@ -34,6 +35,11 @@ public class ContainerVisibilityGuardTests
         _hiddenShiftId = Guid.NewGuid();
     }
 
+    private void GivenWorlds(params ShiftWorld[] worlds)
+        => _reader
+            .GetTokenedShiftWorldsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(worlds);
+
     private ContainerVisibilityGuard Guard(IShiftVisibilityGuard shiftGuard) =>
         new(shiftGuard, _reader, Substitute.For<ILogger<ContainerVisibilityGuard>>());
 
@@ -54,6 +60,42 @@ public class ContainerVisibilityGuardTests
     [Test]
     public async Task EnsureContainerVisible_VisibleContainer_Passes()
     {
+        await Should.NotThrowAsync(() => Guard(ShiftVisibilityGuards.AllowAll()).EnsureContainerVisibleAsync(_containerId));
+    }
+
+    [Test]
+    public async Task EnsureContainerWritable_AContainerOfAKey_IsRefusedLikeAMissingOne_ForAnUnrestrictedCaller()
+    {
+        GivenWorlds(new ShiftWorld(_containerId, Guid.NewGuid(), true));
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => Guard(ShiftVisibilityGuards.AllowAll()).EnsureContainerWritableAsync(_containerId));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _containerId));
+    }
+
+    [Test]
+    public async Task EnsureContainerWritable_AHiddenContainer_IsRefusedBeforeItsWorldIsRead()
+    {
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => Guard(ShiftVisibilityGuards.Hiding(_containerId)).EnsureContainerWritableAsync(_containerId));
+
+        await _reader.DidNotReceiveWithAnyArgs().GetTokenedShiftWorldsAsync(default!, default);
+    }
+
+    [Test]
+    public async Task EnsureContainerWritable_ARealContainerAndAScenarioClone_Pass()
+    {
+        GivenWorlds(new ShiftWorld(_containerId, Guid.NewGuid(), false));
+
+        await Should.NotThrowAsync(() => Guard(ShiftVisibilityGuards.AllowAll()).EnsureContainerWritableAsync(_containerId));
+    }
+
+    [Test]
+    public async Task EnsureContainerVisible_AContainerOfAKey_StaysReadable()
+    {
+        GivenWorlds(new ShiftWorld(_containerId, Guid.NewGuid(), true));
+
         await Should.NotThrowAsync(() => Guard(ShiftVisibilityGuards.AllowAll()).EnsureContainerVisibleAsync(_containerId));
     }
 
@@ -84,6 +126,52 @@ public class ContainerVisibilityGuardTests
 
         await Should.NotThrowAsync(() => Guard(ShiftVisibilityGuards.Hiding(_hiddenShiftId))
             .EnsureItemShiftsVisibleAsync(_containerId, [_hiddenShiftId, Guid.NewGuid()]));
+    }
+
+    [Test]
+    public async Task EnsureItemShifts_KeyShift_IsRefusedLikeAMissingShift_ForAnUnrestrictedCaller()
+    {
+        var keyShiftId = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(keyShiftId, Guid.NewGuid(), IsVariant: true));
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => Guard(ShiftVisibilityGuards.AllowAll())
+            .EnsureItemShiftsVisibleAsync(_containerId, [Guid.NewGuid(), keyShiftId]));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, keyShiftId));
+    }
+
+    [Test]
+    public async Task EnsureItemShifts_KeyShiftTheContainerAlreadyReferences_IsStillRefused()
+    {
+        var keyShiftId = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(keyShiftId, Guid.NewGuid(), IsVariant: true));
+        _reader.GetContainerItemShiftIdsAsync(_containerId, Arg.Any<CancellationToken>()).Returns([keyShiftId]);
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Guard(ShiftVisibilityGuards.AllowAll())
+            .EnsureItemShiftsVisibleAsync(_containerId, [keyShiftId]));
+    }
+
+    [Test]
+    public async Task EnsureItemShifts_ScenarioClone_IsNotRefusedHere()
+    {
+        var cloneId = Guid.NewGuid();
+        GivenWorlds(new ShiftWorld(cloneId, Guid.NewGuid(), IsVariant: false));
+
+        await Should.NotThrowAsync(() => Guard(ShiftVisibilityGuards.AllowAll())
+            .EnsureItemShiftsVisibleAsync(_containerId, [cloneId]));
+    }
+
+    [Test]
+    public async Task EnsureItemShifts_AsksTheWorldOnceForAllRequestedShifts()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        await Guard(ShiftVisibilityGuards.AllowAll()).EnsureItemShiftsVisibleAsync(_containerId, [first, null, second, first]);
+
+        await _reader.Received(1).GetTokenedShiftWorldsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(first) && ids.Contains(second)),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

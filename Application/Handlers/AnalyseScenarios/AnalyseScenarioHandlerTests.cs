@@ -25,6 +25,7 @@ public class CreateAnalyseScenarioCommandHandlerTests
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IAnalyseScenarioService _scenarioService = null!;
+    private IScenarioVariantRepository _variantRepository = null!;
     private CreateAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -33,9 +34,10 @@ public class CreateAnalyseScenarioCommandHandlerTests
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
+        _variantRepository = Substitute.For<IScenarioVariantRepository>();
 
         var logger = Substitute.For<ILogger<CreateAnalyseScenarioCommandHandler>>();
-        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
+        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _variantRepository, _scenarioService, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -87,14 +89,18 @@ public class CreateAnalyseScenarioCommandHandlerTests
 public class ListAnalyseScenariosQueryHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
+    private IScenarioVariantRepository _variantRepository = null!;
     private ListAnalyseScenariosQueryHandler _handler = null!;
 
     [SetUp]
     public void Setup()
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
+        _variantRepository = Substitute.For<IScenarioVariantRepository>();
+        _variantRepository.GetVariantIdsByScenarioTokensAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, List<Guid>>());
         var logger = Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>();
-        _handler = new ListAnalyseScenariosQueryHandler(_repository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
+        _handler = new ListAnalyseScenariosQueryHandler(_repository, _variantRepository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -154,14 +160,17 @@ public class ListAnalyseScenariosQueryHandlerTests
 public class GetAnalyseScenarioQueryHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
+    private IScenarioVariantRepository _variantRepository = null!;
     private GetAnalyseScenarioQueryHandler _handler = null!;
 
     [SetUp]
     public void Setup()
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
+        _variantRepository = Substitute.For<IScenarioVariantRepository>();
+        _variantRepository.GetVariantIdsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<Guid>());
         var logger = Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>();
-        _handler = new GetAnalyseScenarioQueryHandler(_repository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
+        _handler = new GetAnalyseScenarioQueryHandler(_repository, _variantRepository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]

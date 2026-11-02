@@ -272,6 +272,19 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task ScenarioVariantConsumedException_Becomes409CarryingItsCodeAndTheKeyNames()
+    {
+        var response = await Invoke(new ScenarioVariantConsumedException(new[] { "Winter keys", "Zeta keys" }));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe(ScenarioVariantConsumedException.ErrorCode);
+        root.GetProperty(ScenarioVariantConsumedException.VariantNamesField).EnumerateArray().Select(e => e.GetString())
+            .ShouldBe(new[] { "Winter keys", "Zeta keys" });
+    }
+
+    [Test]
     public async Task ShiftLockedException_Becomes409CarryingItsCodeStatusAndLockedFields()
     {
         var shift = new Klacks.Api.Domain.Models.Schedules.Shift

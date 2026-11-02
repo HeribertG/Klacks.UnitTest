@@ -97,8 +97,8 @@ public class WizardApplyServiceComplianceTests
             .ExecuteInTransactionAsync(Arg.Any<Func<Task<IReadOnlyList<Guid>>>>())
             .Returns(ci => ci.Arg<Func<Task<IReadOnlyList<Guid>>>>()());
         _unitOfWork
-            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario)>>>())
-            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario)>>>()());
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>()());
     }
 
     private static CoreToken MakeToken(Guid agentId, DateOnly date)

@@ -5,7 +5,9 @@
 /// group visibility exactly like a Work on a shift that does not exist (KeyNotFoundException with the shared
 /// "Shift with ID ... not found" text), before any other guard runs and before anything is written. Only the shift a
 /// write sets or changes is checked: a PUT that keeps its stored shift and a container save that keeps a sub-work's
-/// stored shift do not ask the guard, so existing Works on shifts that have since become hidden stay editable.
+/// stored shift do not ask the guard, so existing Works on shifts that have since become hidden stay editable. A shift of
+/// another world (a key shift, a clone of another scenario) is refused with the same text by the world check of
+/// IWorkWriteGuard, on every write of those paths and also for a shift a stored Work keeps.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -36,9 +38,11 @@ public class WorkShiftVisibilityTests
     private IPreCommitConflictChecker _conflictChecker = null!;
     private IWorkWriteGuard _writeGuard = null!;
     private IShiftVisibilityGuard _shiftGuard = null!;
+    private IShiftVisibilityReader _worldReader = null!;
     private Guid _clientId;
     private Guid _visibleShiftId;
     private Guid _hiddenShiftId;
+    private Guid _keyShiftId;
 
     [SetUp]
     public void SetUp()
@@ -53,7 +57,9 @@ public class WorkShiftVisibilityTests
         _clientId = Guid.NewGuid();
         _visibleShiftId = Guid.NewGuid();
         _hiddenShiftId = Guid.NewGuid();
+        _keyShiftId = Guid.NewGuid();
         _shiftGuard = Hiding(_hiddenShiftId);
+        _worldReader = TestWorkWriteGuard.ReaderServing(new ShiftWorld(_keyShiftId, Guid.NewGuid(), IsVariant: true));
 
         _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         _clientVisibilityGuard.AreAllVisibleAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
@@ -227,6 +233,72 @@ public class WorkShiftVisibilityTests
             .UpdateChildrenAsync(default, default, default, default, default, default!, default!, default!, default);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Post_OnAKeyShift_WithoutATokenOrWithAKeylessScenarioToken_ReadsLikeAMissingShift_NothingWritten(bool underAScenario)
+    {
+        var resource = NewResource(Guid.NewGuid(), _keyShiftId);
+        resource.AnalyseToken = underAScenario ? Guid.NewGuid() : null;
+        var handler = NewPostHandler(TestWorkWriteGuard.Over(_conflictChecker, _worldReader));
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new PostCommand<WorkResource>(resource), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _keyShiftId));
+        await _workRepository.DidNotReceive().Add(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task Put_MovingOntoAKeyShift_ReadsLikeAMissingShift_NothingWritten()
+    {
+        var stored = GivenStoredWork(_visibleShiftId);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkResource>(NewResource(stored.Id, _keyShiftId)), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _keyShiftId));
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+    }
+
+    [Test]
+    public async Task Put_KeepingAStoredKeyShift_IsRefusedToo_NothingWritten()
+    {
+        var stored = GivenStoredWork(_keyShiftId);
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkResource>(NewResource(stored.Id, _keyShiftId)), CancellationToken.None));
+
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+    }
+
+    [Test]
+    public async Task BulkAdd_WithOneKeyShift_IsRefusedAsAWhole_NothingWritten()
+    {
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => NewBulkHandler().Handle(
+            new BulkAddWorksCommand(BulkRequest(_visibleShiftId, _keyShiftId)), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _keyShiftId));
+        await _workRepository.DidNotReceive().Add(Arg.Any<Work>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNoneLockedAsync(default!, default);
+    }
+
+    [Test]
+    public async Task UpdateContainerChildren_SubWorkOnAKeyShift_ReadsLikeAMissingShift_NothingWritten()
+    {
+        var container = NewWork(_visibleShiftId);
+        var (handler, childrenManager, _) = NewUpdateContainerHandler(container, new Dictionary<Guid, Guid>());
+        var resource = new UpdateContainerWorkChildrenResource { SubWorks = [NewResource(Guid.Empty, _keyShiftId)] };
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new UpdateContainerWorkChildrenCommand(container.Id, resource), CancellationToken.None));
+
+        ex.Message.ShouldBe(string.Format(ShiftVisibilityMessages.ShiftNotFound, _keyShiftId));
+        await childrenManager.DidNotReceiveWithAnyArgs()
+            .UpdateChildrenAsync(default, default, default, default, default, default!, default!, default!, default);
+    }
+
     private static IShiftVisibilityGuard Hiding(Guid hiddenShiftId)
     {
         var guard = Substitute.For<IShiftVisibilityGuard>();
@@ -257,12 +329,12 @@ public class WorkShiftVisibilityTests
             .ToList()
     };
 
-    private PostCommandHandler NewPostHandler() => new(
+    private PostCommandHandler NewPostHandler(IWorkWriteGuard? writeGuard = null) => new(
         _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
         _scheduleEntriesService, Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
         Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IContainerWorkExpansionService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
+        Substitute.For<IOvertimeCascadeService>(), writeGuard ?? _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler() => new(
@@ -270,7 +342,7 @@ public class WorkShiftVisibilityTests
         Substitute.For<IPeriodHoursService>(), _scheduleEntriesService, Substitute.For<IScheduleCompletionService>(),
         Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker), Substitute.For<IHttpContextAccessor>(),
+        Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IHttpContextAccessor>(),
         new ParentWorkLockGuard(new WorkLockLevelService()), Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -278,7 +350,7 @@ public class WorkShiftVisibilityTests
         _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
         Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
         Substitute.For<IContainerWorkExpansionService>(), Substitute.For<IOvertimeCascadeService>(), _dayLockService,
-        TestWorkWriteGuard.Over(_conflictChecker), Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IClientPlanningPeriodGuard>(),
+        TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
 
     private (UpdateContainerWorkChildrenCommandHandler Handler, IContainerWorkChildrenManager ChildrenManager,
@@ -300,7 +372,7 @@ public class WorkShiftVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), _unitOfWork,
             Substitute.For<IWorkNotificationFacade>(), lockRepository, Substitute.For<IUserService>(), childrenManager,
-            Substitute.For<IOvertimeCascadeService>(), _shiftGuard,
+            Substitute.For<IOvertimeCascadeService>(), _shiftGuard, TestWorkWriteGuard.Over(_conflictChecker, _worldReader),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager, childrenReadRepository);
     }

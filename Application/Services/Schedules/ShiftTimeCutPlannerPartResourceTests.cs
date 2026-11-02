@@ -80,6 +80,35 @@ public class ShiftTimeCutPlannerPartResourceTests
     }
 
     [Test]
+    public async Task Plan_ForAShiftThatCarriesAToken_IsRefusedLikeAMissingShift_BeforeAnyPartIsBuilt()
+    {
+        var keyShiftId = Guid.NewGuid();
+        var shiftRepository = Substitute.For<IShiftRepository>();
+        shiftRepository.Get(keyShiftId).Returns(new Shift
+        {
+            Id = keyShiftId,
+            Name = "Key shift",
+            Status = ShiftStatus.OriginalShift,
+            OriginalId = SealedOrderId,
+            AnalyseToken = Guid.NewGuid(),
+            StartShift = new TimeOnly(7, 0),
+            EndShift = new TimeOnly(7, 0),
+            FromDate = new DateOnly(2026, 1, 1)
+        });
+        var planner = new ShiftTimeCutPlanner(
+            shiftRepository,
+            Substitute.For<IShiftReader>(),
+            ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<IShiftExpensesRepository>());
+
+        var plan = await planner.PlanAsync(keyShiftId, "07:00-15:00,15:00-23:00,23:00-07:00", "Early,Late,Night", "en");
+
+        plan.IsRefused.ShouldBeTrue();
+        plan.Refusal.ShouldBe($"Shift with ID {keyShiftId} not found.");
+        await shiftRepository.DidNotReceiveWithAnyArgs().GetGroupsForShift(default);
+    }
+
+    [Test]
     public async Task EveryPart_KeepsTheOrderDimensions_AndTakesOnlyNameAndTimesFromTheCut()
     {
         var plan = await _planner.PlanAsync(OriginalShiftId, "07:00-15:00,15:00-23:00,23:00-07:00", "Early,Late,Night", "en");

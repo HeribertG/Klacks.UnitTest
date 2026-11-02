@@ -116,6 +116,34 @@ public class ProposePlanCommandHandlerTests
             TestGroupWriteVisibility.UnrestrictedGroups(), _planningPeriodGuard, _shiftVisibilityGuard);
     }
 
+    [Test]
+    public async Task PlacementOnAShiftWithAnAnalyseToken_IsRejectedLikeAMissingShift_AndNeverCloned()
+    {
+        var tokenedShiftId = Guid.NewGuid();
+        _shiftRepo.Get(tokenedShiftId).Returns(new Shift
+        {
+            Id = tokenedShiftId,
+            Name = "Key shift",
+            AnalyseToken = Guid.NewGuid(),
+            StartShift = new TimeOnly(8, 0),
+            EndShift = new TimeOnly(16, 0)
+        });
+        var clientId = Guid.NewGuid();
+
+        var outcome = await _handler.Handle(
+            new ProposePlanCommand(GroupId, From, Until, [new PlacementInput(clientId, tokenedShiftId, From)], false),
+            CancellationToken.None);
+
+        outcome.Rejected.Single().ShiftId.ShouldBe(tokenedShiftId);
+        outcome.Rejected.Single().Reason.ShouldBe("shift not found");
+        outcome.Written.ShouldBeEmpty();
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
+            Arg.Is<IReadOnlyCollection<Guid>?>(ids => ids != null && !ids.Contains(tokenedShiftId)),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
 
     private static ClaimsPrincipal SupervisorUser() =>

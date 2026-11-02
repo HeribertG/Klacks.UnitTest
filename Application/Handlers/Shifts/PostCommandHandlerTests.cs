@@ -51,6 +51,7 @@ public class PostCommandHandlerTests
             _orderSealingService,
             ShiftVisibilityGuards.AllowAll(),
             Substitute.For<IClientReferenceGuard>(),
+            Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
             _logger);
 
         _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>())

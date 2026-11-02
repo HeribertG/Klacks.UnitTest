@@ -56,7 +56,7 @@ public class ShiftWriteVisibilityTests
     {
         var handler = new PutCommandHandler(
             _shiftRepository, _requirements, new ScheduleMapper(), _unitOfWork, ShiftVisibilityGuards.HideAll(),
-            Substitute.For<IClientReferenceGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IClientReferenceGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
         var result = await handler.Handle(
             new PutCommand<ShiftResource>(new ShiftResource { Id = ShiftId, Name = "Renamed" }), CancellationToken.None);
@@ -74,7 +74,7 @@ public class ShiftWriteVisibilityTests
             .Returns(Task.FromException(new KeyNotFoundException("Group with ID x not found")));
         var handler = new PutCommandHandler(
             _shiftRepository, _requirements, new ScheduleMapper(), _unitOfWork, guard,
-            Substitute.For<IClientReferenceGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IClientReferenceGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
         await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PutCommand<ShiftResource>(new ShiftResource { Id = ShiftId, Name = "Renamed" }), CancellationToken.None));
@@ -126,7 +126,8 @@ public class ShiftWriteVisibilityTests
     {
         _shiftRepository.GetSealedOrder(ShiftId).Returns(StoredShift());
         var handler = new GetResetDateRangeQueryHandler(
-            _shiftRepository, ShiftVisibilityGuards.HideAll(), Substitute.For<ILogger<GetResetDateRangeQueryHandler>>());
+            _shiftRepository, ShiftVisibilityGuards.HideAll(), Substitute.For<IVariantShiftWriteGuard>(),
+            Substitute.For<ILogger<GetResetDateRangeQueryHandler>>());
 
         var error = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetResetDateRangeQuery(ShiftId), CancellationToken.None));

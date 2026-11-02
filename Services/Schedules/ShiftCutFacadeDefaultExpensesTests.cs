@@ -67,6 +67,7 @@ public class ShiftCutFacadeDefaultExpensesTests
             Substitute.For<IUnitOfWork>(),
             ShiftVisibilityGuards.AllowAll(),
             _expensesRepository,
+            Substitute.For<IVariantShiftWriteGuard>(),
             Substitute.For<ILogger<ShiftCutFacade>>());
 
         Store(_sealedOrderId, ShiftStatus.SealedOrder, null);

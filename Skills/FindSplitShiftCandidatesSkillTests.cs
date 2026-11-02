@@ -14,8 +14,8 @@ using Klacks.UnitTest.TestHelpers;
 namespace Klacks.UnitTest.Skills;
 
 /// <summary>
-/// find_split_shift_candidates over the real ShiftRepository (EF InMemory): only sealed orders, plannable shifts and
-/// split parts with a live link to the group; rows grouped by their order (OriginalId, else their own id); the
+/// find_split_shift_candidates over the real ShiftRepository (EF InMemory): only real sealed orders, plannable shifts and
+/// split parts with a live real link to a group in the scope of the caller; rows grouped by their order (OriginalId, else their own id); the
 /// plannable shift of an order is the first in repository order (original id, from date, start time); parts sorted
 /// by start time; split orders first, then by name. The name filter (ILike) cannot run on InMemory and is pinned by
 /// the integration test ShiftReadShapesTests. Every answer says it counts group membership only and reports the orders
@@ -32,6 +32,7 @@ public class FindSplitShiftCandidatesSkillTests
     private InMemoryShiftStore _store = null!;
     private IGroupSearchRepository _groupSearch = null!;
     private IMediator _mediator = null!;
+    private IGroupScopeGuard _scopeGuard = null!;
     private FindSplitShiftCandidatesSkill _sut = null!;
 
     [SetUp]
@@ -39,20 +40,23 @@ public class FindSplitShiftCandidatesSkillTests
     {
         _store = new InMemoryShiftStore();
         _groupSearch = Substitute.For<IGroupSearchRepository>();
-        _groupSearch.SearchAsync(Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new GroupSearchResult
-            {
-                Items = [new GroupSearchItem { Id = GroupId, Name = GroupName }],
-                TotalCount = 1,
-            });
+        GroupSearchAnswers(new GroupSearchItem { Id = GroupId, Name = GroupName });
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>())
             .Returns(new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 0 });
-        _sut = new FindSplitShiftCandidatesSkill(_store.Reader, _groupSearch, _mediator);
+        _scopeGuard = Substitute.For<IGroupScopeGuard>();
+        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Unrestricted());
+        _sut = new FindSplitShiftCandidatesSkill(_store.Reader, _groupSearch, _mediator, _scopeGuard);
     }
 
     [TearDown]
     public void TearDown() => _store.Dispose();
+
+    private void GroupSearchAnswers(params GroupSearchItem[] items) =>
+        _groupSearch.SearchWithinRootsAsync(
+                Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns(new GroupSearchResult { Items = items.ToList(), TotalCount = items.Length });
 
     [Test]
     public async Task ListsTheGroupsOrders_SplitFirst_WithTheFirstPlannableShiftAndThePartsByStartTime()
@@ -109,22 +113,81 @@ public class FindSplitShiftCandidatesSkillTests
         order.GetProperty("Name").GetString().ShouldBe("Plan only");
     }
 
-    /// <summary>
-    /// Pins a known gap, not the wanted behaviour: the read has no scenario filter, and ScenarioShiftCloner copies a
-    /// group's shifts together with their group links, so a scenario copy of an order is listed as a second order.
-    /// </summary>
     [Test]
-    public async Task KnownGap_AScenarioCopyOfAnOrder_IsListedAsASecondOrder()
+    public async Task AKeyShiftAndAScenarioCopyOfAnOrder_AreNotListed()
     {
         var real = Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0));
         var scenarioCopy = Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0));
         scenarioCopy.AnalyseToken = Guid.NewGuid();
         scenarioCopy.ScenarioSourceShiftId = real.Id;
-        _store.Seed(real, scenarioCopy);
+        var keyShift = Make("Confidential", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0));
+        keyShift.AnalyseToken = Guid.NewGuid();
+        _store.Seed(real, scenarioCopy, keyShift);
 
         var orders = await OrdersAsync();
 
-        orders.Select(o => o.GetProperty("SealedOrderId").GetGuid()).ShouldBe([real.Id, scenarioCopy.Id], ignoreOrder: true);
+        orders.Select(o => o.GetProperty("SealedOrderId").GetGuid()).ShouldBe([real.Id]);
+    }
+
+    [Test]
+    public async Task AGroupOutsideTheCallersScope_IsAnsweredLikeNoGroupAtAll_AndNothingIsRead()
+    {
+        GroupSearchAnswers();
+        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([OtherGroupId], ["Other"]));
+        _store.Seed(Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0)));
+
+        var result = await _sut.ExecuteAsync(
+            new SkillExecutionContext { UserId = Guid.NewGuid(), TenantId = Guid.NewGuid(), UserName = "planner", UserPermissions = [] },
+            new Dictionary<string, object> { ["groupName"] = GroupName },
+            CancellationToken.None);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"No group found matching '{GroupName}'.");
+    }
+
+    [Test]
+    public async Task AmbiguousMatches_NameOnlyTheGroupsInTheCallersScope()
+    {
+        var visibleRootId = Guid.NewGuid();
+        GroupSearchAnswers(
+            new GroupSearchItem { Id = visibleRootId, Name = "Open " + GroupName },
+            new GroupSearchItem { Id = OtherGroupId, Name = "Open child " + GroupName, Root = visibleRootId });
+        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([visibleRootId], ["Open"]));
+
+        var (message, data) = await RunAsync();
+
+        message.ShouldContain("Multiple groups match");
+        data.GetProperty("Matches").EnumerateArray().Select(match => match.GetProperty("Id").GetGuid())
+            .ShouldBe([visibleRootId, OtherGroupId]);
+        await _groupSearch.Received(1).SearchWithinRootsAsync(
+            GroupName, Arg.Any<int>(),
+            Arg.Is<IReadOnlyCollection<Guid>?>(roots => roots != null && roots.SequenceEqual(new[] { visibleRootId })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnUnrestrictedCaller_SearchesWithoutARootScope()
+    {
+        _store.Seed(Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0)));
+
+        await OrdersAsync();
+
+        await _groupSearch.Received(1).SearchWithinRootsAsync(
+            GroupName, Arg.Any<int>(), Arg.Is<IReadOnlyCollection<Guid>?>(roots => roots == null), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OneVisibleMatch_IsReadAsThatGroup()
+    {
+        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([GroupId], [GroupName]));
+        _store.Seed(Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0)));
+
+        var orders = await OrdersAsync();
+
+        orders.Select(o => o.GetProperty("Name").GetString()).ShouldBe(["Alpha"]);
     }
 
     [Test]

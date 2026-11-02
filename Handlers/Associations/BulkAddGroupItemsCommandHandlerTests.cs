@@ -113,6 +113,38 @@ public class BulkAddGroupItemsCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_BatchWithAShiftThatCarriesAToken_IsRefusedLikeAMissingShift_AndWritesNothing()
+    {
+        var plainShiftId = Guid.NewGuid();
+        var tokenedShiftId = Guid.NewGuid();
+        var shifts = ShiftVisibilityGuards.AllowAll();
+        shifts.FindFirstTokenedAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { plainShiftId, tokenedShiftId })), CancellationToken.None)
+            .Returns(tokenedShiftId);
+        var handler = new BulkAddGroupItemsCommandHandler(
+            _repository,
+            _unitOfWork,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(),
+            shifts,
+            NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
+        var command = new BulkAddGroupItemsCommand(new BulkGroupItemRequest
+        {
+            Items =
+            [
+                new GroupItemResource { GroupId = GroupId, ShiftId = plainShiftId },
+                new GroupItemResource { GroupId = GroupId, ShiftId = tokenedShiftId }
+            ]
+        });
+
+        var error = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(command, CancellationToken.None));
+
+        error.Message.ShouldBe($"Shift with ID {tokenedShiftId} not found");
+        await _repository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<BulkGroupItemResponse>>>());
+    }
+
+    [Test]
     public async Task Handle_ResourceWithoutId_GetsOneAssigned()
     {
         _repository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())

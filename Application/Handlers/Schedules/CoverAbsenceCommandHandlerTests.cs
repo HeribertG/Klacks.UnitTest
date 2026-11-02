@@ -768,7 +768,8 @@ public class CoverAbsenceCommandHandlerTests
     private static readonly Guid RootShiftId = Guid.NewGuid();
 
     private void UseSourceScenario(
-        AnalyseScenarioStatus status = AnalyseScenarioStatus.Active, Guid? scenarioGroupId = null, DateOnly? sourceUntil = null)
+        AnalyseScenarioStatus status = AnalyseScenarioStatus.Active, Guid? scenarioGroupId = null, DateOnly? sourceUntil = null,
+        AnalyseScenarioKind kind = AnalyseScenarioKind.Scenario)
     {
         _scenarioRepo.GetByTokenAsync(SourceToken, Arg.Any<CancellationToken>())
             .Returns(new AnalyseScenario
@@ -778,7 +779,8 @@ public class CoverAbsenceCommandHandlerTests
                 GroupId = scenarioGroupId ?? GroupId,
                 FromDate = Date,
                 UntilDate = sourceUntil ?? Date,
-                Status = status
+                Status = status,
+                Kind = kind
             });
         _scenarioService.GetGroupHierarchyIdsAsync(scenarioGroupId ?? GroupId, Arg.Any<CancellationToken>())
             .Returns([scenarioGroupId ?? GroupId]);
@@ -878,6 +880,16 @@ public class CoverAbsenceCommandHandlerTests
         var hiddenGroupId = Guid.NewGuid();
         UseSourceScenario(scenarioGroupId: hiddenGroupId);
         _groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
+
+        await Should.ThrowAsync<KeyNotFoundException>(CoverInSourceScenario);
+
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task CoverInAVariantOfAVisibleGroup_IsRefusedLikeAMissingOne_AndWritesNothing()
+    {
+        UseSourceScenario(kind: AnalyseScenarioKind.Variant);
 
         await Should.ThrowAsync<KeyNotFoundException>(CoverInSourceScenario);
 

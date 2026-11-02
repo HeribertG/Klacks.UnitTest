@@ -64,6 +64,7 @@ public class ShiftCutFacadeHierarchyTests
             _unitOfWork,
             ShiftVisibilityGuards.AllowAll(),
             NoStoredExpenses(),
+            Substitute.For<IVariantShiftWriteGuard>(),
             Substitute.For<ILogger<ShiftCutFacade>>());
     }
 

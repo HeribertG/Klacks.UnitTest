@@ -141,6 +141,25 @@ public class RestoreWorkCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_WorkOutsideTheWorldOfItsShift_IsRefused_BeforeTheShiftDayLock_AndRestoresNothing()
+    {
+        _writeGuard
+            .EnsureShiftsInWorkWorldAsync(
+                Arg.Is<IReadOnlyCollection<(Guid ShiftId, Guid? AnalyseToken)>>(
+                    placements => placements.Count == 1
+                        && placements.Single().ShiftId == _shiftId
+                        && placements.Single().AnalyseToken == null),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new KeyNotFoundException("missing")));
+
+        var act = async () => await _handler.Handle(new RestoreWorkCommand(_workId), CancellationToken.None);
+
+        await act.ShouldThrowAsync<KeyNotFoundException>();
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedForShiftAsync(default, default, default, default);
+        await _workRepository.DidNotReceiveWithAnyArgs().RestoreAsync(default!);
+    }
+
+    [Test]
     public async Task Handle_RestoresForAdmin_WhoIsNotTheDeletingUser()
     {
         _authorizer.Resolve(_work).Returns(WorkRestoreAccess.Admin);

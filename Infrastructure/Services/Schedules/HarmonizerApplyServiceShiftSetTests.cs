@@ -81,8 +81,8 @@ public class HarmonizerApplyServiceShiftSetTests
 
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork
-            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>())
-            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>()());
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario, IReadOnlyList<Guid> VariantIds)>>>()());
 
         var scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         scenarioRepository.GetByTokenAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())

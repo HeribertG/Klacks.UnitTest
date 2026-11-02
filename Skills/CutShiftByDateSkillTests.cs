@@ -104,6 +104,20 @@ public class CutShiftByDateSkillTests
     }
 
     [Test]
+    public async Task Refuses_AShiftThatCarriesAToken_LikeAMissingShift_AndNeverReachesTheFacade()
+    {
+        var keyShift = MakeOriginalShift();
+        keyShift.AnalyseToken = Guid.NewGuid();
+        _shiftRepository.Get(OriginalShiftId).Returns(keyShift);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, new DateOnly(2026, 6, 1)));
+
+        Assert.That(result.Success, Is.False);
+        await _shiftCutFacade.DidNotReceiveWithAnyArgs().ProcessBatchCutsAsync(default!);
+        await _shiftRepository.DidNotReceiveWithAnyArgs().GetGroupsForShift(default);
+    }
+
+    [Test]
     public async Task ReportsTheDefaultExpensesEveryPieceCarries()
     {
         var cutDate = new DateOnly(2026, 6, 1);

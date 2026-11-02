@@ -92,6 +92,12 @@ public class SkillExecutorGroupVisibilityGateTests
     }
 
     [Test]
+    public void SearchAndNavigate_IsBound_BecauseItsShiftSearchFollowsTheGroupVisibilityOfTheCaller()
+    {
+        GroupVisibilityBoundSkills.Contains("search_and_navigate").ShouldBeTrue();
+    }
+
+    [Test]
     public async Task NonAdminWithAContextUser_Runs()
     {
         var result = await ExecuteAsync(BoundSkill, Ctx(Guid.NewGuid(), Permissions.CanEditClients));

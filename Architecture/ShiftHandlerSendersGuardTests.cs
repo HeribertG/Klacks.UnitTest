@@ -31,6 +31,7 @@ public class ShiftHandlerSendersGuardTests
 
     private static readonly IReadOnlyDictionary<string, string> AllowedSenders = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Application/Handlers/ScenarioVariants/DeleteScenarioVariantShiftCommandHandler.cs"] = "delete of a variant (key) shift: only a shift carrying the token of an Active, visible variant is sent, and the shift DeleteCommand runs the variant write guard and the family/clone checks",
         ["Application/Skills/UpdateShiftSkill.cs"] = "update_shift: the lock must apply to what the model changes",
         ["Application/Skills/DeleteShiftSkill.cs"] = "delete_shift: the lock must apply to what the model deletes"
     };

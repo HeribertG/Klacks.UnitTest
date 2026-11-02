@@ -96,6 +96,19 @@ public class AssignContainerWeekSkillTests
     }
 
     [Test]
+    public async Task ContainerWithAnAnalyseToken_ReadsLikeAnUnknownOne_AndBooksNothing()
+    {
+        _container.AnalyseToken = Guid.NewGuid();
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params(Monday, Sunday));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        result.Message.ShouldNotContain(_container.Name!);
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task EveryDateWithATemplate_IsBookedInOneCommand_AndTheOthersAreReportedWithReasons()
     {
         var result = await Skill().ExecuteAsync(Ctx(), Params(Monday, Sunday));

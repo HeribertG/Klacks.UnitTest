@@ -261,6 +261,36 @@ public class NextPeriodAutoCommitServiceTests
     }
 
     [Test]
+    public async Task CommitCompletedChain_AcceptRefusedForMissingRight_ReportsConflictInsteadOfFailingSilently()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ForbiddenException(ScenarioAcceptDefaults.VariantAcceptForbiddenMessage));
+
+        await CommitAsync();
+
+        var blocked = CapturedBlockedEvent();
+        Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.Conflict));
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_ConsumedVariantKey_ReportsConflictInsteadOfCommit()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ScenarioVariantConsumedException(new[] { "Winter keys" }));
+
+        await CommitAsync();
+
+        var blocked = CapturedBlockedEvent();
+        Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.Conflict));
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task CommitCompletedChain_EveryOutcome_WritesALedgerRow()
     {
         StubCompliance(new PeriodIssueDto { ClientId = Guid.NewGuid(), Code = "MAX_HOURS" });
