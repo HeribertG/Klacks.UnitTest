@@ -1,19 +1,20 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for SetSealedOrderUntilDateSkill: the until-date is written inside a transaction and
-/// re-read from the database; a confirmed read reports a verified success, and the one-time-only
-/// guard (not yet sealed, until-date already set, or work already planned past the requested date)
-/// rejects the change up front instead of writing.
+/// Unit tests for SetSealedOrderUntilDateSkill: the family is ended through IShiftFamilyEndService and the until-date is
+/// re-read from the database; a confirmed read reports a verified success, a shift that is not a sealed order or already has
+/// an until-date is rejected up front, and a refusal of the service is answered as an error.
 /// </summary>
 
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
-using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -21,7 +22,7 @@ namespace Klacks.UnitTest.Skills;
 public class SetSealedOrderUntilDateSkillTests
 {
     private IShiftRepository _shiftRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private IShiftFamilyEndService _familyEnd = null!;
     private SetSealedOrderUntilDateSkill _skill = null!;
 
     private static readonly Guid OrderId = Guid.NewGuid();
@@ -32,14 +33,8 @@ public class SetSealedOrderUntilDateSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new SetSealedOrderUntilDateSkill(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll());
-
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
-
-        _shiftRepository.HasWorksAfterDateForOrderTreeAsync(OrderId, UntilDate, Arg.Any<CancellationToken>())
-            .Returns(false);
+        _familyEnd = Substitute.For<IShiftFamilyEndService>();
+        _skill = new SetSealedOrderUntilDateSkill(_shiftRepository, _familyEnd, ShiftVisibilityGuards.AllowAll());
     }
 
     [Test]
@@ -53,7 +48,7 @@ public class SetSealedOrderUntilDateSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe($"Order with ID {OrderId} not found.");
-        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _familyEnd.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -80,22 +75,32 @@ public class SetSealedOrderUntilDateSkillTests
     };
 
     [Test]
-    public async Task SetsUntilDate_AndReportsVerified_WhenNoFutureWorks()
+    public async Task EndsTheFamilyThroughTheService_AndReportsVerified()
     {
         var order = OpenEndedSealedOrder();
         _shiftRepository.Get(OrderId).Returns(order);
-        _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>())
-            .Returns(ci => ci.Arg<Shift>());
         _shiftRepository.GetNoTracking(OrderId)
             .Returns(new Shift { Id = OrderId, Status = ShiftStatus.SealedOrder, UntilDate = UntilDate });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _shiftRepository.Received(1).PutWithSealedOrderHandling(
-            Arg.Is<Shift>(s => s.Id == OrderId && s.UntilDate == UntilDate));
-        await _unitOfWork.Received(1).CompleteAsync();
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("verified");
+        result.Message.ShouldContain("end on the same date");
+        await _familyEnd.Received(1).EndFamilyAsync(order, UntilDate, null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReportsAnError_WhenTheWriteCannotBeConfirmed()
+    {
+        _shiftRepository.Get(OrderId).Returns(OpenEndedSealedOrder());
+        _shiftRepository.GetNoTracking(OrderId).Returns(OpenEndedSealedOrder());
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("did not confirm");
+        result.Message.ShouldNotContain("rolled back");
     }
 
     [Test]
@@ -107,24 +112,52 @@ public class SetSealedOrderUntilDateSkillTests
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("already has an until-date"));
-        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("already has an until-date");
+        await _familyEnd.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
     }
 
     [Test]
-    public async Task RejectsSetting_WhenFutureWorksExist()
+    public async Task AnswersARefusalOfTheServiceAsAnError()
     {
         var order = OpenEndedSealedOrder();
         _shiftRepository.Get(OrderId).Returns(order);
-        _shiftRepository.HasWorksAfterDateForOrderTreeAsync(OrderId, UntilDate, Arg.Any<CancellationToken>())
-            .Returns(true);
+        _familyEnd.EndFamilyAsync(order, UntilDate, null, Arg.Any<CancellationToken>())
+            .ThrowsAsync(ShiftEndDateRefusedException.ForWorksAfter(UntilDate, UntilDate.AddDays(3)));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("already planned after that date"));
-        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("work is planned after that date");
+    }
+
+    [Test]
+    public async Task AnswersAScenarioRefusalOfTheServiceAsAnError()
+    {
+        var order = OpenEndedSealedOrder();
+        _shiftRepository.Get(OrderId).Returns(order);
+        _familyEnd.EndFamilyAsync(order, UntilDate, null, Arg.Any<CancellationToken>())
+            .ThrowsAsync(ShiftEndDateRefusedException.ForScenarioWorksAfter(UntilDate));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("a scenario holds work");
+        result.Message.ShouldNotContain(order.Name);
+    }
+
+    [Test]
+    public async Task AnswersAHiddenRowsRefusalOfTheServiceAsAnError()
+    {
+        var order = OpenEndedSealedOrder();
+        _shiftRepository.Get(OrderId).Returns(order);
+        _familyEnd.EndFamilyAsync(order, UntilDate, null, Arg.Any<CancellationToken>())
+            .ThrowsAsync(ShiftEndDateRefusedException.ForHiddenRows());
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not all of them are visible");
     }
 
     [Test]
@@ -136,8 +169,23 @@ public class SetSealedOrderUntilDateSkillTests
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("not sealed yet"));
-        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not sealed yet");
+        await _familyEnd.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
+    }
+
+    [Test]
+    public async Task RejectsADerivedRow_AndNamesTheSealedOrder()
+    {
+        var plannable = OpenEndedSealedOrder();
+        plannable.Status = ShiftStatus.OriginalShift;
+        plannable.OriginalId = Guid.NewGuid();
+        _shiftRepository.Get(OrderId).Returns(plannable);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain(plannable.OriginalId.Value.ToString());
+        await _familyEnd.DidNotReceiveWithAnyArgs().EndFamilyAsync(default!, default, default, default);
     }
 }

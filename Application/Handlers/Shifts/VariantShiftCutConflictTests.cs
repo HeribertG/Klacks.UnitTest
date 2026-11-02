@@ -242,5 +242,6 @@ public class VariantShiftCutConflictTests
         ShiftVisibilityGuards.AllowAll(),
         Substitute.For<IClientReferenceGuard>(),
         new VariantShiftWriteGuard(_scenarioRepository, _variantRepository, _scenarioService, _groupGuard),
+        Substitute.For<Klacks.Api.Application.Interfaces.IShiftFamilyEndService>(),
         Substitute.For<ILogger<PutCommandHandler>>());
 }

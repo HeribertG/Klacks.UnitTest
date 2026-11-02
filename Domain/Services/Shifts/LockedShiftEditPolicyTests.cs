@@ -147,6 +147,36 @@ public class LockedShiftEditPolicyTests
         LockedShiftEditPolicy.FindLockedChanges(stored, incoming).ShouldBe([nameof(Shift.Status)]);
     }
 
+    [TestCaseSource(nameof(LockedStatuses))]
+    public void SetsFamilyEnd_IsTrue_ForAFirstEndDateOnALockedRealShift(ShiftStatus status)
+    {
+        var stored = Stored(status);
+        var incoming = CopyOf(stored);
+        incoming.UntilDate = new DateOnly(2026, 6, 30);
+
+        LockedShiftEditPolicy.SetsFamilyEnd(stored, incoming).ShouldBeTrue();
+    }
+
+    [Test]
+    public void SetsFamilyEnd_IsFalse_ForADraftAKeyAScenarioRowAStoredEndAndAnEmptyEnd()
+    {
+        var incoming = CopyOf(Stored(ShiftStatus.SealedOrder));
+        incoming.UntilDate = new DateOnly(2026, 6, 30);
+
+        var keyShift = Stored(ShiftStatus.SealedOrder);
+        keyShift.AnalyseToken = Guid.NewGuid();
+        var scenarioRow = Stored(ShiftStatus.SealedOrder);
+        scenarioRow.ScenarioSourceShiftId = Guid.NewGuid();
+        var ended = Stored(ShiftStatus.SealedOrder);
+        ended.UntilDate = new DateOnly(2026, 5, 31);
+
+        LockedShiftEditPolicy.SetsFamilyEnd(Stored(ShiftStatus.OriginalOrder), incoming).ShouldBeFalse();
+        LockedShiftEditPolicy.SetsFamilyEnd(keyShift, incoming).ShouldBeFalse();
+        LockedShiftEditPolicy.SetsFamilyEnd(scenarioRow, incoming).ShouldBeFalse();
+        LockedShiftEditPolicy.SetsFamilyEnd(ended, incoming).ShouldBeFalse();
+        LockedShiftEditPolicy.SetsFamilyEnd(Stored(ShiftStatus.SealedOrder), CopyOf(Stored(ShiftStatus.SealedOrder))).ShouldBeFalse();
+    }
+
     [Test]
     public void UntilDate_CanBeSetOnce_ButNotChangedOrClearedAfterwards()
     {

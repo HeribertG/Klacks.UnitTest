@@ -672,6 +672,7 @@ public class VariantShiftWriteTests
         ShiftVisibilityGuards.AllowAll(),
         Substitute.For<IClientReferenceGuard>(),
         _writeGuard,
+        Substitute.For<Klacks.Api.Application.Interfaces.IShiftFamilyEndService>(),
         Substitute.For<ILogger<PutCommandHandler>>());
 
     private DeleteCommandHandler DeleteHandler() => new(

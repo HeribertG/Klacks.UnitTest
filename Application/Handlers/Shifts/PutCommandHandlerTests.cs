@@ -34,7 +34,7 @@ public class PutCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
-        _handler = new PutCommandHandler(_shiftRepository, Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IShiftRequiredQualificationRepository>(), _mapper, _unitOfWork, ShiftVisibilityGuards.AllowAll(), Substitute.For<IClientReferenceGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), _logger);
+        _handler = new PutCommandHandler(_shiftRepository, Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IShiftRequiredQualificationRepository>(), _mapper, _unitOfWork, ShiftVisibilityGuards.AllowAll(), Substitute.For<IClientReferenceGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.IShiftFamilyEndService>(), _logger);
 
         _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>())
             .Returns(ci => ci.Arg<Shift>());
