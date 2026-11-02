@@ -348,6 +348,34 @@ public class CoverAbsenceCommandHandlerTests
         outcome.Covered.ShouldHaveSingleItem().Kind.ShouldBe(ReplacementRequestKind.Move);
     }
 
+    [TestCase(true, 2)]
+    [TestCase(false, 0)]
+    public async Task TheCheck_TakesTheExtrasOfASwapHop_OnlyWhenTheHopMoves(bool movesAsWhole, int expectedExtras)
+    {
+        var hopWorkId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Bob")
+            .Agent(recipientId, "Carla")
+            .Work(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .PaddedWork(CandidateId, Date, Guid.NewGuid(), ShiftCategory.Late,
+                Date.ToDateTime(new TimeOnly(14, 0)), Date.ToDateTime(new TimeOnly(22, 0)), 8m,
+                extraPaidHours: 2m, movesAsWhole: movesAsWhole, workIds: hopWorkId)
+            .Ineligible(recipientId, ShiftId, Date)
+            .Build());
+
+        await Cover();
+
+        await _conflictChecker.Received().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(rows => rows.Count == 1 && rows[0].ExtraPaidHours == expectedExtras),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task AReplacement_IsReportedAsOne()
     {

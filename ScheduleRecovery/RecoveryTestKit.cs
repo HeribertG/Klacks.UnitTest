@@ -139,11 +139,12 @@ internal sealed class SnapshotBuilder
         decimal trailHours = 0m,
         decimal extraPaidHours = 0m,
         bool locked = false,
+        bool movesAsWhole = false,
         params Guid[] workIds)
     {
         Add(agentId, date, new RecoveryWork(
             category, shiftId, locked, startAt, endAt, hours, workIds.Length > 0 ? workIds : null,
-            leadHours, trailHours, extraPaidHours));
+            leadHours, trailHours, extraPaidHours, movesAsWhole));
         return this;
     }
 

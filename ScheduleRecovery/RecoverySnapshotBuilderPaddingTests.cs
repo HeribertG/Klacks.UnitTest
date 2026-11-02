@@ -62,7 +62,7 @@ public sealed class RecoverySnapshotBuilderPaddingTests
             Change(ApiWorkChangeType.TravelWithin, 0.25m, 11, 12),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var work = works[new CellKey(Original, Day)].ShouldHaveSingleItem();
         work.LeadHours.ShouldBe(1.75m);
@@ -81,7 +81,7 @@ public sealed class RecoverySnapshotBuilderPaddingTests
             Change(ApiWorkChangeType.Debriefing, 0.5m),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var work = works[new CellKey(Original, Day)].ShouldHaveSingleItem();
         work.LeadHours.ShouldBe(1m);
@@ -96,7 +96,7 @@ public sealed class RecoverySnapshotBuilderPaddingTests
         other.SourceId = Guid.NewGuid();
         var cells = new List<ScheduleCell> { WorkCell(8, 16), other };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var work = works[new CellKey(Original, Day)].ShouldHaveSingleItem();
         work.LeadHours.ShouldBe(0m);
@@ -117,7 +117,7 @@ public sealed class RecoverySnapshotBuilderPaddingTests
             Change(ApiWorkChangeType.TravelWithin, 0.25m, 11, 12),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var segments = works[new CellKey(Original, Day)];
         segments.Count.ShouldBe(2);
@@ -139,8 +139,8 @@ public sealed class RecoverySnapshotBuilderPaddingTests
         var merged = new List<ScheduleCell> { WorkCell(8, 16) };
         var all = new List<ScheduleCell> { WorkCell(8, 16), debriefing };
 
-        var withoutAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), out _);
-        var withAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), out _, all);
+        var withoutAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), merged.Select(c => c.SourceId).ToHashSet(), out _);
+        var withAll = RecoverySnapshotBuilder.BuildWorks(merged, new HashSet<Guid>(), merged.Select(c => c.SourceId).ToHashSet(), out _, all);
 
         withoutAll[new CellKey(Original, Day)].ShouldHaveSingleItem().TrailHours.ShouldBe(0m);
         withAll[new CellKey(Original, Day)].ShouldHaveSingleItem().TrailHours.ShouldBe(1.5m);
@@ -155,7 +155,7 @@ public sealed class RecoverySnapshotBuilderPaddingTests
         cover.IsReplacementEntry = true;
         var cells = new List<ScheduleCell> { WorkCell(8, 16), Change(ApiWorkChangeType.Briefing, 1m), cover };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var covered = works[new CellKey(substitute, Day)].ShouldHaveSingleItem();
         covered.LeadHours.ShouldBe(0m);

@@ -89,6 +89,14 @@ public class AbsenceCoverMaterializerTests
     }
 
     [Test]
+    public async Task LeadAndTrail_DoNotMakeACoverPartial()
+    {
+        var moved = await Materialise(Delta(Elsa, Bob) with { LeadHours = 1m, TrailHours = 0.5m, ExtraPaidHours = 1.5m });
+
+        moved.ShouldBe(new[] { ClonedWork });
+    }
+
+    [Test]
     public async Task AfterAMove_ItCommits_ThenRunsTheSuccessors_ThenThePeriodHoursOfBothPeople()
     {
         await Materialise(Delta(Elsa, Bob));

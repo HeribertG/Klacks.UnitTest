@@ -319,6 +319,41 @@ public class ClientTimelineTests
     }
 
     [Test]
+    public void GetRestGaps_TwoPartsOfOneWork_AcrossTheNight_AreAPauseBelowTheMinimumRest()
+    {
+        var workId = Guid.NewGuid();
+        var nextDay = BaseDate.AddDays(1);
+        _timeline.AddBlock(CreateWorkBlock(BaseDate.ToDateTime(new TimeOnly(18, 0)), BaseDate.ToDateTime(new TimeOnly(22, 0)), workId));
+        _timeline.AddBlock(CreateWorkBlock(nextDay.ToDateTime(new TimeOnly(8, 0)), nextDay.ToDateTime(new TimeOnly(10, 0)), workId));
+        _timeline.SortBlocks();
+
+        _timeline.GetRestGaps(MinRest, EuDailyWorkFrame).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestGaps_TwoWorks_AcrossTheNight_AreARestGap()
+    {
+        var nextDay = BaseDate.AddDays(1);
+        _timeline.AddBlock(CreateWorkBlock(BaseDate.ToDateTime(new TimeOnly(18, 0)), BaseDate.ToDateTime(new TimeOnly(22, 0))));
+        _timeline.AddBlock(CreateWorkBlock(nextDay.ToDateTime(new TimeOnly(8, 0)), nextDay.ToDateTime(new TimeOnly(10, 0))));
+        _timeline.SortBlocks();
+
+        _timeline.GetRestGaps(MinRest, EuDailyWorkFrame).ShouldHaveSingleItem();
+    }
+
+    [Test]
+    public void GetRestGaps_TwoPartsOfOneWork_WithTheMinimumRestBetween_AreARestGap()
+    {
+        var workId = Guid.NewGuid();
+        var nextDay = BaseDate.AddDays(1);
+        _timeline.AddBlock(CreateWorkBlock(BaseDate.ToDateTime(new TimeOnly(19, 0)), BaseDate.ToDateTime(new TimeOnly(20, 0)), workId));
+        _timeline.AddBlock(CreateWorkBlock(nextDay.ToDateTime(new TimeOnly(7, 0)), nextDay.ToDateTime(new TimeOnly(8, 0)), workId));
+        _timeline.SortBlocks();
+
+        _timeline.GetRestGaps(MinRest, EuDailyWorkFrame).ShouldHaveSingleItem();
+    }
+
+    [Test]
     public void DefaultDailyWorkFrame_Is24HoursMinusMinRest()
     {
         ClientTimeline.DefaultDailyWorkFrame(MinRest).ShouldBe(TimeSpan.FromHours(13));

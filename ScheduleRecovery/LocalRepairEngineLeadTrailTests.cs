@@ -518,6 +518,29 @@ public sealed class LocalRepairEngineLeadTrailTests
     }
 
     [Test]
+    public void The_giver_of_a_work_that_moves_gives_its_extras_up()
+    {
+        var d1 = Day(6, 3);
+        var d2 = Day(6, 4);
+        var snapshot = new SnapshotBuilder()
+            .Days(d1, d2)
+            .Agent(Agent(1), "absent")
+            .Agent(Agent(2), "pivot", maximumHours: 39m, currentPeriodHours: 30m)
+            .Agent(Agent(3), "recipient")
+            .PaddedWork(Agent(1), d1, Shift(1), ShiftCategory.Early, At(d1, 8), At(d1, 16), 8m, extraPaidHours: 2m)
+            .Work(Agent(1), d2, Shift(1), ShiftCategory.Early, At(d2, 8), At(d2, 16), 8m)
+            .PaddedWork(Agent(2), d1, Shift(2), ShiftCategory.Early, At(d1, 6), At(d1, 14), 8m, extraPaidHours: 2m, movesAsWhole: true)
+            .Ineligible(Agent(3), Shift(1), d1)
+            .Ineligible(Agent(3), Shift(1), d2)
+            .Build();
+
+        var proposal = Repair(snapshot, d1, d2);
+
+        proposal.Uncovered.ShouldBeEmpty();
+        proposal.Deltas.Single(delta => delta.FromAgentId == Agent(2)).MovesAsWhole.ShouldBeTrue();
+    }
+
+    [Test]
     public void The_engine_is_deterministic_with_padded_works()
     {
         var d = Day(6, 3);

@@ -56,6 +56,39 @@ public sealed class RecoverySnapshotBuilderWorksTests
     }
 
     [Test]
+    public void A_whole_cloned_work_moves_as_a_whole()
+    {
+        var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+
+        var works = RecoverySnapshotBuilder.BuildWorks([work], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _);
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeTrue();
+    }
+
+    [Test]
+    public void A_work_that_cannot_be_written_does_not_move()
+    {
+        var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+
+        var works = RecoverySnapshotBuilder.BuildWorks([work], new HashSet<Guid>(), new HashSet<Guid>(), out _);
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeFalse();
+    }
+
+    [Test]
+    public void A_work_already_handed_over_in_part_does_not_move()
+    {
+        var work = Cell((int)ScheduleEntryType.Work, Original, 8, 16);
+        var handedOver = Cell((int)ScheduleEntryType.WorkChange, Original, 8, 12,
+            workChangeType: ApiWorkChangeType.ReplacementWithin, sourceId: work.SourceId);
+
+        var works = RecoverySnapshotBuilder.BuildWorks(
+            [work, handedOver], new HashSet<Guid>(), new HashSet<Guid> { work.SourceId }, out _);
+
+        works[new CellKey(Original, Day)].ShouldHaveSingleItem().MovesAsWhole.ShouldBeFalse();
+    }
+
+    [Test]
     public void Replacement_workchange_becomes_immutable_occupancy_for_the_substitute()
     {
         var cells = new List<ScheduleCell>
@@ -116,7 +149,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             replacement,
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), cells.Select(c => c.SourceId).ToHashSet(), out _);
 
         var segments = works[new CellKey(Original, Day)].OrderBy(w => w.StartAt).ToList();
         segments.Count.ShouldBe(2);

@@ -42,6 +42,7 @@ public sealed class RecoverySnapshotBuilderAbsenceWindowTests
         RecoverySnapshotBuilder.BuildWorks(
             [BreakCell(SickAbsence, new TimeSpan(14, 0, 0), new TimeSpan(18, 0, 0))],
             new HashSet<Guid> { OnCallAbsence },
+            new HashSet<Guid>(),
             out var breakDays);
 
         var window = breakDays.BlockingWindows[new CellKey(Agent, Day)].ShouldHaveSingleItem();
@@ -55,6 +56,7 @@ public sealed class RecoverySnapshotBuilderAbsenceWindowTests
         RecoverySnapshotBuilder.BuildWorks(
             [BreakCell(SickAbsence, TimeSpan.Zero, TimeSpan.Zero)],
             new HashSet<Guid> { OnCallAbsence },
+            new HashSet<Guid>(),
             out var breakDays);
 
         var window = breakDays.BlockingWindows[new CellKey(Agent, Day)].ShouldHaveSingleItem();
@@ -87,6 +89,7 @@ public sealed class RecoverySnapshotBuilderAbsenceWindowTests
         RecoverySnapshotBuilder.BuildWorks(
             [BreakCell(OnCallAbsence, TimeSpan.Zero, new TimeSpan(23, 59, 0))],
             new HashSet<Guid> { OnCallAbsence },
+            new HashSet<Guid>(),
             out var breakDays);
 
         breakDays.BlockingWindows.ShouldBeEmpty();

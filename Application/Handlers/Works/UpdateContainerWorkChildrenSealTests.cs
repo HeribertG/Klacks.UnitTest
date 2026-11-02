@@ -218,7 +218,7 @@ public class UpdateContainerWorkChildrenSealTests
             _childrenReadRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IUnitOfWork>(), Substitute.For<IWorkNotificationFacade>(), lockRepository,
             Substitute.For<IUserService>(), _childrenManager, Substitute.For<IOvertimeCascadeService>(),
-            ShiftVisibilityGuards.AllowAll(), Substitute.For<IReplacementWriteGuard>(), childrenGuard,
+            ShiftVisibilityGuards.AllowAll(), Substitute.For<IWorkWriteGuard>(), Substitute.For<IReplacementWriteGuard>(), childrenGuard,
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
     }
 }

@@ -549,6 +549,21 @@ public class PreCommitConflictCheckerTests
     }
 
     [Test]
+    public async Task ARemovalWithExtras_TakesThemOffThePeriodHours()
+    {
+        var removal = new PlannedRemovalRow(ClientA, Day.AddDays(20), new TimeOnly(8, 0), new TimeOnly(16, 0), ExtraPaidHours: 2m);
+
+        await _checker.CheckAsync([], [removal]);
+
+        await _periodCapEvaluator.Received(1).EvaluatePlannedAsync(
+            ClientA,
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<(DateOnly Date, decimal Hours)>>(hours => hours.Single().Hours == -10m),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task PeriodCapBreach_FromEvaluator_IsSurfacedAsWarning()
     {
         var periodCapEntry = new ScheduleValidationNotificationDto

@@ -521,6 +521,32 @@ public class TimelineCalculationServiceTests
     }
 
     [Test]
+    public void AWithinReplacementAfterMidnight_PutsTheStandInOnTheNextDay()
+    {
+        var work = CreateWork(new TimeOnly(22, 0), new TimeOnly(6, 0));
+        var standIn = Guid.NewGuid();
+
+        var blocks = _service.CalculateScheduleBlocks(
+            [work], [WithinReplacement(work, standIn, new TimeOnly(2, 0), new TimeOnly(6, 0))], []);
+
+        var replacement = blocks.Single(b => b.ClientId == standIn);
+        replacement.Start.ShouldBe(BaseDate.AddDays(1).ToDateTime(new TimeOnly(2, 0)));
+        replacement.End.ShouldBe(BaseDate.AddDays(1).ToDateTime(new TimeOnly(6, 0)));
+    }
+
+    [Test]
+    public void AWithinReplacementWithoutASpan_HandsNothingOver()
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var standIn = Guid.NewGuid();
+
+        var blocks = _service.CalculateScheduleBlocks(
+            [work], [WithinReplacement(work, standIn, new TimeOnly(10, 0), new TimeOnly(10, 0))], []);
+
+        blocks.ShouldHaveSingleItem().BlockType.ShouldBe(ScheduleBlockType.Work);
+    }
+
+    [Test]
     public void AWithinReplacementWithoutAPerson_LeavesTheWorkWhole()
     {
         var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
