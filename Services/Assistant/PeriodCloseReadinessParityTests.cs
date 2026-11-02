@@ -11,6 +11,7 @@
 
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Queries.PeriodClosing;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Application.Skills;
@@ -42,6 +43,7 @@ public class PeriodCloseReadinessParityTests
     private IScheduleActivityProbe _probe = null!;
     private IPeriodAuditLogRepository _auditLog = null!;
     private IWorkRepository _works = null!;
+    private IPeriodSealCompletenessGuard _sealGuard = null!;
     private IMediator _mediator = null!;
     private IServiceScopeFactory _scopeFactory = null!;
     private HashSet<DateOnly> _sealed = null!;
@@ -104,6 +106,8 @@ public class PeriodCloseReadinessParityTests
         provider.GetService(typeof(ISealedDayRepository)).Returns(_sealedDays);
         provider.GetService(typeof(IMediator)).Returns(_mediator);
         provider.GetService(typeof(IPeriodAuditLogRepository)).Returns(_auditLog);
+        _sealGuard = Substitute.For<IPeriodSealCompletenessGuard>();
+        provider.GetService(typeof(IPeriodSealCompletenessGuard)).Returns(_sealGuard);
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
@@ -125,7 +129,7 @@ public class PeriodCloseReadinessParityTests
     {
         var skill = new EvaluatePeriodCloseReadinessSkill(
             _mediator, _groups, TestGroupScopeGuard.Unrestricted(), _week, _settings, Clock(),
-            _sealedDays, _probe, _auditLog, _works);
+            _sealedDays, _probe, _auditLog, _works, _sealGuard);
         var context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -169,6 +173,25 @@ public class PeriodCloseReadinessParityTests
         var blocked = events.Single().ShouldBeOfType<PeriodAutoCloseBlockedTriggerEvent>();
         blocked.Reason.ShouldBe(PeriodAutoCloseBlockReason.OpenErrors);
         blocked.ErrorCount.ShouldBe(advice.ErrorCount);
+        await _mediator.DidNotReceive().Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnsealedServices_BothStop_WithTheSameCount_AndBeforeTheErrors()
+    {
+        StubIssues(ScheduleValidationType.Error);
+        _sealGuard.CountUnsealedAsync(AugustStart, AugustEnd, _group.Id, Arg.Any<CancellationToken>()).Returns(3);
+
+        var advice = await AdviseAsync();
+        var events = await RunAutoCloseAsync();
+
+        advice.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
+        advice.UnsealedWorkCount.ShouldBe(3);
+        advice.Findings.First().Code.ShouldBe(PeriodCloseFindingCode.UnsealedWorks);
+        advice.Findings.First().IsBlocking.ShouldBeTrue();
+        var blocked = events.Single().ShouldBeOfType<PeriodAutoCloseBlockedTriggerEvent>();
+        blocked.Reason.ShouldBe(PeriodAutoCloseBlockReason.UnsealedWorks);
+        blocked.UnsealedWorkCount.ShouldBe(advice.UnsealedWorkCount);
         await _mediator.DidNotReceive().Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>());
     }
 

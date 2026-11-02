@@ -409,7 +409,7 @@ public class WorkVisibilityTests
         var handler = new ConfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, lockLevelService, new ScheduleMapper(),
             Substitute.For<IHttpContextAccessor>(), _cascadeService, Substitute.For<IPeriodAuditLogRepository>(),
-            Substitute.For<IUserService>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
+            Substitute.For<IUserService>(), Substitute.For<ICompanyClock>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new ConfirmWorkCommand(hidden.Id), CancellationToken.None));
@@ -429,7 +429,7 @@ public class WorkVisibilityTests
         var handler = new ConfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, lockLevelService, new ScheduleMapper(),
             Substitute.For<IHttpContextAccessor>(), _cascadeService, Substitute.For<IPeriodAuditLogRepository>(),
-            Substitute.For<IUserService>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
+            Substitute.For<IUserService>(), Substitute.For<ICompanyClock>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new ConfirmWorkCommand(hidden.Id), CancellationToken.None));
@@ -648,13 +648,13 @@ public class WorkVisibilityTests
             .Returns(ci => ci.ArgAt<Func<Task<int>>>(0)());
         var handler = new ApproveDayCommandHandler(
             _workRepository, groupVisibilityGuard, breakRepository, new WorkLockLevelService(), httpContextAccessor,
-            auditLogRepository, Substitute.For<IUserService>(), Substitute.For<ISealedDayRepository>(), _unitOfWork,
+            auditLogRepository, Substitute.For<IUserService>(), Substitute.For<ISealedDayRepository>(), Substitute.For<ICompanyClock>(), _unitOfWork,
             Substitute.For<ILogger<ApproveDayCommandHandler>>());
 
         var affected = await handler.Handle(new ApproveDayCommand(Day, Guid.NewGuid()), CancellationToken.None);
 
         affected.ShouldBe(0);
-        await _workRepository.DidNotReceiveWithAnyArgs().SealByDayAndGroup(default, default, default, default!, default);
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByDayAndGroup(default, default, default, default!, default, default);
         await breakRepository.DidNotReceiveWithAnyArgs().SealByDayAndGroup(default, default, default, default!, default);
         await auditLogRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }

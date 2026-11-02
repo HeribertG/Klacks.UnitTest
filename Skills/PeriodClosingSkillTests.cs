@@ -201,6 +201,32 @@ public class PeriodClosingSkillTests
     }
 
     [Test]
+    public async Task ClosePeriod_RefusedForUnsealedServices_SaysItCannotBeAcknowledgedAndNamesTheNextStep()
+    {
+        var listed = new List<UnsealedWorkDto>
+        {
+            new(Guid.NewGuid(), Guid.NewGuid(), "Elsa Muster", new DateOnly(2026, 11, 3), new TimeOnly(8, 0), new TimeOnly(16, 0), "Early")
+        };
+        _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new UnsealedWorksException(4, listed));
+        var skill = new ClosePeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+
+        var parameters = Range("acknowledgeViolations", true);
+        parameters["acknowledgedErrorCount"] = 0;
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Nothing was sealed");
+        result.Message.ShouldContain("4 service(s)");
+        result.Message.ShouldContain("cannot be acknowledged");
+        result.Message.ShouldContain("confirm_work");
+        result.Message.ShouldContain("2026-11-03 08:00-16:00 Early (Elsa Muster)");
+        result.Message.ShouldNotContain("acknowledgedErrorCount=");
+        await _mediator.DidNotReceive().Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ClosePeriod_NewErrorsAfterTheConfirmation_AreReportedWithoutOfferingAnotherBlindRetry()
     {
         _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())

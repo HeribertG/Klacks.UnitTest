@@ -99,6 +99,7 @@ public class PeriodCloseErrorCountParityTests
             Substitute.For<IDomainEventDispatcher>(),
             _loader,
             _escalation,
+            Substitute.For<IPeriodSealCompletenessGuard>(),
             Substitute.For<IUserService>(),
             audience,
             unitOfWork,

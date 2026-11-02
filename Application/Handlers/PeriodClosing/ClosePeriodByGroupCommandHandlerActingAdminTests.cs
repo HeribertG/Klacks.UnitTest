@@ -82,6 +82,7 @@ public class ClosePeriodByGroupCommandHandlerActingAdminTests
             _eventDispatcher,
             _validationLoader,
             Substitute.For<IComplianceEscalationService>(),
+            Substitute.For<IPeriodSealCompletenessGuard>(),
             _userService,
             _audienceResolver,
             _unitOfWork,

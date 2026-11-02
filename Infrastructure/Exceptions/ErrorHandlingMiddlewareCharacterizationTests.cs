@@ -13,6 +13,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Exports;
+using Klacks.Api.Application.DTOs.PeriodClosing;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
@@ -242,6 +243,18 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The error count changed.\",\"errorCode\":\"{PeriodValidationConflictException.ErrorCode}\",\"currentErrorCount\":4}}",
             LogLevel.Warning,
             "PeriodValidationConflictException caught by middleware: The error count changed.",
+            true);
+
+        yield return new MappingCase(
+            "UnsealedWorksException",
+            () => new UnsealedWorksException(
+                3,
+                new List<UnsealedWorkDto> { new(FixedId, FixedClientId, "Elsa Muster", new DateOnly(2027, 3, 10), new TimeOnly(8, 0), new TimeOnly(16, 0), "Early") }),
+            409,
+            JsonContentType,
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The period cannot be closed: 3 service(s) are not confirmed yet. Confirm each service after it has ended, then close the period.\",\"unsealedWorkCount\":3,\"works\":[{{\"workId\":\"{FixedId}\",\"clientId\":\"{FixedClientId}\",\"clientName\":\"Elsa Muster\",\"date\":\"2027-03-10\",\"startTime\":\"08:00:00\",\"endTime\":\"16:00:00\",\"shiftName\":\"Early\"}}],\"errorCode\":\"{UnsealedWorksException.ErrorCode}\"}}",
+            LogLevel.Warning,
+            "ConflictException caught by middleware: The period cannot be closed: 3 service(s) are not confirmed yet. Confirm each service after it has ended, then close the period.",
             true);
 
         yield return new MappingCase(

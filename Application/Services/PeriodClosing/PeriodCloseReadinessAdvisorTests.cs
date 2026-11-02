@@ -49,6 +49,41 @@ public class PeriodCloseReadinessAdvisorTests
     }
 
     [Test]
+    public void UnsealedServices_AreConfirmServicesFirst_ABlockingFindingThatNoAcknowledgementLifts()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { UnsealedWorkCount = 4 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
+        evaluation.UnsealedWorkCount.ShouldBe(4);
+        var finding = evaluation.Findings.Single(f => f.Code == PeriodCloseFindingCode.UnsealedWorks);
+        finding.IsBlocking.ShouldBeTrue();
+        finding.Statement.ShouldContain("4 service(s)");
+        finding.Statement.ShouldContain("no acknowledgement lifts that");
+        evaluation.Recommendation.ShouldContain("4 service(s)");
+        evaluation.Recommendation.ShouldContain("Do not close yet");
+    }
+
+    [Test]
+    public void UnsealedServices_ComeBeforeOpenErrors_AsInTheAutomaticClose()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { UnsealedWorkCount = 2, ErrorCount = 3 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
+        Codes(evaluation).First().ShouldBe(PeriodCloseFindingCode.UnsealedWorks);
+        Codes(evaluation).ShouldContain(PeriodCloseFindingCode.OpenErrors);
+    }
+
+    [Test]
+    public void UnsealedServices_OfARunningPeriod_StayAWait_ButAreNamed()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(
+            Facts() with { Today = new DateOnly(2026, 8, 20), UnsealedWorkCount = 5 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.WaitUntilDue);
+        evaluation.Recommendation.ShouldContain("5 service(s) are not confirmed yet");
+    }
+
+    [Test]
     public void Warnings_NeverStopTheClose()
     {
         var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { WarningCount = 4 });

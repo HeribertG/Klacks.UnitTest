@@ -2,7 +2,9 @@
 
 /// <summary>
 /// Unit tests for ApproveDayCommandHandler: authorised-role permission resolution against the real
-/// lock-level matrix, and the day-level audit record that used to be missing entirely.
+/// lock-level matrix, the day-level audit record that used to be missing entirely, and the rule that only services
+/// that have ended on the company clock are sealed - a service still to come or still running stays open, and so
+/// does the day lock that would otherwise forbid its corrections.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
@@ -27,6 +29,7 @@ public class ApproveDayCommandHandlerTests
     private IUserService _userService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ISealedDayRepository _sealedDayRepository = null!;
+    private FixedCompanyClock _clock = null!;
     private ApproveDayCommandHandler _handler = null!;
 
     [SetUp]
@@ -44,6 +47,7 @@ public class ApproveDayCommandHandlerTests
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(ci => ci.ArgAt<Func<Task<int>>>(0)());
+        _clock = new FixedCompanyClock(new DateTimeOffset(2026, 11, 2, 13, 0, 0, TimeSpan.Zero));
 
         _handler = new ApproveDayCommandHandler(
             _workRepository,
@@ -54,6 +58,7 @@ public class ApproveDayCommandHandlerTests
             _auditLogRepository,
             _userService,
             _sealedDayRepository,
+            _clock,
             _unitOfWork,
             Substitute.For<ILogger<ApproveDayCommandHandler>>());
     }
@@ -62,7 +67,7 @@ public class ApproveDayCommandHandlerTests
     public async Task Handle_ApprovesDay_WhenUserHasAuthorisedRole()
     {
         WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
-        _workRepository.SealByDayAndGroup(Arg.Any<DateOnly>(), Arg.Any<Guid>(), WorkLockLevel.Approved, "authorised-user", Arg.Any<CancellationToken>()).Returns(4);
+        _workRepository.SealByDayAndGroup(Arg.Any<DateOnly>(), Arg.Any<Guid>(), WorkLockLevel.Approved, "authorised-user", Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>()).Returns(4);
         _breakRepository.SealByDayAndGroup(Arg.Any<DateOnly>(), Arg.Any<Guid>(), WorkLockLevel.Approved, "authorised-user", Arg.Any<CancellationToken>()).Returns(2);
 
         var command = new ApproveDayCommand(new DateOnly(2026, 1, 15), Guid.NewGuid());
@@ -83,7 +88,7 @@ public class ApproveDayCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("permission");
 
-        await _workRepository.DidNotReceive().SealByDayAndGroup(Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _workRepository.DidNotReceive().SealByDayAndGroup(Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>());
         await _auditLogRepository.DidNotReceive().AddAsync(Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
     }
 
@@ -93,7 +98,7 @@ public class ApproveDayCommandHandlerTests
         var groupId = Guid.NewGuid();
         var date = new DateOnly(2026, 1, 15);
         WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, ApproverId);
-        _workRepository.SealByDayAndGroup(date, groupId, WorkLockLevel.Approved, ApproverId, Arg.Any<CancellationToken>()).Returns(4);
+        _workRepository.SealByDayAndGroup(date, groupId, WorkLockLevel.Approved, ApproverId, Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>()).Returns(4);
         _breakRepository.SealByDayAndGroup(date, groupId, WorkLockLevel.Approved, ApproverId, Arg.Any<CancellationToken>()).Returns(2);
 
         await _handler.Handle(new ApproveDayCommand(date, groupId), CancellationToken.None);
@@ -162,5 +167,68 @@ public class ApproveDayCommandHandlerTests
         await _handler.Handle(new ApproveDayCommand(day, groupId), CancellationToken.None);
 
         await _sealedDayRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Handle_SealsOnlyServicesThatEndedByTheCompanyNow()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        var groupId = Guid.NewGuid();
+        var date = new DateOnly(2026, 11, 2);
+
+        await _handler.Handle(new ApproveDayCommand(date, groupId), CancellationToken.None);
+
+        await _workRepository.Received(1).SealByDayAndGroup(
+            date, groupId, WorkLockLevel.Approved, "authorised-user",
+            Arg.Is<ServiceEndCutoff>(cutoff => cutoff.Today == new DateOnly(2026, 11, 2) && cutoff.Time == new TimeOnly(13, 0)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_MeasuresTheCutoffOnTheCompanyClock_NotOnUtc()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        _clock.Now = new DateTimeOffset(2026, 11, 2, 20, 0, 0, TimeSpan.Zero);
+        _clock.TimeZone = TimeZoneInfo.CreateCustomTimeZone("test-plus-nine", TimeSpan.FromHours(9), "test", "test");
+
+        await _handler.Handle(new ApproveDayCommand(new DateOnly(2026, 11, 2), Guid.NewGuid()), CancellationToken.None);
+
+        await _workRepository.Received(1).SealByDayAndGroup(
+            Arg.Any<DateOnly>(), Arg.Any<Guid>(), WorkLockLevel.Approved, "authorised-user",
+            Arg.Is<ServiceEndCutoff>(cutoff => cutoff.Today == new DateOnly(2026, 11, 3) && cutoff.Time == new TimeOnly(5, 0)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_WritesNoAuditRecord_WhenNothingWasSealedAndNoDayLockWasStored()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        var groupId = Guid.NewGuid();
+        var date = new DateOnly(2026, 11, 2);
+        _workRepository.HasUnendedByDayAndGroupAsync(date, groupId, WorkLockLevel.Approved, Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _handler.Handle(new ApproveDayCommand(date, groupId), CancellationToken.None);
+
+        result.ShouldBe(0);
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _auditLogRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Handle_StoresNoDayRow_WhileAServiceOfTheDayIsStillToCome()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        var groupId = Guid.NewGuid();
+        var date = new DateOnly(2026, 11, 2);
+        _workRepository.SealByDayAndGroup(date, groupId, WorkLockLevel.Approved, "authorised-user", Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>()).Returns(1);
+        _workRepository.HasUnendedByDayAndGroupAsync(date, groupId, WorkLockLevel.Approved, Arg.Any<ServiceEndCutoff>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _handler.Handle(new ApproveDayCommand(date, groupId), CancellationToken.None);
+
+        result.ShouldBe(1);
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _auditLogRepository.Received(1).AddAsync(
+            Arg.Is<PeriodAuditLog>(log => log.Action == PeriodAuditAction.ApproveDay && log.AffectedCount == 1),
+            Arg.Any<CancellationToken>());
     }
 }

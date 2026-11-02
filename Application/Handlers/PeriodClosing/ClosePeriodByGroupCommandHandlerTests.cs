@@ -36,6 +36,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IDomainEventDispatcher _eventDispatcher = null!;
     private IPeriodValidationLoader _validationLoader = null!;
     private IComplianceEscalationService _escalationService = null!;
+    private IPeriodSealCompletenessGuard _sealGuard = null!;
     private IUserService _userService = null!;
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -59,6 +60,7 @@ public class ClosePeriodByGroupCommandHandlerTests
                 Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<PeriodIssueDto>());
         _escalationService = Substitute.For<IComplianceEscalationService>();
+        _sealGuard = Substitute.For<IPeriodSealCompletenessGuard>();
         _userService = Substitute.For<IUserService>();
         _userService.GetDisplayName().Returns("Ada Lovelace");
         _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
@@ -80,6 +82,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             _eventDispatcher,
             _validationLoader,
             _escalationService,
+            _sealGuard,
             _userService,
             _audienceResolver,
             _unitOfWork,
@@ -419,5 +422,74 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    private static readonly UnsealedWorkDto SampleUnsealed = new(
+        Guid.NewGuid(), Guid.NewGuid(), "Elsa Muster", new DateOnly(2026, 1, 20), new TimeOnly(8, 0), new TimeOnly(16, 0), "Early");
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Handle_Refuses_WhenServicesAreUnsealed_EvenWhenViolationsAreAcknowledged(bool acknowledge)
+    {
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
+        _sealGuard.EnsureAllSealedAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new UnsealedWorksException(3, new List<UnsealedWorkDto> { SampleUnsealed })));
+
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close",
+            AcknowledgeViolations: acknowledge, AcknowledgedErrorCount: acknowledge ? 0 : null);
+
+        var refusal = await Should.ThrowAsync<UnsealedWorksException>(() => _handler.Handle(command, CancellationToken.None));
+
+        refusal.UnsealedCount.ShouldBe(3);
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(default, default, default, default!, default);
+        await _breakRepository.DidNotReceiveWithAnyArgs().SealByPeriod(default, default, default, default!, default);
+        await _validationLoader.DidNotReceiveWithAnyArgs().LoadAsync(default, default, default, default, default, default);
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _auditLogRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _eventDispatcher.DidNotReceive().DispatchAsync(Arg.Any<IDomainEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ChecksTheGroupsOwnServices_WhenAGroupIsGiven()
+    {
+        var groupId = Guid.NewGuid();
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
+
+        await _handler.Handle(
+            new ClosePeriodByGroupCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), groupId, null),
+            CancellationToken.None);
+
+        await _sealGuard.Received(1).EnsureAllSealedAsync(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), groupId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ChecksTheWholePeriod_WhenNoGroupIsGiven()
+    {
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
+
+        await _handler.Handle(
+            new ClosePeriodByGroupCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, null),
+            CancellationToken.None);
+
+        await _sealGuard.Received(1).EnsureAllSealedAsync(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_DoesNotRevealTheUnsealedServices_ToAUserWhoMayNotClose()
+    {
+        PeriodClosingTestHelpers.GivenUserIsNotAdmin(_httpContextAccessor);
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(false);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => _handler.Handle(
+            new ClosePeriodByGroupCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, null),
+            CancellationToken.None));
+
+        await _sealGuard.DidNotReceiveWithAnyArgs().EnsureAllSealedAsync(default, default, default, default);
     }
 }

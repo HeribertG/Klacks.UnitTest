@@ -8,6 +8,7 @@
 
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Queries.PeriodClosing;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
@@ -36,6 +37,7 @@ public class EvaluatePeriodCloseReadinessSkillTests
     private IScheduleActivityProbe _probe = null!;
     private IPeriodAuditLogRepository _auditLog = null!;
     private IWorkRepository _works = null!;
+    private IPeriodSealCompletenessGuard _sealGuard = null!;
     private HashSet<DateOnly> _sealed = null!;
 
     [SetUp]
@@ -71,6 +73,7 @@ public class EvaluatePeriodCloseReadinessSkillTests
         _auditLog.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<PeriodAuditLog>());
         _works = Substitute.For<IWorkRepository>();
+        _sealGuard = Substitute.For<IPeriodSealCompletenessGuard>();
         _works.GetSealingSummaryAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<(DateOnly Date, int Total, int Sealed)>());
     }
@@ -89,7 +92,8 @@ public class EvaluatePeriodCloseReadinessSkillTests
         _sealedDays,
         _probe,
         _auditLog,
-        _works);
+        _works,
+        _sealGuard);
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -169,6 +173,17 @@ public class EvaluatePeriodCloseReadinessSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message!.ShouldContain("pass startDate and endDate");
+    }
+
+    [Test]
+    public async Task UnsealedServicesOfTheGroup_AreCountedThroughTheSharedGuard_AndStopTheAdvice()
+    {
+        _sealGuard.CountUnsealedAsync(AugustStart, AugustEnd, _group.Id, Arg.Any<CancellationToken>()).Returns(6);
+
+        var evaluation = await EvaluateAsync();
+
+        evaluation.UnsealedWorkCount.ShouldBe(6);
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
     }
 
     [Test]

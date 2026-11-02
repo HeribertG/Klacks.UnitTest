@@ -14,6 +14,7 @@
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.DTOs.PeriodClosing;
 using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Queries.PeriodClosing;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
@@ -45,6 +46,7 @@ public class PeriodAutoCloseServiceTests
     private IPeriodAutoCloseResolver _freshResolver = null!;
     private ISealedDayRepository _freshSealedDays = null!;
     private IMediator _freshMediator = null!;
+    private IPeriodSealCompletenessGuard _freshSealGuard = null!;
     private IServiceScopeFactory _scopeFactory = null!;
     private HashSet<(Guid? GroupId, DateOnly Date)> _sealed = null!;
     private List<PeriodAuditLog> _auditEntries = null!;
@@ -90,7 +92,12 @@ public class PeriodAutoCloseServiceTests
                 return 31;
             });
 
+        _freshSealGuard = Substitute.For<IPeriodSealCompletenessGuard>();
+        _freshSealGuard.CountUnsealedAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(0);
+
         var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IPeriodSealCompletenessGuard)).Returns(_freshSealGuard);
         provider.GetService(typeof(IPeriodAutoCloseResolver)).Returns(_freshResolver);
         provider.GetService(typeof(ISealedDayRepository)).Returns(_freshSealedDays);
         provider.GetService(typeof(IMediator)).Returns(_freshMediator);
@@ -486,6 +493,69 @@ public class PeriodAutoCloseServiceTests
     }
 
     [Test]
+    public async Task RunAsync_ServicesOfThePeriodAreNotSealed_NeverClosesAndReportsTheCount()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        _freshSealGuard.CountUnsealedAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(3);
+
+        var events = await CreateSut().RunAsync();
+
+        var blocked = SingleBlocked(events);
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
+            Assert.That(blocked.UnsealedWorkCount, Is.EqualTo(3));
+            Assert.That(blocked.ErrorCount, Is.EqualTo(0));
+            Assert.That(blocked.SummaryParams["works"], Is.EqualTo("3"));
+            Assert.That(blocked.GroupId, Is.EqualTo(group.Id));
+        });
+        await AssertNothingSentToTheCloseHandlerAsync();
+        await _freshMediator.DidNotReceive().Send(Arg.Any<GetPeriodIssuesQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_UnsealedServices_AreCheckedBeforeTheErrorsAreLoaded()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        StubIssues(ScheduleValidationType.Error);
+        _freshSealGuard.CountUnsealedAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(1);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(SingleBlocked(events).Reason, Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
+    }
+
+    [Test]
+    public async Task RunAsync_HandlerRefusesWithUnsealedServices_ReportsUnsealedWorksNotFailed()
+    {
+        StubGroups(MakeGroup());
+        _freshMediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new UnsealedWorksException(2, new List<UnsealedWorkDto>()));
+
+        var events = await CreateSut().RunAsync();
+
+        var blocked = SingleBlocked(events);
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
+            Assert.That(blocked.UnsealedWorkCount, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task RunAsync_UnsealedServices_TellTheirCauseOnceThroughTheDedupKey()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        _freshSealGuard.CountUnsealedAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(3);
+
+        var first = SingleBlocked(await CreateSut().RunAsync());
+        var second = SingleBlocked(await CreateSut().RunAsync());
+
+        Assert.That(second.DedupKey, Is.EqualTo(first.DedupKey));
+        Assert.That(first.DedupKey, Does.EndWith(":auto-close-blocked:UnsealedWorks"));
+    }
+
+    [Test]
     public async Task RunAsync_HandlerRefusesThePermission_ReportsRefused()
     {
         StubGroups(MakeGroup());
@@ -853,6 +923,20 @@ public class PeriodAutoCloseServiceTests
         var reasons = events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Select(evt => evt.Reason).ToList();
         Assert.That(reasons.Count(reason => reason == PeriodAutoCloseBlockReason.Refused), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
         Assert.That(reasons.Count(reason => reason == PeriodAutoCloseBlockReason.TickLimitReached), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RunAsync_GroupsBlockedByUnsealedServices_DoNotUseUpTheCap()
+    {
+        var groups = StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 1)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+        _freshSealGuard.CountUnsealedAsync(AugustStart, AugustEnd, groups[0].Id, Arg.Any<CancellationToken>()).Returns(2);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
+        Assert.That(events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Single().Reason,
+            Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
     }
 
     [Test]
