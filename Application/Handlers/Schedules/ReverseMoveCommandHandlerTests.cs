@@ -71,9 +71,10 @@ public class ReverseMoveCommandHandlerTests
 
     private async Task AssertRefused(string reason)
     {
-        var refused = await Should.ThrowAsync<InvalidRequestException>(Reverse);
+        var refused = await Should.ThrowAsync<MoveReversalRefusedException>(Reverse);
 
         refused.Message.ShouldContain(reason);
+        refused.ErrorCode.ShouldStartWith("MOVE_");
         await _mediator.DidNotReceive().Send(Arg.Any<ReassignWorkClientCommand>(), Arg.Any<CancellationToken>());
     }
 

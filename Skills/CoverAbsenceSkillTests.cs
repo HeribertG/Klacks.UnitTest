@@ -70,6 +70,32 @@ public class CoverAbsenceSkillTests
         => JsonSerializer.SerializeToElement(result.Data);
 
     [Test]
+    public async Task MovedAndReplacedSlots_AreCountedApart_InDataAndMessage()
+    {
+        _mediator.Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new CoverAbsenceOutcome(
+                Guid.NewGuid(), Guid.NewGuid(), "Absence cover 10.03.26",
+                new List<CoveredSlot>
+                {
+                    new(ShiftId, new DateOnly(2026, 3, 10), Guid.NewGuid(), "Bob", Kind: ReplacementRequestKind.Move),
+                    new(Guid.NewGuid(), new DateOnly(2026, 3, 11), Guid.NewGuid(), "Eva", Kind: ReplacementRequestKind.Replacement)
+                },
+                new List<UncoveredSlot>(),
+                new List<Klacks.Api.Application.DTOs.Notifications.ScheduleValidationNotificationDto>()));
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue();
+        var data = DataAsJson(result);
+        data.GetProperty("MovedCount").GetInt32().ShouldBe(1);
+        data.GetProperty("ReplacedCount").GetInt32().ShouldBe(1);
+        data.GetProperty("Covered").EnumerateArray().Select(c => c.GetProperty("Kind").GetString())
+            .ShouldBe(new[] { nameof(ReplacementRequestKind.Move), nameof(ReplacementRequestKind.Replacement) });
+        result.Message.ShouldContain("1 moved whole to the stand-in, 1 kept with a replacement");
+        result.Message.ShouldContain("a started one stays");
+    }
+
+    [Test]
     public async Task DelegatesToService_AndProjects()
     {
         var result = await Skill().ExecuteAsync(Ctx(), Params());
