@@ -28,7 +28,6 @@ namespace Klacks.UnitTest.Skills;
 public class AssignContainerWeekSkillTests
 {
     private static readonly Guid ContainerId = Guid.NewGuid();
-    private static readonly Guid PlannableId = Guid.NewGuid();
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid VisitShiftId = Guid.NewGuid();
     private static readonly DateOnly Monday = new(2026, 11, 2);
@@ -41,7 +40,6 @@ public class AssignContainerWeekSkillTests
 
     private IMediator _mediator = null!;
     private IShiftRepository _shiftRepository = null!;
-    private IShiftReader _shiftReader = null!;
     private IContainerTemplateRepository _templateRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IContainerWorkChildrenReadRepository _childrenRepository = null!;
@@ -59,7 +57,6 @@ public class AssignContainerWeekSkillTests
     {
         _mediator = Substitute.For<IMediator>();
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _shiftReader = Substitute.For<IShiftReader>();
         _templateRepository = Substitute.For<IContainerTemplateRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _childrenRepository = Substitute.For<IContainerWorkChildrenReadRepository>();
@@ -291,35 +288,12 @@ public class AssignContainerWeekSkillTests
     }
 
     [Test]
-    public async Task SealedOrderId_IsResolvedToThePlannableContainerCopy()
+    public async Task TheOneContainerRow_IsBookedDirectly()
     {
-        var order = Container(ContainerId);
-        order.Status = ShiftStatus.SealedOrder;
-        _shiftRepository.Get(ContainerId).Returns(order);
-        _shiftReader.FindFirstByOriginalIdAsync(ContainerId, ShiftStatus.OriginalShift, Arg.Any<CancellationToken>())
-            .Returns(Container(PlannableId));
-        _shiftRepository.Get(PlannableId).Returns(Container(PlannableId));
-        _templateRepository.GetTemplatesForContainer(PlannableId).Returns(_ => Templates());
-
         var result = await Skill().ExecuteAsync(Ctx(), Params(Monday, Friday));
 
         result.Success.ShouldBeTrue(result.Message);
-        _sent!.Request.Works.ShouldAllBe(w => w.ShiftId == PlannableId);
-        await _templateRepository.DidNotReceive().GetTemplatesForContainer(ContainerId);
-    }
-
-    [Test]
-    public async Task SealedOrderWithoutPlannableCopy_IsRefused()
-    {
-        var order = Container(ContainerId);
-        order.Status = ShiftStatus.SealedOrder;
-        _shiftRepository.Get(ContainerId).Returns(order);
-
-        var result = await Skill().ExecuteAsync(Ctx(), Params(Monday, Friday));
-
-        result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("no plannable container shift");
-        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+        _sent!.Request.Works.ShouldAllBe(w => w.ShiftId == ContainerId);
     }
 
     [Test]
@@ -411,7 +385,6 @@ public class AssignContainerWeekSkillTests
         IClientVisibilityGuard? clientGuard = null) => new(
             _mediator,
             _shiftRepository,
-            _shiftReader,
             _templateRepository,
             _workRepository,
             _childrenRepository,

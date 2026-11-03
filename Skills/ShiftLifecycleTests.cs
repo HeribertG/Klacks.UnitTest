@@ -282,6 +282,25 @@ public class ShiftLifecycleTests
     }
 
     [Test]
+    public async Task Delete_AContainer_ByAdministrator_IsAFamilyOfOneRow()
+    {
+        var container = ExistingShift(status: ShiftStatus.OriginalShift);
+        container.ShiftType = ShiftType.IsContainer;
+        container.OriginalId = null;
+        var repo = Substitute.For<IShiftRepository>();
+        repo.Get(ShiftId).Returns(container);
+        var familyDeletion = Substitute.For<ISealedOrderFamilyDeletion>();
+        familyDeletion.DeleteAsync(container, Arg.Any<CancellationToken>()).Returns(1);
+        var skill = new DeleteShiftSkill(repo, Substitute.For<IMediator>(), familyDeletion, ShiftVisibilityGuards.AllowAll());
+
+        var result = await skill.ExecuteAsync(AdminCtx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldStartWith("Container");
+        await familyDeletion.Received(1).DeleteAsync(container, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Delete_SealedOrder_ByAdministrator_DeletesTheWholeFamilyWithoutTheHandler()
     {
         var order = ExistingShift(status: ShiftStatus.SealedOrder);

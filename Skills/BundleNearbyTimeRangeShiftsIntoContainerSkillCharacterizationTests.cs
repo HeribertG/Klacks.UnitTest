@@ -299,7 +299,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         shift.Description.ShouldBe(string.Empty);
         shift.ClientId.ShouldBeNull();
         shift.MacroId.ShouldBe(DefaultMacroId);
-        shift.Status.ShouldBe(ShiftStatus.SealedOrder);
+        shift.Status.ShouldBe(ShiftStatus.OriginalShift);
+        shift.OriginalId.ShouldBeNull();
         shift.ShiftType.ShouldBe(ShiftType.IsContainer);
         shift.IsTimeRange.ShouldBeFalse();
         shift.StartShift.ShouldBe(new TimeOnly(8, 0));
