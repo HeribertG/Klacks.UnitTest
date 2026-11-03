@@ -420,75 +420,18 @@ public class ShiftFamilyEndServiceTests
         await _shiftRepository.DidNotReceiveWithAnyArgs().DeleteOrderFamilyAsync(default!, default);
     }
 
-    private static Shift ChildOfStandalone(DateOnly from, Guid? rootId = null) => new()
-    {
-        Id = Guid.NewGuid(),
-        Name = "Part",
-        Status = ShiftStatus.SplitShift,
-        ShiftType = ShiftType.IsContainer,
-        FromDate = from,
-        RootId = rootId ?? OrderId
-    };
-
     [Test]
-    public async Task ACutPieceWithoutAnOrder_FindsItsHeadThroughRootId_AndEndsTheFamily()
+    public async Task ARowStandingAloneWithARootId_IsStillItsOwnHead()
     {
-        var head = Standalone();
-        var piece = ChildOfStandalone(Start);
-        Family(head, piece);
+        var standalone = Standalone();
+        standalone.RootId = Guid.NewGuid();
+        Family(standalone);
 
-        await _service.EndFamilyAsync(piece, Day, null, CancellationToken.None);
+        await _service.EndFamilyAsync(standalone, Day, null, CancellationToken.None);
 
-        await _familyRepository.Received(1).GetTrackedFamilyAsync(OrderId, Arg.Any<CancellationToken>());
-        await _familyRepository.Received(1).LockHeadAsync(OrderId, Arg.Any<CancellationToken>());
-        head.UntilDate.ShouldBe(Day);
-        piece.UntilDate.ShouldBe(Day);
-    }
-
-    [Test]
-    public async Task ACutPieceWithoutAnOrder_WhoseHeadIsGone_IsRefused()
-    {
-        var piece = ChildOfStandalone(Start);
-        Family(piece);
-
-        await RefusedAsync(piece, Day, ShiftEndDateRefusedException.OrderMissingReason);
-    }
-
-    [Test]
-    public async Task TheCutEndOfTheFirstShift_IsNoStoredFamilyEnd_AndStaysAsItIs()
-    {
-        var cutEnd = new DateOnly(2026, 6, 30);
-        var lastDay = new DateOnly(2026, 8, 31);
-        var head = Standalone(cutEnd);
-        var lastPiece = ChildOfStandalone(cutEnd.AddDays(1));
-        Family(head, lastPiece);
-
-        await _service.EndFamilyAsync(lastPiece, lastDay, null, CancellationToken.None);
-
-        lastPiece.UntilDate.ShouldBe(lastDay);
-        head.UntilDate.ShouldBe(cutEnd);
-    }
-
-    [TestCase(0, true)]
-    [TestCase(1, false)]
-    public async Task AFamilyWithoutOrderAndNoOpenRow_HasEndedOnItsLatestEnd(int offset, bool accepted)
-    {
-        var head = Standalone(new DateOnly(2026, 6, 30));
-        var lastPiece = ChildOfStandalone(new DateOnly(2026, 7, 1));
-        lastPiece.UntilDate = new DateOnly(2026, 8, 31);
-        var stale = ChildOfStandalone(new DateOnly(2026, 7, 1));
-        stale.Id = lastPiece.Id;
-        Family(head, lastPiece);
-        var day = new DateOnly(2026, 8, 31).AddDays(offset);
-
-        if (accepted)
-        {
-            await _service.EndFamilyAsync(stale, day, null, CancellationToken.None);
-            lastPiece.UntilDate.ShouldBe(day);
-            return;
-        }
-
-        await RefusedAsync(stale, day, ShiftEndDateRefusedException.StoredEndReason);
+        standalone.UntilDate.ShouldBe(Day);
+        await _familyRepository.Received(1).LockHeadAsync(standalone.Id, Arg.Any<CancellationToken>());
+        await _familyRepository.Received(1).GetTrackedFamilyAsync(standalone.Id, Arg.Any<CancellationToken>());
     }
 
     [Test]

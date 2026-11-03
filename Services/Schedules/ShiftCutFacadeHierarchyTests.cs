@@ -106,21 +106,6 @@ public class ShiftCutFacadeHierarchyTests
         await _facade.ProcessBatchCutsAsync([Create(_originalShiftId, Piece(_pieceId, originalId: null, clientId: null))]);
 
         _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), null, null);
-        await _shiftRepository.DidNotReceiveWithAnyArgs().MakeOwnRootAsync(default);
-    }
-
-    [Test]
-    public async Task Create_UnderAShiftWithoutAnOrder_IsItsChild_AndMakesItTheRoot()
-    {
-        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null));
-        var head = Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null);
-        head.RootId = _originalShiftId;
-        _shiftRepository.MakeOwnRootAsync(_originalShiftId).Returns(head);
-        _shiftRepository.CutList(_originalShiftId).Returns([head]);
-
-        await _facade.ProcessBatchCutsAsync([Create(_originalShiftId, Piece(_pieceId, originalId: null, clientId: null))]);
-
-        _shiftTreeService.Received(1).SetHierarchyRelation(Arg.Is<Shift>(s => s.Id == _pieceId), _originalShiftId, _originalShiftId);
     }
 
     [Test]
@@ -139,8 +124,7 @@ public class ShiftCutFacadeHierarchyTests
     [Test]
     public async Task Create_NamingItselfAsParent_IsACircle_AnUpdateIsNot()
     {
-        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: null));
-        _shiftRepository.CutList(_originalShiftId).Returns([_stored[_originalShiftId]]);
+        Store(Stored(_originalShiftId, ShiftStatus.OriginalShift, originalId: _sealedOrderId));
 
         await Should.ThrowAsync<InvalidOperationException>(() => _facade.ProcessBatchCutsAsync(
             [Create(_pieceId, Piece(_pieceId, originalId: null, clientId: null))]));
@@ -291,6 +275,32 @@ public class ShiftCutFacadeHierarchyTests
         await Should.ThrowAsync<BadRequestException>(
             () => _facade.ProcessBatchCutsAsync([Create(_sealedOrderId, Piece(_pieceId, originalId: null, clientId: null))]));
 
+        await _shiftRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Update_OfARowWithoutASealedOrigin_IsRefused_BeforeAnythingIsStaged()
+    {
+        Store(Stored(_pieceId, ShiftStatus.OriginalShift, originalId: null));
+
+        var thrown = await Should.ThrowAsync<BadRequestException>(
+            () => _facade.ProcessBatchCutsAsync([Update(Piece(_pieceId, originalId: null, clientId: null))]));
+
+        thrown.Message.ShouldBe(string.Format(ShiftHierarchyMessages.CutWithoutSealedOriginNotAllowed, _pieceId));
+        await _shiftRepository.DidNotReceiveWithAnyArgs().PutCutUpdate(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Create_FromARowWithoutASealedOrigin_IsRefused_BeforeAnythingIsStaged()
+    {
+        Store(Stored(_sealedOrderId, ShiftStatus.SplitShift, originalId: null));
+
+        var thrown = await Should.ThrowAsync<BadRequestException>(
+            () => _facade.ProcessBatchCutsAsync([Create(_sealedOrderId, Piece(_pieceId, originalId: null, clientId: null))]));
+
+        thrown.Message.ShouldBe(string.Format(ShiftHierarchyMessages.CutWithoutSealedOriginNotAllowed, _sealedOrderId));
         await _shiftRepository.DidNotReceiveWithAnyArgs().Add(default!);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
