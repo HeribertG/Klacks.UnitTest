@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Macros;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Persistence;
@@ -129,6 +130,109 @@ public class PeriodHoursCacheFallbackParityTests
         fallback[ClientId].Surcharges.ShouldBe(expectedOriginal);
         fallback[ReplacementClientId].Surcharges.ShouldBe(expectedReplacement);
     }
+
+    [Test]
+    public async Task PeriodHours_AnUnpaidSubBreakSavedInTheContainerDialog_TakesItsHoursAndSurchargeOffOnce()
+    {
+        var unpaid = new Absence { Id = Guid.NewGuid(), IsUnpaid = true };
+        var shift = new Shift { Id = Guid.NewGuid(), MacroId = Guid.NewGuid() };
+        var container = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            ShiftId = shift.Id,
+            CurrentDate = WorkDay,
+            AnalyseToken = null,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+        };
+        var subBreak = new Break
+        {
+            Id = Guid.NewGuid(),
+            ParentWorkId = container.Id,
+            ClientId = ClientId,
+            AbsenceId = unpaid.Id,
+            CurrentDate = WorkDay,
+            AnalyseToken = null,
+            StartTime = new TimeOnly(12, 0),
+            EndTime = new TimeOnly(13, 0),
+        };
+        _context.Absence.Add(unpaid);
+        _context.Shift.Add(shift);
+        _context.Work.Add(container);
+        _context.Break.Add(subBreak);
+        await _context.SaveChangesAsync();
+
+        const decimal containerSurcharges = 4m;
+        const decimal containerHours = 8m;
+        const decimal subBreakHours = 1m;
+        const decimal subBreakSurcharges = 1m;
+        var workMacros = Substitute.For<IWorkMacroService>();
+        workMacros.ProcessWorkMacroAsync(Arg.Any<Work>()).Returns(call =>
+        {
+            call.Arg<Work>().Surcharges = containerSurcharges;
+            call.Arg<Work>().WorkTime = containerHours;
+            return true;
+        });
+        var macroData = Substitute.For<IMacroDataProvider>();
+        macroData.GetMacroDataAsync(Arg.Any<Work>()).Returns(new MacroData());
+        var macroCompilation = Substitute.For<IMacroCompilationService>();
+        macroCompilation.CompileAndExecuteAsync(shift.MacroId.Value, Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(true, subBreakSurcharges, []));
+        var manager = new ContainerWorkChildrenManager(
+            _context, new EntityCollectionUpdateService(_context), workMacros, macroData, macroCompilation,
+            Substitute.For<ILogger<ContainerWorkChildrenManager>>());
+
+        await manager.UpdateChildrenAsync(container.Id, null, null, null, null, [], [subBreak], [], CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        var (periodHoursService, workRepository) = CreateServices();
+        var clientIds = new List<Guid> { ClientId };
+        var core = await periodHoursService.GetPeriodHoursAsync(clientIds, Start, End);
+        var fallback = await workRepository.GetPeriodHoursForClients(clientIds, Start, End);
+
+        const decimal expected = containerSurcharges - subBreakSurcharges;
+        core[ClientId].Surcharges.ShouldBe(expected);
+        fallback[ClientId].Surcharges.ShouldBe(expected);
+        core[ClientId].Hours.ShouldBe(containerHours - subBreakHours);
+        fallback[ClientId].Hours.ShouldBe(containerHours - subBreakHours);
+    }
+
+    [Test]
+    public async Task PeriodHours_AContainerChildOfTheSamePerson_CountsNothingOfItsOwn_ACustomerChildStays()
+    {
+        var customerId = Guid.NewGuid();
+        var container = NewContainerWork(ClientId, null, 8m, 2m);
+        var ownChild = NewContainerWork(ClientId, container.Id, 3m, 1m);
+        var customerChild = NewContainerWork(customerId, container.Id, 3m, 0m);
+        _context.Work.AddRange(container, ownChild, customerChild);
+        await _context.SaveChangesAsync();
+
+        var (periodHoursService, workRepository) = CreateServices();
+        var clientIds = new List<Guid> { ClientId, customerId };
+        var core = await periodHoursService.GetPeriodHoursAsync(clientIds, Start, End);
+        var fallback = await workRepository.GetPeriodHoursForClients(clientIds, Start, End);
+
+        foreach (var result in new[] { core, fallback })
+        {
+            result[ClientId].Hours.ShouldBe(container.WorkTime);
+            result[ClientId].Surcharges.ShouldBe(container.Surcharges);
+            result[customerId].Hours.ShouldBe(customerChild.WorkTime);
+        }
+    }
+
+    private static Work NewContainerWork(Guid clientId, Guid? parentWorkId, decimal workTime, decimal surcharges) => new()
+    {
+        Id = Guid.NewGuid(),
+        ClientId = clientId,
+        ParentWorkId = parentWorkId,
+        CurrentDate = WorkDay,
+        WorkTime = workTime,
+        Surcharges = surcharges,
+        AnalyseToken = null,
+        StartTime = new TimeOnly(8, 0),
+        EndTime = new TimeOnly(16, 0),
+    };
 
     private (PeriodHoursService PeriodHours, WorkRepository Works) CreateServices()
     {

@@ -6,7 +6,8 @@
 /// employees are included, customers, scenario, soft-deleted and unsealed entries stay out, a break is exported once,
 /// and an on-call absence is one day. WorkChanges follow the period-hours rules: corrections, travel and the
 /// briefing rows of the container expansion add hours, a replacement moves hours from the work's employee to the
-/// replacing person; break surcharges count; a soft-deleted person's closed entries are still exported.
+/// replacing person; break surcharges count; a soft-deleted person's closed entries are still exported; a container child
+/// of the container's own person adds nothing of its own.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Exports.Payroll;
@@ -83,6 +84,25 @@ public class PayrollExportDataLoaderTests
         employee.Entries.Count(e => e.Kind == PayrollEntryKind.WorkHours).ShouldBe(2);
         employee.Entries.Single(e => e.Date == WorkDay && e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(10m);
         employee.Entries.Single(e => e.Date == WorkDay.AddDays(1)).Quantity.ShouldBe(4m);
+    }
+
+    [Test]
+    public async Task LoadAsync_AContainerChildOfTheSamePerson_AddsNoHoursOrSurchargesOfItsOwn()
+    {
+        var clientId = AddClient(110);
+        var containerId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        var childId = AddWork(clientId, WorkDay, _shiftBId, workTime: 3m);
+        await _context.SaveChangesAsync();
+        var child = await _context.Work.SingleAsync(w => w.Id == childId);
+        child.ParentWorkId = containerId;
+        child.Surcharges = 1m;
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.Entries.Single(e => e.Date == WorkDay && e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(8m);
+        employee.Entries.ShouldNotContain(e => e.Kind == PayrollEntryKind.Surcharge);
     }
 
     [Test]

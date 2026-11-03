@@ -3,7 +3,8 @@
 /// <summary>
 /// Recalculation after an owner change against a real in-memory DataBaseContext: the stored children are processed in the
 /// order of a save (sub-works, the work, then the WorkChanges of both), a deleted child stays out, and an unpaid sub-break
-/// is judged for the new owner and negates its surcharge on the work.
+/// is judged for the new owner and carries its negative surcharge on the break only, so the work keeps the same surcharges
+/// after creating, saving and reassigning.
 /// </summary>
 
 using Klacks.Api.Domain.Models.Macros;
@@ -174,7 +175,7 @@ public class ContainerWorkChildrenManagerNewOwnerTests
     }
 
     [Test]
-    public async Task AnUnpaidSubBreak_IsJudgedForTheNewOwner_AndNegatesItsSurcharge()
+    public async Task AnUnpaidSubBreak_IsJudgedForTheNewOwner_AndCarriesItsNegativeSurchargeItself()
     {
         var (subBreak, shift) = await AddUnpaidSubBreakAsync();
 
@@ -188,7 +189,38 @@ public class ContainerWorkChildrenManagerNewOwnerTests
 
         await _macroData.Received(1).GetMacroDataAsync(Arg.Is<Work>(w => w.ClientId == NewOwner));
         subBreak.Surcharges.ShouldBe(-2m);
-        _parent.Surcharges.ShouldBe(3m);
+        _parent.Surcharges.ShouldBe(5m);
+    }
+
+    [Test]
+    public async Task AnUnpaidSubBreak_LeavesTheSameSurchargesAndHours_OnCreateSaveAndReassign()
+    {
+        var (subBreak, shift) = await AddUnpaidSubBreakAsync();
+        _macroData.GetMacroDataAsync(Arg.Any<Work>()).Returns(new MacroData());
+        _macroCompilation.CompileAndExecuteAsync(shift.MacroId!.Value, Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(true, 2m, []));
+        _workMacros.When(m => m.ProcessWorkMacroAsync(_parent)).Do(_ =>
+        {
+            _parent.Surcharges = 5m;
+            _parent.WorkTime = 8m;
+        });
+        _parent.Surcharges = 5m;
+        _parent.WorkTime = 8m;
+
+        await _manager.CalculateNewSubBreakAsync(subBreak, _parent, CancellationToken.None);
+        var afterCreate = (_parent.Surcharges, _parent.WorkTime, subBreak.Surcharges, subBreak.WorkTime);
+
+        await _manager.UpdateChildrenAsync(
+            _parent.Id, null, null, null, null, [_subWork], [subBreak], [_subChange], CancellationToken.None);
+        var afterSave = (_parent.Surcharges, _parent.WorkTime, subBreak.Surcharges, subBreak.WorkTime);
+
+        _parent.ClientId = Guid.NewGuid();
+        await _manager.RecalculateForNewOwnerAsync(_parent, CancellationToken.None);
+        var afterReassign = (_parent.Surcharges, _parent.WorkTime, subBreak.Surcharges, subBreak.WorkTime);
+
+        afterCreate.ShouldBe((5m, 8m, -2m, -1m));
+        afterSave.ShouldBe(afterCreate);
+        afterReassign.ShouldBe(afterCreate);
     }
 
     private async Task<(Break SubBreak, Shift Shift)> AddUnpaidSubBreakAsync()

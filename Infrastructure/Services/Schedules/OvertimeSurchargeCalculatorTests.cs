@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Tests for OvertimeSurchargeCalculator (K3): tier-band splitting on day and week basis, the
-/// OvertimeThreshold fallback for tier 1, AnalyseToken scenario isolation and the "no configuration"
+/// OvertimeThreshold fallback for tier 1, AnalyseToken scenario isolation, container children of the same person
+/// adding no prior hours of their own, and the "no configuration"
 /// no-op that guarantees unconfigured installations never see an Overtime item.
 /// </summary>
 using System.Linq;
@@ -125,6 +126,35 @@ public class OvertimeSurchargeCalculatorTests
         var result = await _sut.CalculateAsync(work);
 
         // periodEnd = 6 + 4 = 10, tier band starts at 8 -> overlap [8,10) = 2h * 0.5 = 1.0
+        result.Items.Single().Amount.ShouldBe(1.0m);
+    }
+
+    [Test]
+    public async Task CalculateAsync_AContainerChildOfTheSamePerson_AddsNoPriorHours_OnlyItsContainerDoes()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+
+        var clientId = Guid.NewGuid();
+        var date = DateOnly.FromDateTime(DateTime.Today);
+        await AddOtherWorkAsync(clientId, date, workTime: 6m);
+        var container = await _context.Work.SingleAsync(w => w.ClientId == clientId);
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            ParentWorkId = container.Id,
+            CurrentDate = date,
+            WorkTime = 3m,
+            StartTime = new TimeOnly(5, 0),
+            EndTime = new TimeOnly(8, 0),
+        });
+        await _context.SaveChangesAsync();
+
+        var work = BuildWork(workTime: 4m, clientId: clientId, date: date);
+
+        var result = await _sut.CalculateAsync(work);
+
         result.Items.Single().Amount.ShouldBe(1.0m);
     }
 
