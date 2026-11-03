@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests for ShiftFamilyRules: which row heads a family, which rows have no order, and when a family without an order
-/// counts as ended.
+/// (a container) counts as ended.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -18,14 +18,12 @@ public class ShiftFamilyRulesTests
     private static readonly Guid RootId = Guid.NewGuid();
 
     [Test]
-    public void HeadId_PrefersTheOrder_ThenTheRoot_ThenTheRowItself()
+    public void HeadId_IsTheOrder_OrWithoutAnOrderTheRowItself_WhateverItsRoot()
     {
-        var row = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.SplitShift, OriginalId = OrderId, RootId = RootId };
+        var row = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalShift, OriginalId = OrderId, RootId = RootId };
 
         ShiftFamilyRules.HeadIdOf(row).ShouldBe(OrderId);
         row.OriginalId = null;
-        ShiftFamilyRules.HeadIdOf(row).ShouldBe(RootId);
-        row.RootId = null;
         ShiftFamilyRules.HeadIdOf(row).ShouldBe(row.Id);
     }
 
