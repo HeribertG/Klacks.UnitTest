@@ -64,6 +64,65 @@ public class AnalyseScenarioServiceReplacementRequestTests
     }
 
     [Test]
+    public async Task Promote_StampsTheMoveRowOfTheWorksOwner_NotTheOtherCandidate()
+    {
+        var workId = await SeedScenarioMoveAsync(CandidateId);
+        var owner = await AddMoveRowAsync(CandidateId, ReplacementRequestOutcome.Proposed, workId);
+        var other = await AddMoveRowAsync(AlternativeId, ReplacementRequestOutcome.Proposed, workId);
+
+        await _service.PromoteScenarioWorksAsync(_token, Day, Day, CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        var stamped = await _context.ReplacementRequests.SingleAsync(r => r.Id == owner);
+        stamped.AppliedAtUtc.ShouldNotBeNull();
+        stamped.WorkId.ShouldBe(workId);
+        stamped.WorkChangeId.ShouldBeNull();
+        (await _context.ReplacementRequests.SingleAsync(r => r.Id == other)).AppliedAtUtc.ShouldBeNull();
+    }
+
+    [TestCase(ReplacementRequestOutcome.Declined)]
+    [TestCase(ReplacementRequestOutcome.NotReached)]
+    public async Task Promote_ADeclinedMoveRow_IsNotStamped(ReplacementRequestOutcome outcome)
+    {
+        var workId = await SeedScenarioMoveAsync(CandidateId);
+        var row = await AddMoveRowAsync(CandidateId, outcome, workId);
+
+        await _service.PromoteScenarioWorksAsync(_token, Day, Day, CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        (await _context.ReplacementRequests.SingleAsync(r => r.Id == row)).AppliedAtUtc.ShouldBeNull();
+    }
+
+    private async Task<Guid> SeedScenarioMoveAsync(Guid ownerId)
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ownerId,
+            MovedFromClientId = AbsentId,
+            ShiftId = CloneShiftId,
+            CurrentDate = Day,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            AnalyseToken = _token
+        };
+        _context.Shift.Add(new Shift { Id = CloneShiftId, Name = "Clone", AnalyseToken = _token, ScenarioSourceShiftId = SourceShiftId });
+        _context.Work.Add(work);
+        await _context.SaveChangesAsync();
+        return work.Id;
+    }
+
+    private async Task<Guid> AddMoveRowAsync(Guid candidateId, ReplacementRequestOutcome outcome, Guid workId)
+    {
+        var id = await AddRowAsync(candidateId, outcome);
+        var row = await _context.ReplacementRequests.SingleAsync(r => r.Id == id);
+        row.Kind = ReplacementRequestKind.Move;
+        row.WorkId = workId;
+        await _context.SaveChangesAsync();
+        return id;
+    }
+
+    [Test]
     public async Task Promote_DeclinedOrNotReachedRow_IsNotStampedEvenWhenThePersonWasApplied()
     {
         await SeedScenarioReplacementAsync();

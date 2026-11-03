@@ -57,6 +57,8 @@ public class AbsenceCoverMaterializerTests
         _factsReader = Substitute.For<ICoverMoveFactsReader>();
         _factsReader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Token, Arg.Any<CancellationToken>())
             .Returns(_ => (IReadOnlyDictionary<Guid, CoverMoveFacts>)_facts);
+        _factsReader.IsFreeAsync(Token, Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _workRepository = Substitute.For<IWorkRepository>();
         _workRepository.GetNoTracking(Arg.Any<Guid>())
             .Returns(ci => new Work { Id = ci.Arg<Guid>(), ClientId = Elsa, CurrentDate = Day, AnalyseToken = Token });
@@ -185,6 +187,78 @@ public class AbsenceCoverMaterializerTests
         (await _materializer.FindSourceWorksAsync(
                 map, Token, new CoverReport(ReplacementRequestSource.RecoveryEngine, AfterTheStart.AddDays(-1)), CancellationToken.None))
             .Movable.ShouldBe(new[] { SourceWork });
+    }
+
+    [Test]
+    public async Task PassingOn_KeepsTheOrigin()
+    {
+        (await _materializer.PassOnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Done);
+
+        await _handOver.Received(1).TransferAsync(Arg.Any<Work>(), Bob, null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AHeldWork_IsNotPassedOn()
+    {
+        _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { HasReplacement = true };
+
+        (await _materializer.PassOnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Held);
+
+        await _handOver.DidNotReceiveWithAnyArgs().TransferAsync(default!, default, default, default);
+    }
+
+    [Test]
+    public async Task AWorkOutsideTheScenario_IsNotPassedOn()
+    {
+        _facts.Clear();
+
+        (await _materializer.PassOnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Held);
+    }
+
+    [Test]
+    public async Task AReturn_GoesToAFreePerson_AndClearsTheOrigin()
+    {
+        Work? handed = null;
+        await _handOver.TransferAsync(Arg.Do<Work>(work => handed = work), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+
+        (await _materializer.ReturnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Done);
+
+        handed!.MovedFromClientId.ShouldBeNull();
+        await _factsReader.Received(1).IsFreeAsync(
+            Token, Bob, Day.ToDateTime(Start), Day.ToDateTime(End), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AReturn_LeavesTheWork_WhenThePersonIsNotFree()
+    {
+        _factsReader.IsFreeAsync(Token, Bob, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        (await _materializer.ReturnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Held);
+
+        await _handOver.DidNotReceiveWithAnyArgs().TransferAsync(default!, default, default, default);
+    }
+
+    [Test]
+    public async Task AReturn_LeavesAHeldWork()
+    {
+        _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { LockLevel = WorkLockLevel.Confirmed };
+
+        (await _materializer.ReturnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.Held);
+    }
+
+    [Test]
+    public async Task AFailedRecalculation_IsReported()
+    {
+        _handOver.TransferAsync(Arg.Any<Work>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        (await _materializer.PassOnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
+            .ShouldBe(MovedWorkHandOverResult.RecalculationFailed);
     }
 
     [Test]

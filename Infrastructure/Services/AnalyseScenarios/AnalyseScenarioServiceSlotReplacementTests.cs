@@ -220,6 +220,20 @@ public class AnalyseScenarioServiceSlotReplacementTests
         (await _context.WorkChange.SingleAsync(wc => wc.WorkId == _incumbent.Id)).IsDeleted.ShouldBeFalse();
     }
 
+    [Test]
+    public async Task MovedWorkBlocksMutation_IsNeverDisplaced()
+    {
+        _incumbent.MovedFromClientId = AgentE;
+        await _context.SaveChangesAsync();
+
+        var displaced = await _service.SoftDeleteClonedWorksOnSlotsAsync(
+            _token, Day, Day, new HashSet<(Guid, DateOnly)> { (_shiftId, Day) }, CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        displaced.ShouldBeEmpty();
+        (await _context.Work.SingleAsync(w => w.Id == _incumbent.Id)).IsDeleted.ShouldBeFalse();
+    }
+
     /// <summary>
     /// Replaces the set-up incumbent by incumbents of the given agents on the same slot, inserted in that order (the last
     /// one becomes <see cref="_incumbent"/>), each with its own clone origin. Inserting another employee before the

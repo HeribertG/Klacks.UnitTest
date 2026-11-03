@@ -9,6 +9,7 @@
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Constants;
@@ -32,6 +33,8 @@ public class ScenarioReplacementSwitcherTests
     private readonly Guid _groupId = Guid.NewGuid();
 
     private IWorkChangeRepository _workChangeRepository = null!;
+    private IWorkRepository _workRepository = null!;
+    private IAbsenceCoverMaterializer _coverMaterializer = null!;
     private IReplacementRequestRepository _requestRepository = null!;
     private IAnalyseScenarioRepository _scenarioRepository = null!;
     private IAnalyseScenarioService _scenarioService = null!;
@@ -43,6 +46,12 @@ public class ScenarioReplacementSwitcherTests
     public void SetUp()
     {
         _workChangeRepository = Substitute.For<IWorkChangeRepository>();
+        _workRepository = Substitute.For<IWorkRepository>();
+        _workRepository.ListMovedByScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Work>());
+        _coverMaterializer = Substitute.For<IAbsenceCoverMaterializer>();
+        _coverMaterializer.PassOnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(MovedWorkHandOverResult.Done);
+        _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(MovedWorkHandOverResult.Done);
         _requestRepository = Substitute.For<IReplacementRequestRepository>();
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
@@ -63,11 +72,15 @@ public class ScenarioReplacementSwitcherTests
             .ListScenarioReplacementsAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns([]);
         _workChangeRepository
+            .ListReplacementsWrittenByScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _workChangeRepository
             .ListNonReplacementChangesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
         _switcher = new ScenarioReplacementSwitcher(
-            _workChangeRepository, _requestRepository, _scenarioRepository, _scenarioService, _mediator);
+            _workChangeRepository, _workRepository, _coverMaterializer, _requestRepository, _scenarioRepository,
+            _scenarioService, _mediator);
     }
 
     [Test]
@@ -81,6 +94,204 @@ public class ScenarioReplacementSwitcherTests
         await _mediator.Received(1).Send(
             Arg.Is<PutCommand<WorkChangeResource>>(c => c.Resource.Id == slot.Id && c.Resource.ReplaceClientId == _alternativeId),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AcceptedAlternative_TakesOverAMovedWork_AndTheRowBecomesAMove()
+    {
+        var work = GivenMovedWork(_absentId, _oldStandInId);
+        var row = Row();
+
+        (await Apply(row)).ShouldBeTrue();
+
+        await _coverMaterializer.Received(1).PassOnMovedWorkAsync(_token, work.Id, _alternativeId, Arg.Any<CancellationToken>());
+        row.Kind.ShouldBe(ReplacementRequestKind.Move);
+        row.WorkId.ShouldBe(work.Id);
+    }
+
+    [Test]
+    public async Task AcceptanceOfTheOwnerOfAMovedWork_ChangesNothing()
+    {
+        GivenMovedWork(_absentId, _alternativeId);
+
+        (await Apply(Row())).ShouldBeTrue();
+
+        await _coverMaterializer.DidNotReceiveWithAnyArgs().PassOnMovedWorkAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AMovedWorkOfAnotherShift_IsNotTheSlot()
+    {
+        GivenMovedWork(_absentId, _oldStandInId, Guid.NewGuid());
+
+        (await Apply(Row())).ShouldBeFalse();
+
+        await _coverMaterializer.DidNotReceiveWithAnyArgs().PassOnMovedWorkAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AMovedWork_IsRefused_ForAnIneligibleCandidate()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenEligible();
+
+        await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        await _coverMaterializer.DidNotReceiveWithAnyArgs().PassOnMovedWorkAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AMovedWork_IsRefused_WhenTheCandidateStandsInAtThatTime()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        _workChangeRepository
+            .HasOverlappingScenarioReplacementAsync(_token, _alternativeId, Day, Start, Start, End, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+    }
+
+    [Test]
+    public async Task AHeldWork_RefusesTheSwitch_WithItsOwnReason()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        _coverMaterializer.PassOnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(MovedWorkHandOverResult.Held);
+
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        refused.Message.ShouldContain("sealed or replaced");
+    }
+
+    [Test]
+    public async Task AHeldHop_StaysWithoutRefusingTheSwitch()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenMovedWork(_oldStandInId, Guid.NewGuid());
+        _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(MovedWorkHandOverResult.Held);
+
+        (await Apply(Row())).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task AHopThatCannotBeRecalculated_RefusesTheSwitch()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenMovedWork(_oldStandInId, Guid.NewGuid());
+        _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(MovedWorkHandOverResult.RecalculationFailed);
+
+        await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+    }
+
+    [Test]
+    public async Task TheHopReceiver_IsRefusedWithAReason_NotAsIneligible()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenMovedWork(_oldStandInId, _alternativeId);
+        GivenEligible();
+
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        refused.Message.ShouldContain("for this swap");
+    }
+
+    [Test]
+    public async Task TheReceiverOfAReplacedHop_IsRefusedWithAReason_Too()
+    {
+        GivenSlotChange();
+        GivenWritten(_oldStandInId, Change(_oldStandInId, _alternativeId, Guid.NewGuid()));
+        GivenEligible();
+
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        refused.Message.ShouldContain("for this swap");
+    }
+
+    [Test]
+    public async Task AFailedRecalculation_RefusesTheSwitch()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        _coverMaterializer.PassOnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(MovedWorkHandOverResult.RecalculationFailed);
+
+        await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+    }
+
+    [Test]
+    public async Task TheOldStandInGetsTheirMovedHopBack_AndLosesTheProposal()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        var hop = GivenMovedWork(_oldStandInId, Guid.NewGuid());
+        var proposal = OldStandInRow(ReplacementRequestOutcome.Proposed);
+
+        await Apply(Row());
+
+        await _coverMaterializer.Received(1).ReturnMovedWorkAsync(_token, hop.Id, _oldStandInId, Arg.Any<CancellationToken>());
+        _requestRepository.Received(1).Remove(proposal);
+    }
+
+    [Test]
+    public async Task AHopStays_WhenTheOldStandInStillStandsInAtThatTime()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenMovedWork(_oldStandInId, Guid.NewGuid());
+        _workChangeRepository
+            .HasOverlappingScenarioReplacementAsync(_token, _oldStandInId, Day, Start, Start, End, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await Apply(Row());
+
+        await _coverMaterializer.DidNotReceiveWithAnyArgs().ReturnMovedWorkAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AnotherMovedWork_KeepsTheTemporaryMembership()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        _workRepository.HoldsMovedWorkInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>()).Returns(true);
+
+        await Apply(Row());
+
+        await _scenarioService.DidNotReceiveWithAnyArgs().RemoveScenarioMembershipsAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task TheLastCover_RemovesTheTemporaryMembership()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+
+        await Apply(Row());
+
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, _oldStandInId, Day, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AReplacedSlot_GivesAMovedHopBackToo()
+    {
+        GivenSlotChange();
+        var hop = GivenMovedWork(_oldStandInId, Guid.NewGuid());
+
+        await Apply(Row());
+
+        await _coverMaterializer.Received(1).ReturnMovedWorkAsync(_token, hop.Id, _oldStandInId, Arg.Any<CancellationToken>());
+    }
+
+    private Work GivenMovedWork(Guid movedFromId, Guid ownerId, Guid? shiftId = null)
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ownerId,
+            MovedFromClientId = movedFromId,
+            ShiftId = shiftId ?? _cloneShiftId,
+            CurrentDate = Day,
+            StartTime = Start,
+            EndTime = End,
+            AnalyseToken = _token,
+        };
+        _workRepository.ListMovedByScenarioAsync(_token, movedFromId, Day, Arg.Any<CancellationToken>()).Returns(new List<Work> { work });
+        return work;
     }
 
     [Test]
@@ -304,7 +515,7 @@ public class ScenarioReplacementSwitcherTests
     {
         GivenSlotChange();
         var relocation = Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid());
-        GivenChanges(_oldStandInId, relocation);
+        GivenWritten(_oldStandInId, relocation);
 
         await Apply(Row());
 
@@ -317,7 +528,7 @@ public class ScenarioReplacementSwitcherTests
     {
         GivenSlotChange();
         var relocation = Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid());
-        GivenChanges(_oldStandInId, relocation);
+        GivenWritten(_oldStandInId, relocation);
         _workChangeRepository
             .HasOverlappingScenarioReplacementAsync(_token, _oldStandInId, Day, Start, Start, End, Arg.Any<CancellationToken>())
             .Returns(true);
@@ -348,7 +559,7 @@ public class ScenarioReplacementSwitcherTests
         GivenSlotChange();
         var manual = Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid());
         manual.Description = "planner note";
-        GivenChanges(_oldStandInId, manual);
+        GivenWritten(_oldStandInId, manual);
 
         await Apply(Row());
 
@@ -359,7 +570,7 @@ public class ScenarioReplacementSwitcherTests
     public async Task AHiddenRelocation_RefusesTheWholeSwitch()
     {
         GivenSlotChange();
-        GivenChanges(_oldStandInId, Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid()));
+        GivenWritten(_oldStandInId, Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid()));
         _mediator.Send(Arg.Any<DeleteCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>())
             .Returns((WorkChangeResource?)null);
 
@@ -496,6 +707,11 @@ public class ScenarioReplacementSwitcherTests
         GivenChanges(_absentId, change);
         return change;
     }
+
+    private void GivenWritten(Guid clientId, params WorkChange[] changes)
+        => _workChangeRepository
+            .ListReplacementsWrittenByScenarioAsync(_token, clientId, Day, Arg.Any<CancellationToken>())
+            .Returns(changes.ToList());
 
     private void GivenChanges(Guid clientId, params WorkChange[] changes)
         => _workChangeRepository
