@@ -314,6 +314,37 @@ public class WizardHardConstraintBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_ALockedContainerChildOfTheSameAgent_CountsNoHours_OnlyItsContainerDoes()
+    {
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 22);
+        var container = LockedWork(agent, date, null, new TimeOnly(8, 0), new TimeOnly(16, 0), 8m);
+        var child = LockedWork(agent, date, container.Id, new TimeOnly(9, 0), new TimeOnly(12, 0), 3m);
+        _context.Work.AddRange(container, child);
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, date, date, analyseToken: null, CancellationToken.None);
+
+        result.LockedWorks.Single(w => w.WorkId == container.Id.ToString()).TotalHours.ShouldBe(8m);
+        result.LockedWorks.Single(w => w.WorkId == child.Id.ToString()).TotalHours.ShouldBe(0m);
+    }
+
+    private static Work LockedWork(Guid agent, DateOnly date, Guid? parentWorkId, TimeOnly start, TimeOnly end, decimal hours) => new()
+    {
+        Id = Guid.NewGuid(),
+        ClientId = agent,
+        ParentWorkId = parentWorkId,
+        CurrentDate = date,
+        ShiftId = Guid.NewGuid(),
+        StartTime = start,
+        EndTime = end,
+        WorkTime = hours,
+        LockLevel = WorkLockLevel.Confirmed,
+        AnalyseToken = null,
+    };
+
+    [Test]
     public async Task BuildAsync_LockedDayShift_KeepsSameDayEnd()
     {
         var agent = Guid.NewGuid();
