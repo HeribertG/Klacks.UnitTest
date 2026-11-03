@@ -301,7 +301,7 @@ public class BuildWeeklyToursSkillTests
         east.IsWednesday.ShouldBeTrue();
         east.IsTuesday.ShouldBeFalse();
         _createdContainers.Select(c => c.Name).ShouldBe(["Tour 1", "Tour 2"], ignoreOrder: true);
-        _createdContainers.ShouldAllBe(c => c.Status == ShiftStatus.SealedOrder && c.ShiftType == ShiftType.IsContainer);
+        _createdContainers.ShouldAllBe(c => c.Status == ShiftStatus.OriginalShift && c.OriginalId == null && c.ShiftType == ShiftType.IsContainer);
         _storedTemplates.Values.SelectMany(t => t).Select(t => t.Weekday).Distinct().Order().ShouldBe([1, 2, 3, 4]);
     }
 

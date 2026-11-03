@@ -244,6 +244,18 @@ public class ScenarioVariantFreezeTests
             Substitute.For<ILogger<CutListQueryHandler>>());
     }
 
+    [Test]
+    public async Task EnsureCreatable_AContainer_IsRefused_BecauseAVariantHoldsOrderFamilies()
+    {
+        _variantRepository.HasActiveScenarioAsync(_variant.Id, Arg.Any<CancellationToken>()).Returns(false);
+        var container = KeyShift();
+        container.ShiftType = ShiftType.IsContainer;
+
+        var refused = await Should.ThrowAsync<BadRequestException>(() => _sut.EnsureCreatableAsync(_variant.Token, container));
+
+        refused.Message.ShouldBe(VariantShiftWriteGuard.ContainerNotAllowedMessage);
+    }
+
     private Shift KeyShift()
     {
         var id = Guid.NewGuid();

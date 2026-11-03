@@ -20,6 +20,7 @@ public class ComplianceRuleCatalogTests
     private static readonly string[] ExemptKeys =
     [
         ScheduleValidationKeys.Collision,
+        ScheduleValidationKeys.CoverRelocationKeepsExtras,
         ScheduleValidationKeys.DayDirective,
         ScheduleValidationKeys.OnCallOverlap,
         ScheduleValidationKeys.PeriodCapApproaching,

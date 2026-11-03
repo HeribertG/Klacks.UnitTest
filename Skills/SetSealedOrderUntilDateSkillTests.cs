@@ -175,6 +175,25 @@ public class SetSealedOrderUntilDateSkillTests
     }
 
     [Test]
+    public async Task AContainer_HasNoOrder_AndEndsAsItsOwnFamily()
+    {
+        var container = OpenEndedSealedOrder();
+        container.Status = ShiftStatus.OriginalShift;
+        container.ShiftType = ShiftType.IsContainer;
+        var persisted = OpenEndedSealedOrder();
+        persisted.Status = ShiftStatus.OriginalShift;
+        persisted.ShiftType = ShiftType.IsContainer;
+        persisted.UntilDate = UntilDate;
+        _shiftRepository.Get(OrderId).Returns(container);
+        _shiftRepository.GetNoTracking(OrderId).Returns(persisted);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _familyEnd.Received(1).EndFamilyAsync(container, UntilDate, null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RejectsADerivedRow_AndNamesTheSealedOrder()
     {
         var plannable = OpenEndedSealedOrder();

@@ -61,7 +61,7 @@ public class OvertimeCascadeServiceTests
         _reprocessed = new List<Work>();
         _workMacroService = Substitute.For<IWorkMacroService>();
         _workMacroService.ProcessWorkMacroAsync(Arg.Any<Work>())
-            .Returns(Task.CompletedTask)
+            .Returns(true)
             .AndDoes(callInfo => _reprocessed.Add(callInfo.Arg<Work>()));
 
         _unitOfWork = Substitute.For<IUnitOfWork>();

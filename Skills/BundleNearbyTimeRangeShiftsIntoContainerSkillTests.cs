@@ -217,7 +217,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         result.Success.ShouldBeTrue();
         result.Message.ShouldContain("verified");
         await _shiftRepository.Received(1).AddWithSealedOrderHandling(
-            Arg.Is<Shift>(s => s.ShiftType == ShiftType.IsContainer && s.Status == ShiftStatus.SealedOrder));
+            Arg.Is<Shift>(s => s.ShiftType == ShiftType.IsContainer && s.Status == ShiftStatus.OriginalShift && s.OriginalId == null));
         await _mediator.Received(1).Send(
             Arg.Is<PostContainerTemplatesCommand>(c =>
                 c.ContainerId == ContainerId

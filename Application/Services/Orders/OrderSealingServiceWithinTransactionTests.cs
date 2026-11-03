@@ -55,6 +55,37 @@ public class OrderSealingServiceWithinTransactionTests
             .Returns(new Shift { Id = PlannableShiftId, OriginalId = OrderId, Status = ShiftStatus.OriginalShift });
     }
 
+    private static Shift DraftContainer()
+    {
+        var container = Order();
+        container.ShiftType = ShiftType.IsContainer;
+        return container;
+    }
+
+    [Test]
+    public async Task SealWithinTransaction_ADraftContainer_ConfirmsItsOneRow_AndReturnsItsOwnId()
+    {
+        _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>())
+            .Returns(new Shift { Id = OrderId, ShiftType = ShiftType.IsContainer, Status = ShiftStatus.OriginalShift });
+        _shiftRepository.GetNoTracking(OrderId)
+            .Returns(new Shift { Id = OrderId, ShiftType = ShiftType.IsContainer, Status = ShiftStatus.OriginalShift });
+
+        var plannableShiftId = await _service.SealWithinTransactionAsync(DraftContainer());
+
+        Assert.That(plannableShiftId, Is.EqualTo(OrderId));
+    }
+
+    [Test]
+    public void SealWithinTransaction_AContainerThatStayedASealedRow_IsNotConfirmed()
+    {
+        _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>())
+            .Returns(new Shift { Id = OrderId, ShiftType = ShiftType.IsContainer, Status = ShiftStatus.SealedOrder });
+        _shiftRepository.GetNoTracking(OrderId)
+            .Returns(new Shift { Id = OrderId, ShiftType = ShiftType.IsContainer, Status = ShiftStatus.SealedOrder });
+
+        Assert.ThrowsAsync<SkillVerificationException>(() => _service.SealWithinTransactionAsync(DraftContainer()));
+    }
+
     [Test]
     public async Task SealWithinTransaction_ReturnsThePlannableShift_WithoutOpeningATransaction()
     {

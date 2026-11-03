@@ -47,7 +47,7 @@ public class ThoroughRecalculationBackgroundServiceTests
 
         _workMacroService = Substitute.For<IWorkMacroService>();
         _workMacroService.ProcessWorkMacroAsync(Arg.Any<Work>())
-            .Returns(Task.CompletedTask)
+            .Returns(true)
             .AndDoes(callInfo => callInfo.Arg<Work>().Surcharges = MutatedSurcharge);
 
         _breakMacroService = Substitute.For<IBreakMacroService>();

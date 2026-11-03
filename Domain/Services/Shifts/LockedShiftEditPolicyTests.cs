@@ -262,6 +262,35 @@ public class LockedShiftEditPolicyTests
     }
 
     [Test]
+    public void TheOneRowOfARealContainer_QualifiesForTheAdministratorFamilyDelete()
+    {
+        var container = Stored(ShiftStatus.OriginalShift);
+        container.ShiftType = ShiftType.IsContainer;
+        container.OriginalId = null;
+
+        LockedShiftEditPolicy.IsOrderFamilyDeletable(container).ShouldBeTrue();
+    }
+
+    [Test]
+    public void AContainerWithAnOrderDraftStatusOrAScenarioToken_DoesNotQualifyForTheFamilyDelete()
+    {
+        var draft = Stored(ShiftStatus.OriginalOrder);
+        draft.ShiftType = ShiftType.IsContainer;
+        var legacyCopy = Stored(ShiftStatus.OriginalShift);
+        legacyCopy.ShiftType = ShiftType.IsContainer;
+        legacyCopy.OriginalId = Guid.NewGuid();
+        var clone = Stored(ShiftStatus.OriginalShift);
+        clone.ShiftType = ShiftType.IsContainer;
+        clone.OriginalId = null;
+        clone.AnalyseToken = Guid.NewGuid();
+        clone.ScenarioSourceShiftId = Guid.NewGuid();
+
+        LockedShiftEditPolicy.IsOrderFamilyDeletable(draft).ShouldBeFalse();
+        LockedShiftEditPolicy.IsOrderFamilyDeletable(legacyCopy).ShouldBeFalse();
+        LockedShiftEditPolicy.IsOrderFamilyDeletable(clone).ShouldBeFalse();
+    }
+
+    [Test]
     public void AScenarioCloneOfASealedOrder_DoesNotQualifyForTheFamilyDelete()
     {
         var clone = Stored(ShiftStatus.SealedOrder);

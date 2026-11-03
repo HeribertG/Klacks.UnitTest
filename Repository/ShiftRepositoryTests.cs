@@ -47,6 +47,76 @@ public class ShiftRepositoryTests
             mockShiftValidator, scheduleMapper, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
+    private static Shift SealedShift(ShiftType type, ShiftStatus status) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "Tour",
+        Abbreviation = "T",
+        Description = string.Empty,
+        Status = status,
+        ShiftType = type,
+        FromDate = new DateOnly(2026, 1, 1),
+        StartShift = new TimeOnly(8, 0),
+        EndShift = new TimeOnly(16, 0)
+    };
+
+    [Test]
+    public async Task AddWithSealedOrderHandling_ASealedContainer_StoresOneRowWithoutACopy_AndReturnsIt()
+    {
+        var container = SealedShift(ShiftType.IsContainer, ShiftStatus.SealedOrder);
+
+        var result = await _repository.AddWithSealedOrderHandling(container);
+        await _context.SaveChangesAsync();
+
+        result.Id.ShouldBe(container.Id);
+        var row = (await _context.Shift.AsNoTracking().ToListAsync()).ShouldHaveSingleItem();
+        row.Status.ShouldBe(ShiftStatus.OriginalShift);
+        row.OriginalId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AddWithSealedOrderHandling_ASealedTask_KeepsItsPlannableCopy()
+    {
+        var order = SealedShift(ShiftType.IsTask, ShiftStatus.SealedOrder);
+
+        var result = await _repository.AddWithSealedOrderHandling(order);
+        await _context.SaveChangesAsync();
+
+        result.Id.ShouldNotBe(order.Id);
+        result.OriginalId.ShouldBe(order.Id);
+        (await _context.Shift.CountAsync()).ShouldBe(2);
+    }
+
+    [Test]
+    public async Task AddWithSealedOrderHandling_ADraftContainer_StaysADraft()
+    {
+        var draft = SealedShift(ShiftType.IsContainer, ShiftStatus.OriginalOrder);
+
+        await _repository.AddWithSealedOrderHandling(draft);
+        await _context.SaveChangesAsync();
+
+        (await _context.Shift.AsNoTracking().ToListAsync()).ShouldHaveSingleItem().Status.ShouldBe(ShiftStatus.OriginalOrder);
+    }
+
+    [Test]
+    public async Task PutWithSealedOrderHandling_SealingADraftContainer_KeepsTheRowWithoutACopy()
+    {
+        var draft = SealedShift(ShiftType.IsContainer, ShiftStatus.OriginalOrder);
+        await _repository.Add(draft);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        var sealing = SealedShift(ShiftType.IsContainer, ShiftStatus.SealedOrder);
+        sealing.Id = draft.Id;
+
+        var result = await _repository.PutWithSealedOrderHandling(sealing);
+        await _context.SaveChangesAsync();
+
+        result!.Id.ShouldBe(draft.Id);
+        var row = (await _context.Shift.AsNoTracking().ToListAsync()).ShouldHaveSingleItem();
+        row.Status.ShouldBe(ShiftStatus.OriginalShift);
+        row.OriginalId.ShouldBeNull();
+    }
+
     [Test]
     public async Task AddOriginalShift_WithStatusIsCutOriginal_PreservesOriginalId()
     {
