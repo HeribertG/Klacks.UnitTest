@@ -322,7 +322,26 @@ public class AbsenceCoverMaterializerTests
         var result = await MaterialiseAll(delta);
 
         result.MovedWorkIds.ShouldBeEmpty();
-        result.HeldContainers.ShouldBe(new[] { delta });
+        result.HeldCovers.ShouldBe(new[] { delta });
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AContainerHopThatCannotMove_HoldsItsWholeOption_SoTheCoverHopIsNotWritten()
+    {
+        const int optionId = 7;
+        _facts[OtherClonedWork] = Facts(OtherClonedWork, Bob) with { IsContainer = true };
+        _handOver.TransferAsync(Arg.Is<Work>(w => w.Id == OtherClonedWork), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        var cover = Delta(Elsa, Bob) with { OptionId = optionId };
+        var relocation = Delta(Bob, Carla) with { SourceWorkIds = [OtherSourceWork], OptionId = optionId };
+
+        var result = await MaterialiseAll(cover, relocation);
+
+        result.HeldCovers.ShouldBe(new[] { relocation, cover }, ignoreOrder: true);
+        result.MovedWorkIds.ShouldBeEmpty();
+        await _handOver.DidNotReceive().TransferAsync(
+            Arg.Is<Work>(w => w.Id == ClonedWork), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
     }
 
