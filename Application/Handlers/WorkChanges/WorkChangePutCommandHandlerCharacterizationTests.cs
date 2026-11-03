@@ -280,7 +280,7 @@ public class WorkChangePutCommandHandlerCharacterizationTests
             _workChangeRepository, _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             _periodHoursService, _completionService, _resultService, _notificationFacade, _dayLockService,
             _replacementRequestRecorder, _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
-            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid? analyseToken)
         => new()

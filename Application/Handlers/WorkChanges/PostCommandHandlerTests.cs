@@ -56,6 +56,7 @@ public class PostCommandHandlerTests
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IReplacementRequestRecorder _recorder = null!;
     private IClientRepository _clientRepository = null!;
+    private IShiftRepository _shiftRepository = null!;
     private PostCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -79,6 +80,8 @@ public class PostCommandHandlerTests
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _recorder = Substitute.For<IReplacementRequestRecorder>();
         _clientRepository = Substitute.For<IClientRepository>();
+        _shiftRepository = Substitute.For<IShiftRepository>();
+        var containerGuard = new ContainerWorkChangeGuard(_shiftRepository);
         _clientRepository.GetTypeAndDisplayNameAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Substitute"));
 
@@ -103,8 +106,48 @@ public class PostCommandHandlerTests
             _dayLockService,
             _recorder,
             new ParentWorkLockGuard(new WorkLockLevelService()),
-            new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer),
+            new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer, containerGuard),
+            containerGuard,
             Substitute.For<ILogger<PostCommandHandler>>());
+    }
+
+    [TestCase(WorkChangeType.CorrectionEnd, ContainerWorkChangeRefusalCodes.CorrectionRefused)]
+    [TestCase(WorkChangeType.TravelStart, ContainerWorkChangeRefusalCodes.CorrectionRefused)]
+    [TestCase(WorkChangeType.ReplacementEnd, ContainerWorkChangeRefusalCodes.ReplacementRefused)]
+    public async Task Handle_AChangeOnAContainer_IsRefusedWithItsCode_NothingWritten(WorkChangeType type, string code)
+    {
+        _shiftRepository.Get(_shiftId).Returns(new Shift { Id = _shiftId, ShiftType = ShiftType.IsContainer });
+
+        var refusal = await Should.ThrowAsync<ContainerWorkChangeRefusedException>(
+            () => _handler.Handle(UiCommand(type, TwoHours, ChangeStart, TenOClock), CancellationToken.None));
+
+        refusal.ErrorCode.ShouldBe(code);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_AReplacementOnAnInnerServiceOfAContainer_IsRefused_NothingWritten()
+    {
+        var innerService = ParentWork(null);
+        innerService.ParentWorkId = Guid.NewGuid();
+        _workRepository.GetNoTracking(_workId).Returns(innerService);
+        _shiftRepository.Get(_shiftId).Returns(new Shift { Id = _shiftId, ShiftType = ShiftType.IsTask });
+
+        var refusal = await Should.ThrowAsync<ContainerWorkChangeRefusedException>(
+            () => _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None));
+
+        refusal.ErrorCode.ShouldBe(ContainerWorkChangeRefusalCodes.ReplacementRefused);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_ACorrectionOnATaskShift_IsWritten()
+    {
+        _shiftRepository.Get(_shiftId).Returns(new Shift { Id = _shiftId, ShiftType = ShiftType.IsTask });
+
+        await _handler.Handle(CorrectionCommand(), CancellationToken.None);
+
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
     [Test]

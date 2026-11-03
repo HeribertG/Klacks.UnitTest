@@ -299,7 +299,7 @@ public class WorkChangeScopeTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkChangeResultService>(), Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             Substitute.For<IReplacementRequestRecorder>(), _httpContextAccessor, NewGuard(),
-            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private PostCommandHandler NewPostHandler()
     {
@@ -308,7 +308,7 @@ public class WorkChangeScopeTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IWorkNotificationService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkChangeResultService>(),
             _httpContextAccessor, _dayLockService, Substitute.For<IReplacementRequestRecorder>(), NewGuard(),
-            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PostCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<ILogger<PostCommandHandler>>());
     }
 
     private DeleteCommandHandler NewDeleteHandler()

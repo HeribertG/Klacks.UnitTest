@@ -47,6 +47,7 @@ public class WorkChangePutReplacementGuardTests
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IPeriodHoursService _periodHoursService = null!;
+    private IShiftRepository _shiftRepository = null!;
     private Work _work = null!;
     private Guid _personId;
 
@@ -61,6 +62,7 @@ public class WorkChangePutReplacementGuardTests
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _periodHoursService = Substitute.For<IPeriodHoursService>();
+        _shiftRepository = Substitute.For<IShiftRepository>();
         _personId = Guid.NewGuid();
         _work = new Work
         {
@@ -100,6 +102,20 @@ public class WorkChangePutReplacementGuardTests
             () => NewHandler().Handle(new PutCommand<WorkChangeResource>(resource), CancellationToken.None));
 
         exception.Message.ShouldBe(ReplacementWriteMessages.PersonRequired);
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(default!);
+    }
+
+    [TestCase(WorkChangeType.CorrectionEnd, ContainerWorkChangeRefusalCodes.CorrectionRefused)]
+    [TestCase(WorkChangeType.ReplacementWithin, ContainerWorkChangeRefusalCodes.ReplacementRefused)]
+    public async Task Put_AChangeOnAContainer_IsRefusedWithItsCode_AndWritesNothing(WorkChangeType type, string code)
+    {
+        _shiftRepository.Get(_work.ShiftId).Returns(new Shift { Id = _work.ShiftId, ShiftType = ShiftType.IsContainer });
+        var stored = Stored(type, _personId);
+
+        var refusal = await Should.ThrowAsync<ContainerWorkChangeRefusedException>(() => NewHandler().Handle(
+            new PutCommand<WorkChangeResource>(Resource(stored.Id, type, _personId)), CancellationToken.None));
+
+        refusal.ErrorCode.ShouldBe(code);
         await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(default!);
     }
 
@@ -244,7 +260,8 @@ public class WorkChangePutReplacementGuardTests
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IDayLockService>(),
             Substitute.For<IReplacementRequestRecorder>(), _httpContextAccessor,
             new ParentWorkLockGuard(new WorkLockLevelService()),
-            new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer),
+            new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer, new ContainerWorkChangeGuard(_shiftRepository)),
+            new ContainerWorkChangeGuard(_shiftRepository),
             Substitute.For<ILogger<PutCommandHandler>>());
 
     private static ScheduleValidationNotificationDto EscalatedError(Guid clientId) => new()

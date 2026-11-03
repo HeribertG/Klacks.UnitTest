@@ -714,7 +714,7 @@ public class WorkVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
             lockRepository, Substitute.For<IUserService>(), childrenManager, _overtimeCascadeService,
-            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerChildrenWriteGuard>(),
+            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<IContainerChildrenWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager);
     }
