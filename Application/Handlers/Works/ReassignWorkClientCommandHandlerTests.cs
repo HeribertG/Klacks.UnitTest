@@ -44,6 +44,7 @@ public class ReassignWorkClientCommandHandlerTests
     private IPreCommitConflictChecker _conflictChecker = null!;
     private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
     private ReassignWorkClientCommandHandler _handler = null!;
+    private readonly IMovedWorkReversal _movedWorkReversal = Substitute.For<IMovedWorkReversal>();
 
     private readonly Guid _workId = Guid.NewGuid();
     private readonly Guid _sourceClientId = Guid.NewGuid();
@@ -114,7 +115,34 @@ public class ReassignWorkClientCommandHandlerTests
             Substitute.For<IHttpContextAccessor>(),
             new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard,
+            _movedWorkReversal,
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+    }
+
+    [Test]
+    public async Task Handle_TheCurrentOwner_IsRefusedAsAlreadyThere()
+    {
+        var refused = await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(new ReassignWorkClientCommand(_workId, _sourceClientId), CancellationToken.None));
+
+        refused.Message.ShouldContain("already with this person");
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_AsksTheReversal_BeforeTheOwnerChanges()
+    {
+        var moved = new Work { Id = _workId, ClientId = _sourceClientId, MovedFromClientId = _targetClientId, CurrentDate = _date, ShiftId = _shiftId };
+        _workRepository.GetNoTracking(_workId).Returns(moved);
+        _workRepository.Get(_workId).Returns(moved);
+        Guid? ownerAtTheReversal = null;
+        await _movedWorkReversal.StageAsync(
+            Arg.Do<Work>(work => ownerAtTheReversal = work.ClientId), _targetClientId, Arg.Any<CancellationToken>());
+
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        ownerAtTheReversal.ShouldBe(_sourceClientId);
+        await _unitOfWork.Received().CompleteAsync();
     }
 
     [Test]
@@ -154,7 +182,7 @@ public class ReassignWorkClientCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("membership");
         await _unitOfWork.DidNotReceive().CompleteAsync();
-        await _cascadeService.DidNotReceiveWithAnyArgs().MoveChildrenAsync(default, default, default);
+        await _cascadeService.DidNotReceiveWithAnyArgs().MoveChildrenAsync(default, default, default, default);
         await _workRepository.DidNotReceive().Get(_workId);
     }
 
@@ -165,7 +193,7 @@ public class ReassignWorkClientCommandHandlerTests
 
         result.ShouldNotBeNull();
         result!.Work!.ClientId.ShouldBe(_targetClientId);
-        await _cascadeService.Received(1).MoveChildrenAsync(_workId, _date, _targetClientId);
+        await _cascadeService.Received(1).MoveChildrenAsync(_workId, _date, _sourceClientId, _targetClientId);
     }
 
     [Test]

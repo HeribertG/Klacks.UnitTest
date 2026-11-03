@@ -158,9 +158,12 @@ public class ScenarioReplacementSwitcherTests
         _coverMaterializer.PassOnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(MovedWorkHandOverResult.Held);
 
-        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+        var row = Row();
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(row));
 
         refused.Message.ShouldContain("sealed or replaced");
+        row.Kind.ShouldBe(ReplacementRequestKind.Replacement);
+        row.WorkId.ShouldBeNull();
     }
 
     [Test]

@@ -300,7 +300,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
             Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
-            Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+            Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 
     private BulkDeleteWorksCommandHandler NewBulkDeleteHandler(IPeriodHoursService? periodHoursService = null)
         => new(

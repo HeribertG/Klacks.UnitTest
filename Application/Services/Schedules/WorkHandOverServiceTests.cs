@@ -51,7 +51,7 @@ public class WorkHandOverServiceTests
         ownerWhenRecalculated.ShouldBe(Bob);
         Received.InOrder(() =>
         {
-            _cascade.MoveChildrenAsync(_work.Id, Day, Bob);
+            _cascade.MoveChildrenAsync(_work.Id, Day, Elsa, Bob);
             _childrenManager.RecalculateForNewOwnerAsync(_work, _token);
         });
     }

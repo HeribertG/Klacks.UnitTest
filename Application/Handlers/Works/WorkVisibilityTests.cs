@@ -396,7 +396,7 @@ public class WorkVisibilityTests
 
         ex.Message.ShouldBe($"Work with ID {stored.Id} not found.");
         await _workRepository.DidNotReceive().Get(Arg.Any<Guid>());
-        await _cascadeService.DidNotReceiveWithAnyArgs().MoveChildrenAsync(default, default, default);
+        await _cascadeService.DidNotReceiveWithAnyArgs().MoveChildrenAsync(default, default, default, default);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -695,7 +695,7 @@ public class WorkVisibilityTests
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(),
-            Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+            Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 
     private (UpdateContainerWorkChildrenCommandHandler Handler, IContainerWorkChildrenManager ChildrenManager)
         NewUpdateContainerHandler(Work container)

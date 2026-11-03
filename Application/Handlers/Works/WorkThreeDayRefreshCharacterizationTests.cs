@@ -261,5 +261,5 @@ public class WorkThreeDayRefreshCharacterizationTests
             _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService, TestWorkHandOver.Over(_cascadeService),
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
-            _planningPeriodGuard, Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+            _planningPeriodGuard, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 }

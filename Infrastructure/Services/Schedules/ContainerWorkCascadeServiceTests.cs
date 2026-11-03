@@ -52,11 +52,29 @@ public class ContainerWorkCascadeServiceTests
         _context.Work.AddRange(parent, workChange);
         await _context.SaveChangesAsync();
 
-        await _sut.MoveChildrenAsync(parent.Id, _date, _targetClientId);
+        await _sut.MoveChildrenAsync(parent.Id, _date, _sourceClientId, _targetClientId);
         await _context.SaveChangesAsync();
 
         var reloaded = await _context.Work.SingleAsync(w => w.Id == workChange.Id);
         reloaded.ClientId.ShouldBe(_targetClientId);
+    }
+
+    [Test]
+    public async Task MoveChildrenAsync_LeavesTheChildOfACustomer_WithTheCustomer_ButMovesItsDate()
+    {
+        var customer = Guid.NewGuid();
+        var newDate = _date.AddDays(1);
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var customerChild = new Work { Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = customer, CurrentDate = _date };
+        _context.Work.AddRange(parent, customerChild);
+        await _context.SaveChangesAsync();
+
+        await _sut.MoveChildrenAsync(parent.Id, newDate, _sourceClientId, _targetClientId);
+        await _context.SaveChangesAsync();
+
+        var reloaded = await _context.Work.SingleAsync(w => w.Id == customerChild.Id);
+        reloaded.ClientId.ShouldBe(customer);
+        reloaded.CurrentDate.ShouldBe(newDate);
     }
 
     [Test]
@@ -68,7 +86,7 @@ public class ContainerWorkCascadeServiceTests
         _context.Break.Add(childBreak);
         await _context.SaveChangesAsync();
 
-        await _sut.MoveChildrenAsync(parent.Id, _date, _targetClientId);
+        await _sut.MoveChildrenAsync(parent.Id, _date, _sourceClientId, _targetClientId);
         await _context.SaveChangesAsync();
 
         var reloaded = await _context.Break.SingleAsync(b => b.Id == childBreak.Id);
@@ -83,7 +101,7 @@ public class ContainerWorkCascadeServiceTests
         _context.Work.AddRange(parent, unrelated);
         await _context.SaveChangesAsync();
 
-        await _sut.MoveChildrenAsync(parent.Id, _date, _targetClientId);
+        await _sut.MoveChildrenAsync(parent.Id, _date, _sourceClientId, _targetClientId);
         await _context.SaveChangesAsync();
 
         var reloaded = await _context.Work.SingleAsync(w => w.Id == unrelated.Id);
@@ -234,7 +252,7 @@ public class ContainerWorkCascadeServiceTests
         _context.Work.AddRange(parent, closed);
         await _context.SaveChangesAsync();
 
-        await _sut.MoveChildrenAsync(parent.Id, _date, _targetClientId);
+        await _sut.MoveChildrenAsync(parent.Id, _date, _sourceClientId, _targetClientId);
         await _sut.DeleteChildrenAsync(parent.Id);
         await _context.SaveChangesAsync();
 

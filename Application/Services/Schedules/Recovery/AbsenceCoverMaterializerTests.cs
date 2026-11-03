@@ -57,8 +57,7 @@ public class AbsenceCoverMaterializerTests
         _factsReader = Substitute.For<ICoverMoveFactsReader>();
         _factsReader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Token, Arg.Any<CancellationToken>())
             .Returns(_ => (IReadOnlyDictionary<Guid, CoverMoveFacts>)_facts);
-        _factsReader.IsFreeAsync(Token, Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+        _factsReader.IsFreeAsync(Token, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         _workRepository = Substitute.For<IWorkRepository>();
         _workRepository.GetNoTracking(Arg.Any<Guid>())
             .Returns(ci => new Work { Id = ci.Arg<Guid>(), ClientId = Elsa, CurrentDate = Day, AnalyseToken = Token });
@@ -228,14 +227,13 @@ public class AbsenceCoverMaterializerTests
             .ShouldBe(MovedWorkHandOverResult.Done);
 
         handed!.MovedFromClientId.ShouldBeNull();
-        await _factsReader.Received(1).IsFreeAsync(
-            Token, Bob, Day.ToDateTime(Start), Day.ToDateTime(End), Arg.Any<CancellationToken>());
+        await _factsReader.Received(1).IsFreeAsync(Token, Bob, ClonedWork, Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task AReturn_LeavesTheWork_WhenThePersonIsNotFree()
     {
-        _factsReader.IsFreeAsync(Token, Bob, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(false);
+        _factsReader.IsFreeAsync(Token, Bob, ClonedWork, Arg.Any<CancellationToken>()).Returns(false);
 
         (await _materializer.ReturnMovedWorkAsync(Token, ClonedWork, Bob, CancellationToken.None))
             .ShouldBe(MovedWorkHandOverResult.Held);

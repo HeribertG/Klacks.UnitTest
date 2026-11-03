@@ -227,7 +227,7 @@ public class ContainerChildLocksBeforeStagingTests
             Substitute.For<IWorkNotificationFacade>(), _cascade, TestWorkHandOver.Over(_cascade), Substitute.For<ISelectedGroupContextResolver>(),
             Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(), Substitute.For<IOvertimeCascadeService>(),
             TestWorkWriteGuard.Over(NewConflictChecker()), _httpContextAccessor, NewGuard(),
-            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 
     private static IPeriodHoursService NewPeriodHours()
     {

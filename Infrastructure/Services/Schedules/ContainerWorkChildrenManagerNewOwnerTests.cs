@@ -80,6 +80,59 @@ public class ContainerWorkChildrenManagerNewOwnerTests
     }
 
     [Test]
+    public async Task AChildOfACustomer_IsNotRecalculated()
+    {
+        var customerChild = NewWork(_parent.Id);
+        customerChild.ClientId = Guid.NewGuid();
+        var customerChange = NewChange(customerChild.Id);
+        _context.Work.Add(customerChild);
+        _context.WorkChange.Add(customerChange);
+        await _context.SaveChangesAsync();
+
+        await _manager.RecalculateForNewOwnerAsync(_parent, CancellationToken.None);
+
+        await _workMacros.DidNotReceive().ProcessWorkMacroAsync(customerChild);
+        await _workMacros.DidNotReceive().ProcessWorkChangeMacroAsync(Arg.Is<WorkChange>(wc => wc.Id == customerChange.Id));
+    }
+
+    [Test]
+    public async Task ANewUnpaidSubBreak_TakesTheSameHoursAsTheRecalculation()
+    {
+        var (recalculated, shift) = await AddUnpaidSubBreakAsync();
+        _macroData.GetMacroDataAsync(Arg.Any<Work>()).Returns(new MacroData());
+        _macroCompilation.CompileAndExecuteAsync(shift.MacroId!.Value, Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(true, 2m, []));
+        var fresh = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _parent.ClientId,
+            AbsenceId = recalculated.AbsenceId,
+            StartTime = recalculated.StartTime,
+            EndTime = recalculated.EndTime,
+        };
+
+        (await _manager.CalculateNewSubBreakAsync(fresh, _parent, CancellationToken.None)).ShouldBeTrue();
+        await _manager.RecalculateForNewOwnerAsync(_parent, CancellationToken.None);
+
+        fresh.WorkTime.ShouldBeLessThan(0m);
+        fresh.WorkTime.ShouldBe(recalculated.WorkTime);
+        fresh.Surcharges.ShouldBe(recalculated.Surcharges);
+    }
+
+    [Test]
+    public async Task ANewPaidSubBreak_StaysAsItIs()
+    {
+        var paid = new Absence { Id = Guid.NewGuid() };
+        _context.Absence.Add(paid);
+        await _context.SaveChangesAsync();
+        var fresh = new Break { Id = Guid.NewGuid(), AbsenceId = paid.Id, StartTime = new TimeOnly(10, 0), EndTime = new TimeOnly(11, 0) };
+
+        (await _manager.CalculateNewSubBreakAsync(fresh, _parent, CancellationToken.None)).ShouldBeTrue();
+
+        fresh.WorkTime.ShouldBe(0m);
+    }
+
+    [Test]
     public async Task EverythingCalculated_ReportsSuccess()
         => (await _manager.RecalculateForNewOwnerAsync(_parent, CancellationToken.None)).ShouldBeTrue();
 
