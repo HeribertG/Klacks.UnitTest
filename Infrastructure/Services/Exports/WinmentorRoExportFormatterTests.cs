@@ -2,7 +2,9 @@
 
 /// <summary>
 /// Unit tests for the WinMENTOR (Romania) "Import pontaje" workbook formatter: sheet name,
-/// identity columns, day-of-month columns, mapped absence codes and unmapped-absence skipping.
+/// identity columns, the fixed 31 day-of-month columns (also for short months), mapped absence codes
+/// (numeric legend codes as number cells, other codes as text), surcharges kept out of the worked hours,
+/// unmapped-absence skipping and out-of-month entry accounting.
 /// </summary>
 
 using ClosedXML.Excel;
@@ -141,18 +143,66 @@ public class WinmentorRoExportFormatterTests
     }
 
     [Test]
-    public void Format_AddsSurchargeQuantityIntoTheSameDayCellAsWorkHours()
+    public void Format_Surcharge_IsNotAddedToWorkedHoursAndIsCountedAsUnmappedSurcharge()
     {
         var data = DataWith(
             new DateOnly(2026, 7, 1),
             new DateOnly(2026, 7, 31),
-            new PayrollDayEntry { Date = new DateOnly(2026, 7, 5), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },
-            new PayrollDayEntry { Date = new DateOnly(2026, 7, 5), Kind = PayrollEntryKind.Surcharge, Quantity = 2m });
+            new PayrollDayEntry { Date = new DateOnly(2026, 7, 5), Kind = PayrollEntryKind.WorkHours, Quantity = 8.5m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 7, 5), Kind = PayrollEntryKind.Surcharge, Quantity = 1.25m });
 
         var result = _formatter.Format(data, Config());
         var sheet = OpenSheet(result.Content);
 
-        sheet.Cell(FirstDataRow, IdentityColumnCount + 5).GetValue<decimal>().ShouldBe(10m);
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 5).GetValue<decimal>().ShouldBe(8.5m);
+        sheet.Cell(FirstDataRow, "AO").GetValue<int>().ShouldBe(1);
+        result.EmittedEntryCount.ShouldBe(1);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+        result.SkippedSupersededCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void Format_SurchargeOnlyDay_LeavesCellBlankAndIsNotAWorkedDay()
+    {
+        var data = DataWith(
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            new PayrollDayEntry { Date = new DateOnly(2026, 7, 6), Kind = PayrollEntryKind.Surcharge, Quantity = 2m });
+
+        var result = _formatter.Format(data, Config());
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 6).IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, "AO").GetValue<int>().ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_MappedNumericAbsenceCode_IsWrittenAsNumber()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"33\",\"wageType\":\"\"}}}}";
+
+        var data = DataWith(
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            new PayrollDayEntry
+            {
+                Date = new DateOnly(2026, 7, 10),
+                Kind = PayrollEntryKind.Absence,
+                Quantity = 8m,
+                AbsenceId = absenceId,
+            });
+
+        var result = _formatter.Format(data, Config(mapping));
+        var sheet = OpenSheet(result.Content);
+
+        var cell = sheet.Cell(FirstDataRow, IdentityColumnCount + 10);
+        cell.DataType.ShouldBe(XLDataType.Number);
+        cell.GetValue<int>().ShouldBe(33);
+        result.EmittedEntryCount.ShouldBe(1);
+        result.SkippedAbsenceCount.ShouldBe(0);
     }
 
     [Test]
@@ -175,7 +225,9 @@ public class WinmentorRoExportFormatterTests
         var result = _formatter.Format(data, Config(mapping));
         var sheet = OpenSheet(result.Content);
 
-        sheet.Cell(FirstDataRow, IdentityColumnCount + 10).GetString().ShouldBe("CO");
+        var cell = sheet.Cell(FirstDataRow, IdentityColumnCount + 10);
+        cell.DataType.ShouldBe(XLDataType.Text);
+        cell.GetString().ShouldBe("CO");
         result.SkippedAbsenceCount.ShouldBe(0);
     }
 
@@ -218,6 +270,63 @@ public class WinmentorRoExportFormatterTests
 
         sheet.Cell(FirstDataRow, avansStart).IsEmpty().ShouldBeTrue();
         sheet.Cell(FirstDataRow, lichidareStart).GetValue<int>().ShouldBe(3);
+    }
+
+    [Test]
+    public void Format_ShortMonth_KeepsFixed31DayGridAndSummaryColumnPositions()
+    {
+        var data = DataWith(
+            new DateOnly(2026, 2, 1),
+            new DateOnly(2026, 2, 28),
+            new PayrollDayEntry { Date = new DateOnly(2026, 2, 3), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 2, 20), Kind = PayrollEntryKind.WorkHours, Quantity = 8m });
+
+        var result = _formatter.Format(data, Config());
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(1, IdentityColumnCount + 31).GetValue<int>().ShouldBe(31);
+        sheet.Cell("AK1").GetString().ShouldBe("AVANS");
+        sheet.Cell("AO1").GetString().ShouldBe("LICHIDARE");
+        sheet.Cell("AS2").GetString().ShouldBe("OBSERVATII:");
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 29).IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 31).IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, "AK").IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, "AO").GetValue<int>().ShouldBe(2);
+    }
+
+    [Test]
+    public void Format_PeriodNotStartingOnFirst_PlacesHoursInDayOfMonthColumn()
+    {
+        var data = DataWith(
+            new DateOnly(2026, 7, 10),
+            new DateOnly(2026, 7, 31),
+            new PayrollDayEntry { Date = new DateOnly(2026, 7, 12), Kind = PayrollEntryKind.WorkHours, Quantity = 7.5m });
+
+        var result = _formatter.Format(data, Config());
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(1, IdentityColumnCount + 1).GetValue<int>().ShouldBe(1);
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 12).GetValue<decimal>().ShouldBe(7.5m);
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 3).IsEmpty().ShouldBeTrue();
+    }
+
+    [Test]
+    public void Format_EntryOutsideStartMonth_IsNotWrittenAndCountedAsSuperseded()
+    {
+        var data = DataWith(
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 8, 5),
+            new PayrollDayEntry { Date = new DateOnly(2026, 7, 2), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },
+            new PayrollDayEntry { Date = new DateOnly(2026, 8, 2), Kind = PayrollEntryKind.WorkHours, Quantity = 5m });
+
+        var result = _formatter.Format(data, Config());
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(FirstDataRow, IdentityColumnCount + 2).GetValue<decimal>().ShouldBe(8m);
+        sheet.Cell(FirstDataRow, "AK").IsEmpty().ShouldBeTrue();
+        sheet.Cell(FirstDataRow, "AO").GetValue<int>().ShouldBe(1);
+        result.EmittedEntryCount.ShouldBe(1);
+        result.SkippedSupersededCount.ShouldBe(1);
     }
 
     [Test]

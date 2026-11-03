@@ -16,6 +16,7 @@ public class GetResetDateRangeQueryHandlerTests
 {
     private IShiftRepository _shiftRepository = null!;
     private IVariantShiftWriteGuard _variantGuard = null!;
+    private IOrderFamilyEndRepository _familyRepository = null!;
     private ILogger<GetResetDateRangeQueryHandler> _logger = null!;
     private GetResetDateRangeQueryHandler _handler = null!;
 
@@ -24,14 +25,59 @@ public class GetResetDateRangeQueryHandlerTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _variantGuard = Substitute.For<IVariantShiftWriteGuard>();
+        _familyRepository = Substitute.For<IOrderFamilyEndRepository>();
+        _shiftRepository.CutList(Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<bool>(), Arg.Any<Guid?>()).Returns([]);
         _logger = Substitute.For<ILogger<GetResetDateRangeQueryHandler>>();
 
         _handler = new GetResetDateRangeQueryHandler(
             _shiftRepository,
             ShiftVisibilityGuards.AllowAll(),
             _variantGuard,
+            _familyRepository,
             _logger
         );
+    }
+
+    [Test]
+    public async Task Handle_WithoutWork_TheEarliestDateIsTheStartOfTheOrder()
+    {
+        var originalId = Guid.NewGuid();
+        var from = new DateOnly(2025, 3, 1);
+        _shiftRepository.GetSealedOrder(originalId).Returns(new Shift { Id = originalId, Status = ShiftStatus.SealedOrder, FromDate = from });
+
+        var result = await _handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None);
+
+        result.EarliestResetDate.ShouldBe(from);
+    }
+
+    [Test]
+    public async Task Handle_WithWork_TheEarliestDateIsTheDayAfterTheLastWork()
+    {
+        var originalId = Guid.NewGuid();
+        _shiftRepository.GetSealedOrder(originalId)
+            .Returns(new Shift { Id = originalId, Status = ShiftStatus.SealedOrder, FromDate = new DateOnly(2025, 3, 1) });
+        _familyRepository.FindLastWorkDateAfterAsync(originalId, DateOnly.MinValue, CancellationToken.None)
+            .Returns(new DateOnly(2025, 5, 10));
+
+        var result = await _handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None);
+
+        result.EarliestResetDate.ShouldBe(new DateOnly(2025, 5, 11));
+    }
+
+    [Test]
+    public async Task Handle_WithAHiddenRow_IsAnsweredLikeAMissingOrder_AndReadsNoWork()
+    {
+        var originalId = Guid.NewGuid();
+        var piece = new Shift { Id = Guid.NewGuid(), OriginalId = originalId, Status = ShiftStatus.SplitShift };
+        _shiftRepository.GetSealedOrder(originalId).Returns(new Shift { Id = originalId, Status = ShiftStatus.SealedOrder });
+        _shiftRepository.CutList(originalId, null, false, null).Returns([piece]);
+        var guard = ShiftVisibilityGuards.AllowAll();
+        guard.FindFirstHiddenAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>()).Returns(piece.Id);
+        var handler = new GetResetDateRangeQueryHandler(_shiftRepository, guard, _variantGuard, _familyRepository, _logger);
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(new GetResetDateRangeQuery(originalId), CancellationToken.None));
+
+        await _familyRepository.DidNotReceiveWithAnyArgs().FindLastWorkDateAfterAsync(default, default, default);
     }
 
     [Test]

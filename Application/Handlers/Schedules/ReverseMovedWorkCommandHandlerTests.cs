@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// The last move of a work goes back from the schedule through the Work reassignment; a work already back or held is
-/// refused with its code, a hidden one reads like a missing one.
+/// The last move of a work goes back from the schedule through the Work reassignment after the shared check; a hidden work
+/// reads like a missing one.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Schedules;
@@ -27,39 +27,37 @@ public class ReverseMovedWorkCommandHandlerTests
 
     private IWorkRepository _works = null!;
     private IScheduleRowAccessGuard _access = null!;
-    private ICoverMoveFactsReader _facts = null!;
+    private IMoveReversalCheck _check = null!;
     private IMediator _mediator = null!;
     private ReverseMovedWorkCommandHandler _handler = null!;
     private Work _work = null!;
-    private CoverMoveFacts _fact = null!;
 
     [SetUp]
     public void SetUp()
     {
         _work = new Work { Id = _workId, ClientId = _owner, MovedFromClientId = _origin };
-        _fact = new CoverMoveFacts(
-            _workId, _owner, null, new DateOnly(2026, 11, 4), new TimeOnly(8, 0), new TimeOnly(16, 0), WorkLockLevel.None, false, false, true);
         _works = Substitute.For<IWorkRepository>();
         _works.GetNoTracking(_workId).Returns(_ => _work);
         _access = Substitute.For<IScheduleRowAccessGuard>();
         _access.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(true);
-        _facts = Substitute.For<ICoverMoveFactsReader>();
-        _facts.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => (IReadOnlyDictionary<Guid, CoverMoveFacts>)new Dictionary<Guid, CoverMoveFacts> { [_workId] = _fact });
+        _check = Substitute.For<IMoveReversalCheck>();
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<ReassignWorkClientCommand>(), Arg.Any<CancellationToken>()).Returns(new ReassignWorkClientResponse());
-        _handler = new ReverseMovedWorkCommandHandler(_works, _access, _facts, _mediator);
+        _handler = new ReverseMovedWorkCommandHandler(_works, _access, _check, _mediator);
     }
 
     private Task<ReassignWorkClientResponse?> Reverse() => _handler.Handle(new ReverseMovedWorkCommand(_workId), CancellationToken.None);
 
     [Test]
-    public async Task AMovedWork_GoesBackToItsOrigin()
+    public async Task AMovedWork_IsCheckedAndGoesBackToItsOrigin()
     {
         await Reverse();
 
-        await _mediator.Received(1).Send(
-            Arg.Is<ReassignWorkClientCommand>(c => c.Id == _workId && c.TargetClientId == _origin), Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            _check.EnsureReversibleAsync(_work, Arg.Any<CancellationToken>());
+            _mediator.Send(Arg.Is<ReassignWorkClientCommand>(c => c.Id == _workId && c.TargetClientId == _origin), Arg.Any<CancellationToken>());
+        });
     }
 
     [Test]
@@ -68,26 +66,16 @@ public class ReverseMovedWorkCommandHandlerTests
         _access.IsVisibleAsync(_owner, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(false);
 
         await Should.ThrowAsync<KeyNotFoundException>(Reverse);
+        await _check.DidNotReceiveWithAnyArgs().EnsureReversibleAsync(default!, default);
     }
 
     [Test]
-    public async Task AWorkWithoutOrigin_IsRefusedAsBack()
+    public async Task ARefusalOfTheCheck_WritesNothing()
     {
-        _work.MovedFromClientId = null;
+        _check.EnsureReversibleAsync(_work, Arg.Any<CancellationToken>())
+            .Returns(_ => throw new MoveReversalRefusedException("busy", MoveReversalRefusalCodes.OriginBusy));
 
-        var refused = await Should.ThrowAsync<MoveReversalRefusedException>(Reverse);
-
-        refused.ErrorCode.ShouldBe(MoveReversalRefusalCodes.AlreadyBack);
+        await Should.ThrowAsync<MoveReversalRefusedException>(Reverse);
         await _mediator.DidNotReceive().Send(Arg.Any<ReassignWorkClientCommand>(), Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task AHeldWork_IsRefusedAsHeld()
-    {
-        _fact = _fact with { HasReplacement = true };
-
-        var refused = await Should.ThrowAsync<MoveReversalRefusedException>(Reverse);
-
-        refused.ErrorCode.ShouldBe(MoveReversalRefusalCodes.Held);
     }
 }

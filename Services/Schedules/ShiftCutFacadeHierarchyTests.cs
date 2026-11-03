@@ -12,6 +12,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
@@ -27,6 +28,7 @@ public class ShiftCutFacadeHierarchyTests
     private IShiftValidator _shiftValidator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ShiftCutFacade _facade = null!;
+    private IShiftFamilyReset _familyReset = null!;
 
     private readonly Guid _sealedOrderId = Guid.NewGuid();
     private readonly Guid _originalShiftId = Guid.NewGuid();
@@ -54,11 +56,12 @@ public class ShiftCutFacadeHierarchyTests
             .Returns(call => _tracked.GetValueOrDefault(call.Arg<Guid>()) ?? _stored.GetValueOrDefault(call.Arg<Guid>()));
         _shiftRepository.When(r => r.Add(Arg.Any<Shift>())).Do(call => _tracked[call.Arg<Shift>().Id] = call.Arg<Shift>());
 
+        _familyReset = Substitute.For<IShiftFamilyReset>();
         _facade = new ShiftCutFacade(
             _shiftRepository,
             requirements,
             _shiftTreeService,
-            Substitute.For<IShiftResetService>(),
+            _familyReset,
             _shiftValidator,
             new ScheduleMapper(),
             _unitOfWork,
@@ -261,6 +264,59 @@ public class ShiftCutFacadeHierarchyTests
         var expenses = Substitute.For<IShiftExpensesRepository>();
         expenses.GetByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<ShiftExpenses>());
         return expenses;
+    }
+
+    [Test]
+    public async Task Update_OfAContainer_IsRefused_BeforeAnythingIsStaged()
+    {
+        var container = Stored(_pieceId, ShiftStatus.OriginalShift, originalId: null);
+        container.ShiftType = ShiftType.IsContainer;
+        Store(container);
+
+        var thrown = await Should.ThrowAsync<BadRequestException>(
+            () => _facade.ProcessBatchCutsAsync([Update(Piece(_pieceId, originalId: null, clientId: null))]));
+
+        thrown.Message.ShouldBe(string.Format(ShiftHierarchyMessages.ContainerCutNotAllowed, _pieceId));
+        await _shiftRepository.DidNotReceiveWithAnyArgs().PutCutUpdate(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Create_FromAContainer_IsRefused_BeforeAnythingIsStaged()
+    {
+        var container = Stored(_sealedOrderId, ShiftStatus.OriginalShift, originalId: null);
+        container.ShiftType = ShiftType.IsContainer;
+        Store(container);
+
+        await Should.ThrowAsync<BadRequestException>(
+            () => _facade.ProcessBatchCutsAsync([Create(_sealedOrderId, Piece(_pieceId, originalId: null, clientId: null))]));
+
+        await _shiftRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Create_AsAContainer_IsRefused_ThoughTheParentIsNone()
+    {
+        Store(Stored(_sealedOrderId, ShiftStatus.SealedOrder, originalId: null));
+        var piece = Piece(_pieceId, originalId: null, clientId: null);
+        piece.ShiftType = ShiftType.IsContainer;
+
+        await Should.ThrowAsync<BadRequestException>(() => _facade.ProcessBatchCutsAsync([Create(_sealedOrderId, piece)]));
+
+        await _shiftRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task Reset_OfAContainer_IsRefused_BeforeTheResetRuns()
+    {
+        var container = Stored(_sealedOrderId, ShiftStatus.SealedOrder, originalId: null);
+        container.ShiftType = ShiftType.IsContainer;
+        _shiftRepository.GetSealedOrder(_sealedOrderId).Returns(container);
+
+        await Should.ThrowAsync<BadRequestException>(() => _facade.ResetCutsAsync(_sealedOrderId, new DateOnly(2026, 4, 1)));
+
+        await _familyReset.DidNotReceiveWithAnyArgs().ResetAsync(default!, default);
     }
 
     private void Store(Shift shift) => _stored[shift.Id] = shift;

@@ -214,6 +214,30 @@ public class GetReplacementStatusSkillTests
     }
 
     [Test]
+    public async Task AMovedSlot_SaysItWasMoved_AndCountsIt()
+    {
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Accepted) with { Kind = ReplacementRequestKind.Move });
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var slot = Json(result).GetProperty("Slots")[0];
+        Assert.That(slot.GetProperty("Kind").GetString(), Is.EqualTo(nameof(ReplacementRequestKind.Move)));
+        Assert.That(slot.GetProperty("Candidates")[0].GetProperty("Kind").GetString(), Is.EqualTo(nameof(ReplacementRequestKind.Move)));
+        Assert.That(result.Message, Does.Contain("1 of them moved whole"));
+    }
+
+    [Test]
+    public async Task AReplacedSlot_SaysItWasReplaced()
+    {
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Accepted));
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        Assert.That(Json(result).GetProperty("Slots")[0].GetProperty("Kind").GetString(), Is.EqualTo(nameof(ReplacementRequestKind.Replacement)));
+        Assert.That(result.Message, Does.Contain("0 of them moved whole"));
+    }
+
+    [Test]
     public async Task AcceptedCandidate_MakesTheSlotCovered()
     {
         GivenRows(Row(CandidateA, ReplacementRequestOutcome.Accepted));

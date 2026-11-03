@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for the generic Tier-A Excel payroll formatter: header row, real Excel dates,
-/// wage-type mapping, surcharge gating and unmapped-absence skipping.
+/// wage-type mapping, surcharge gating and skip accounting for empty base wage types, surcharge wage types and
+/// absence wage types.
 /// </summary>
 
 using ClosedXML.Excel;
@@ -165,6 +166,64 @@ public class GenericXlsxPayrollExportFormatterTests
 
         var result = _formatter.Format(data, Config(absenceMappingJson: "{}"));
 
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(1);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    public void Format_WorkHoursWithEmptyBaseWageType_IsSkippedAndCounted(string baseWageType)
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var result = _formatter.Format(data, Config(baseWageType: baseWageType));
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(2, 1).IsEmpty().ShouldBeTrue();
+        result.RecordCount.ShouldBe(0);
+        result.EmittedEntryCount.ShouldBe(0);
+        result.SkippedUnmappedBaseWageCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_SurchargeWithWhitespaceSurchargeWageType_IsSkippedAndCounted()
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.Surcharge,
+            Quantity = 2m,
+        });
+
+        var result = _formatter.Format(data, Config(surchargeWageType: " "));
+
+        result.RecordCount.ShouldBe(0);
+        result.SkippedUnmappedSurchargeCount.ShouldBe(1);
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    public void Format_AbsenceMappedToEmptyWageType_IsSkippedAndCounted(string wageType)
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"K\",\"wageType\":\"{wageType}\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 20),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var sheet = OpenSheet(result.Content);
+
+        sheet.Cell(2, 1).IsEmpty().ShouldBeTrue();
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(1);
     }

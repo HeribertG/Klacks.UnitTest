@@ -10,6 +10,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Infrastructure.Mediator;
 using NUnit.Framework;
@@ -64,7 +65,9 @@ public class ReverseMoveCommandHandlerTests
             .Returns(_ => (IReadOnlyDictionary<Guid, CoverMoveFacts>)new Dictionary<Guid, CoverMoveFacts> { [_workId] = _fact });
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<ReassignWorkClientCommand>(), Arg.Any<CancellationToken>()).Returns(new ReassignWorkClientResponse());
-        _handler = new ReverseMoveCommandHandler(_repository, _visibility, _scenarios, _works, _facts, _mediator);
+        _facts.IsFreeAsync(Arg.Any<Guid?>(), _absent, _workId, Arg.Any<CancellationToken>()).Returns(true);
+        _handler = new ReverseMoveCommandHandler(
+            _repository, _visibility, _scenarios, _works, new MoveReversalCheck(_facts), _mediator);
     }
 
     private Task<ReassignWorkClientResponse?> Reverse() => _handler.Handle(new ReverseMoveCommand(_requestId), CancellationToken.None);
@@ -164,6 +167,13 @@ public class ReverseMoveCommandHandlerTests
     {
         _work.MovedFromClientId = null;
         return AssertRefused("moved on");
+    }
+
+    [Test]
+    public Task ABusyOrigin_IsRefused()
+    {
+        _facts.IsFreeAsync(Arg.Any<Guid?>(), _absent, _workId, Arg.Any<CancellationToken>()).Returns(false);
+        return AssertRefused("not free");
     }
 
     [Test]

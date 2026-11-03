@@ -2,13 +2,16 @@
 
 /// <summary>
 /// Unit tests for ResetShiftCutsSkill: the requested date is validated against GetResetDateRangeQuery
-/// before PostResetCutsCommand is sent, an order that is not split is rejected up front, and the merge
-/// is confirmed by re-reading the cut list for a single OriginalShift and no stale open SplitShift.
+/// before PostResetCutsCommand is sent, an order that is not split is rejected up front, a refusal of the reset comes back
+/// as a skill error, and the reset is confirmed by re-reading the cut list for one open OriginalShift, wherever it starts,
+/// and no piece reaching into it.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Queries.Shifts;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
@@ -136,5 +139,78 @@ public class ResetShiftCutsSkillTests
         Assert.That(result.Message, Does.Contain("not split"));
         await _mediator.DidNotReceive().Send(Arg.Any<GetResetDateRangeQuery>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PostResetCutsCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutWork_ReportsTheRealStart_NotTheRequestedDate()
+    {
+        var merged = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalShift, OriginalId = SealedOrderId, FromDate = OrderFrom, UntilDate = OrderUntil };
+        _shiftRepository.CutList(SealedOrderId).Returns(new List<Shift> { merged });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain(OrderFrom.ToString());
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenAPieceStillReachesIntoTheNewShift()
+    {
+        var merged = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalShift, OriginalId = SealedOrderId, FromDate = new DateOnly(2026, 6, 1) };
+        var stale = new Shift { Id = PartId, Status = ShiftStatus.SplitShift, OriginalId = SealedOrderId, FromDate = OrderFrom, UntilDate = new DateOnly(2026, 6, 1) };
+        _shiftRepository.CutList(SealedOrderId).Returns(new List<Shift> { stale, merged });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
+    }
+
+    [Test]
+    public async Task RelaysARefusal_AsASkillError()
+    {
+        var refusal = ShiftResetRefusedException.ForWorksOnOrAfter(new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 3));
+        _mediator.Send(Arg.Any<PostResetCutsCommand>(), Arg.Any<CancellationToken>()).Returns<List<ShiftResource>>(_ => throw refusal);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(refusal.Message);
+    }
+
+    [Test]
+    public async Task AHiddenRowOfTheFamily_IsAnsweredLikeAMissingShift_AtTheDateRange()
+    {
+        _mediator.Send(Arg.Any<GetResetDateRangeQuery>(), Arg.Any<CancellationToken>())
+            .Returns<ResetDateRangeResponse>(_ => throw new KeyNotFoundException("hidden"));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift with ID {PartId} not found.");
+    }
+
+    [Test]
+    public async Task AHiddenRowOfTheFamily_IsAnsweredLikeAMissingShift_AtTheReset()
+    {
+        _mediator.Send(Arg.Any<PostResetCutsCommand>(), Arg.Any<CancellationToken>())
+            .Returns<List<ShiftResource>>(_ => throw new InvalidOperationException(string.Format(ShiftVisibilityMessages.NoSealedOrderFound, SealedOrderId)));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift with ID {PartId} not found.");
+    }
+
+    [Test]
+    public async Task RelaysAContainerRefusal_AsASkillError()
+    {
+        _mediator.Send(Arg.Any<PostResetCutsCommand>(), Arg.Any<CancellationToken>())
+            .Returns<List<ShiftResource>>(_ => throw new BadRequestException("container"));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe("container");
     }
 }

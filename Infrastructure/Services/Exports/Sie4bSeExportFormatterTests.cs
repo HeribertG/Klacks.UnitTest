@@ -7,6 +7,7 @@
 /// </summary>
 using System.Text;
 using Shouldly;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -136,12 +137,33 @@ public class Sie4bSeExportFormatterTests
             o.WorkEntries[0].Surcharges = 0m;
             o.WorkEntries[0].Changes =
             [
-                new WorkChangeExportEntry { ChangeTime = 2m, Surcharges = 0.5m },
+                new WorkChangeExportEntry { Type = WorkChangeType.CorrectionEnd, ChangeTime = 2m, Surcharges = 0.5m },
             ];
         }));
 
         var verIndex = Array.FindIndex(lines, l => l.StartsWith("#VER", StringComparison.Ordinal));
         lines[verIndex + 2].ShouldBe("#TRANS 7010 {} 10.50");
+    }
+
+    [TestCase(WorkChangeType.ReplacementStart)]
+    [TestCase(WorkChangeType.ReplacementEnd)]
+    [TestCase(WorkChangeType.ReplacementWithin)]
+    [TestCase(WorkChangeType.Briefing)]
+    [TestCase(WorkChangeType.Debriefing)]
+    public void Format_NonHourBearingChange_DoesNotAddToAmount(WorkChangeType type)
+    {
+        var lines = FormatLines(BuildData(o =>
+        {
+            o.WorkEntries[0].WorkTime = 8m;
+            o.WorkEntries[0].Surcharges = 0m;
+            o.WorkEntries[0].Changes =
+            [
+                new WorkChangeExportEntry { Type = type, ChangeTime = 2m, Surcharges = 0.5m },
+            ];
+        }));
+
+        var verIndex = Array.FindIndex(lines, l => l.StartsWith("#VER", StringComparison.Ordinal));
+        lines[verIndex + 2].ShouldBe("#TRANS 7010 {} 8.00");
     }
 
     [Test]

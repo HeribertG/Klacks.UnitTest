@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for LogoBordroTrExportFormatter verifying the Logo Bordro Plus "Puantaj" three-row
-/// structure (row 1 labels, row 2 reference codes, row 3+ data), that wage-type columns and their
-/// row-2 codes come from the group config, that the Sicil No code is the documented "00001" while
-/// the Ad/Soyad codes are left empty, per-employee wage aggregation, name splitting, and that
-/// unmapped absences are skipped rather than emitted.
+/// Unit tests for LogoBordroTrExportFormatter verifying the Logo "Excel'den Puantaj Bilgileri Aktarımı" three-row
+/// structure (row 1 description, row 2 five-digit XYZTV reference codes, row 3+ one row per sicil), the identity
+/// code 00001 (Sicil No) stored as text with the undocumented Ad / Soyad codes left empty, that puantaj columns and their row-2 codes come
+/// from the group config ordered by code, that codes outside the puantaj scheme are rejected as unmapped, that the
+/// code's V digit (2 Gün / 3 Saat) must match the entry unit, per-employee aggregation, and name splitting.
 /// </summary>
 using System.IO;
 using ClosedXML.Excel;
@@ -20,9 +20,10 @@ namespace Klacks.UnitTest.Infrastructure.Services.Exports;
 [TestFixture]
 public class LogoBordroTrExportFormatterTests
 {
-    private const string BaseWageType = "1000";
-    private const string SurchargeWageType = "1010";
-    private const string AbsenceWageType = "2000";
+    private const string BaseWageType = "01013";
+    private const string SurchargeWageType = "02013";
+    private const string AbsenceWageType = "01023";
+    private const string OnCallDayWageType = "04012";
     private static readonly Guid MappedAbsenceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private LogoBordroTrExportFormatter _formatter = null!;
@@ -46,13 +47,69 @@ public class LogoBordroTrExportFormatterTests
     {
         var sheet = OpenSheet(_formatter.Format(BuildData(), Config()));
 
-        sheet.Cell(1, 1).GetString().ShouldBe("Sicil No");
+        sheet.Name.ShouldBe("Puantaj");
+        sheet.Cell(1, 1).GetString().ShouldBe("Sicil Numarası");
         sheet.Cell(1, 2).GetString().ShouldBe("Ad");
         sheet.Cell(1, 3).GetString().ShouldBe("Soyad");
 
         sheet.Cell(2, 1).GetString().ShouldBe("00001");
         sheet.Cell(2, 2).GetString().ShouldBeEmpty();
         sheet.Cell(2, 3).GetString().ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Format_ReferenceCodes_AreTextKeepingLeadingZeros()
+    {
+        var sheet = OpenSheet(_formatter.Format(BuildData(), Config()));
+
+        sheet.Cell(2, 1).DataType.ShouldBe(XLDataType.Text);
+        sheet.Cell(2, 4).DataType.ShouldBe(XLDataType.Text);
+        sheet.Cell(2, 4).GetString().ShouldBe(BaseWageType);
+    }
+
+    [Test]
+    public void Format_DescriptionRow_NamesPuantajGroupRecordAndUnit()
+    {
+        var sheet = OpenSheet(_formatter.Format(BuildData(), Config()));
+
+        sheet.Cell(1, 4).GetString().ShouldBe("Mesai 01 Saat");
+        sheet.Cell(1, 5).GetString().ShouldBe("Ek Mesai 01 Saat");
+    }
+
+    [Test]
+    public void Format_WageColumns_AreOrderedByReferenceCode()
+    {
+        var config = Config();
+        config.BaseWageType = "02013";
+        config.SurchargeWageType = "01013";
+
+        var sheet = OpenSheet(_formatter.Format(BuildData(), config));
+
+        sheet.Cell(2, 4).GetString().ShouldBe("01013");
+        sheet.Cell(2, 5).GetString().ShouldBe("02013");
+        sheet.Cell(3, 4).GetValue<decimal>().ShouldBe(1.5m);
+        sheet.Cell(3, 5).GetValue<decimal>().ShouldBe(16m);
+    }
+
+    [TestCase("1000")]
+    [TestCase("91001")]
+    [TestCase("00001")]
+    [TestCase("01014")]
+    [TestCase("06013")]
+    [TestCase("01003")]
+    [TestCase("")]
+    public void Format_BaseCodeOutsidePuantajScheme_IsUnmappedAndHasNoColumn(string invalidCode)
+    {
+        var config = Config();
+        config.BaseWageType = invalidCode;
+
+        var result = _formatter.Format(BuildData(), config);
+        var sheet = OpenSheet(result);
+
+        result.SkippedUnmappedBaseWageCount.ShouldBe(2);
+        result.EmittedEntryCount.ShouldBe(1);
+        sheet.Cell(2, 4).GetString().ShouldBe(SurchargeWageType);
+        sheet.Cell(2, 5).GetString().ShouldBeEmpty();
     }
 
     [Test]
@@ -124,8 +181,11 @@ public class LogoBordroTrExportFormatterTests
             $"{{\"{MappedAbsenceId}\":{{\"WageType\":\"{AbsenceWageType}\",\"Ausfallschluessel\":\"K\"}}}}");
         var sheet = OpenSheet(_formatter.Format(data, config));
 
-        sheet.Cell(2, 6).GetString().ShouldBe(AbsenceWageType);
-        sheet.Cell(3, 6).GetValue<decimal>().ShouldBe(8m);
+        sheet.Cell(2, 4).GetString().ShouldBe(BaseWageType);
+        sheet.Cell(2, 5).GetString().ShouldBe(AbsenceWageType);
+        sheet.Cell(2, 6).GetString().ShouldBe(SurchargeWageType);
+        sheet.Cell(3, 5).GetValue<decimal>().ShouldBe(8m);
+        sheet.Cell(3, 6).GetValue<decimal>().ShouldBe(1.5m);
     }
 
     [Test]
@@ -166,6 +226,53 @@ public class LogoBordroTrExportFormatterTests
 
         result.EmittedEntryCount.ShouldBe(1);
         result.SkippedUnsupportedUnitCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_DayEntryOnAGunCode_IsWrittenAsDays()
+    {
+        var onCallId = Guid.NewGuid();
+        var mapping = $"{{\"{onCallId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"{OnCallDayWageType}\"}}}}";
+        var data = BuildData();
+        data.Employees[0].Entries.Add(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 11),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 1m,
+            Unit = PayrollQuantityUnit.Days,
+            AbsenceId = onCallId,
+        });
+        data.Employees[0].Entries.Add(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 18),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 1m,
+            Unit = PayrollQuantityUnit.Days,
+            AbsenceId = onCallId,
+        });
+
+        var result = _formatter.Format(data, Config(mapping));
+        var sheet = OpenSheet(result);
+
+        sheet.Cell(1, 6).GetString().ShouldBe("Ek Ödeme 01 Gün");
+        sheet.Cell(2, 6).GetString().ShouldBe(OnCallDayWageType);
+        sheet.Cell(3, 6).GetValue<decimal>().ShouldBe(2m);
+        result.SkippedUnsupportedUnitCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void Format_HourEntryOnAGunCode_IsCountedNotAdded()
+    {
+        var config = Config();
+        config.BaseWageType = "01012";
+
+        var result = _formatter.Format(BuildData(), config);
+        var sheet = OpenSheet(result);
+
+        result.SkippedUnsupportedUnitCount.ShouldBe(2);
+        result.EmittedEntryCount.ShouldBe(1);
+        sheet.Cell(2, 4).GetString().ShouldBe("01012");
+        sheet.Cell(3, 4).IsEmpty().ShouldBeTrue();
     }
     private static IXLWorksheet OpenSheet(PayrollExportResult result)
     {

@@ -104,7 +104,7 @@ public class SealedOrderListLoaderCharacterizationTests
         var ofCustomer = Guid.NewGuid();
         AddShift(ofCustomer, "Mine", new DateOnly(2026, 1, 1), null, clientId: _customerId);
         AddShift(Guid.NewGuid(), "Other", new DateOnly(2026, 1, 1), null, clientId: _employeeId);
-        AddShift(Guid.NewGuid(), "NoClient", new DateOnly(2026, 1, 1), null);
+        AddShift(Guid.NewGuid(), "NoClient", new DateOnly(2026, 1, 1), null, withoutClient: true);
 
         var result = await _loader.LoadAsync(null, null, _customerId, null);
 
@@ -112,35 +112,19 @@ public class SealedOrderListLoaderCharacterizationTests
     }
 
     [Test]
-    public async Task LoadAsync_CustomerAndNonCustomerClient_MapsCustomerFieldsOnlyForCustomers()
+    public async Task LoadAsync_LeavesOutAShiftWithoutACustomer_AndOneWhoseClientIsNoCustomer()
     {
         var customerOrder = Guid.NewGuid();
-        var employeeOrder = Guid.NewGuid();
         AddShift(customerOrder, "B-Customer", new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), clientId: _customerId);
-        AddShift(employeeOrder, "A-Employee", new DateOnly(2026, 1, 1), null, clientId: _employeeId);
+        AddShift(Guid.NewGuid(), "A-Employee", new DateOnly(2026, 1, 1), null, clientId: _employeeId);
+        AddShift(Guid.NewGuid(), "C-None", new DateOnly(2026, 1, 1), null, withoutClient: true);
 
         var result = await _loader.LoadAsync(null, null, null, null);
 
-        result.Count.ShouldBe(2);
-        var employee = result[0];
-        employee.Id.ShouldBe(employeeOrder);
-        employee.Name.ShouldBe("A-Employee");
-        employee.Abbreviation.ShouldBe("ABB");
-        employee.SourceSystemId.ShouldBe("erp-main");
-        employee.ExternalOrderReference.ShouldBe("PO-1");
-        employee.CustomerId.ShouldBeNull();
-        employee.CustomerNumber.ShouldBeNull();
-        employee.CustomerName.ShouldBeNull();
-        employee.TotalWorks.ShouldBe(0);
-        employee.ClosedWorks.ShouldBe(0);
-
-        var customer = result[1];
-        customer.Id.ShouldBe(customerOrder);
-        customer.FromDate.ShouldBe(new DateOnly(2026, 1, 1));
-        customer.UntilDate.ShouldBe(new DateOnly(2026, 1, 31));
-        customer.CustomerId.ShouldBe(_customerId);
-        customer.CustomerNumber.ShouldBe(900);
-        customer.CustomerName.ShouldBe("Customer, Corp");
+        var order = result.ShouldHaveSingleItem();
+        order.Id.ShouldBe(customerOrder);
+        order.CustomerId.ShouldBe(_customerId);
+        order.CustomerNumber.ShouldBe(900);
     }
 
     [Test]
@@ -217,6 +201,7 @@ public class SealedOrderListLoaderCharacterizationTests
         DateOnly? untilDate,
         ShiftStatus status = ShiftStatus.SealedOrder,
         Guid? clientId = null,
+        bool withoutClient = false,
         bool isDeleted = false)
     {
         _context.Shift.Add(new Shift
@@ -227,7 +212,7 @@ public class SealedOrderListLoaderCharacterizationTests
             Abbreviation = "ABB",
             SourceSystemId = "erp-main",
             ExternalOrderReference = "PO-1",
-            ClientId = clientId,
+            ClientId = withoutClient ? null : clientId ?? _customerId,
             FromDate = fromDate,
             UntilDate = untilDate,
             IsDeleted = isDeleted,

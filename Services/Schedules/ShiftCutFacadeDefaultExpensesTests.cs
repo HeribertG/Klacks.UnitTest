@@ -61,7 +61,7 @@ public class ShiftCutFacadeDefaultExpensesTests
             _shiftRepository,
             requirements,
             Substitute.For<IShiftTreeService>(),
-            Substitute.For<IShiftResetService>(),
+            Substitute.For<IShiftFamilyReset>(),
             Substitute.For<IShiftValidator>(),
             new ScheduleMapper(),
             Substitute.For<IUnitOfWork>(),

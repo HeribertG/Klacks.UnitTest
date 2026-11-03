@@ -49,7 +49,7 @@ public class ShiftResetServiceTests
         };
 
         // Act
-        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
+        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate, []);
 
         // Assert
         result.ShouldNotBeNull();
@@ -81,7 +81,7 @@ public class ShiftResetServiceTests
         };
 
         // Act
-        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
+        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate, []);
 
         // Assert
         result.OriginalId.ShouldBe(sealedOrderId);
@@ -110,137 +110,24 @@ public class ShiftResetServiceTests
         };
 
         // Act
-        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
+        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate, []);
 
         // Assert
         result.GroupItems.Count().ShouldBe(1);
     }
 
     [Test]
-    public void CloseExistingSplitShifts_ShouldCloseOnlySplitShifts()
+    public async Task CreateNewOriginalShiftFromSealedOrderAsync_TakesFreshCopiesOfTheStoredExpenses()
     {
-        // Arrange
-        var closeDate = new DateOnly(2025, 1, 14);
-        var splitShift1 = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.SplitShift,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
-        var splitShift2 = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.SplitShift,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
-        var originalShift = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.OriginalShift,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
+        var stored = new ShiftExpenses { Id = Guid.NewGuid(), ShiftId = Guid.NewGuid(), Amount = 12.5m, Description = "Parking", Taxable = true };
+        var sealedOrder = new Shift { Id = stored.ShiftId, Status = ShiftStatus.SealedOrder, FromDate = new DateOnly(2025, 1, 1) };
 
-        var shifts = new List<Shift> { splitShift1, splitShift2, originalShift };
+        var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, new DateOnly(2025, 1, 15), [stored]);
 
-        // Act
-        _service.CloseExistingSplitShifts(shifts, closeDate);
-
-        // Assert
-        splitShift1.UntilDate.ShouldBe(closeDate);
-        splitShift2.UntilDate.ShouldBe(closeDate);
-        originalShift.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
-    }
-
-    [Test]
-    public void CloseExistingSplitShifts_ShouldNotCloseOriginalShifts()
-    {
-        // Arrange
-        var closeDate = new DateOnly(2025, 1, 14);
-        var originalUntilDate = new DateOnly(2025, 12, 31);
-        var originalShift = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.OriginalShift,
-            UntilDate = originalUntilDate
-        };
-
-        var shifts = new List<Shift> { originalShift };
-
-        // Act
-        _service.CloseExistingSplitShifts(shifts, closeDate);
-
-        // Assert
-        originalShift.UntilDate.ShouldBe(originalUntilDate);
-    }
-
-    [Test]
-    public void CloseExistingSplitShifts_ShouldNotCloseSealedOrders()
-    {
-        // Arrange
-        var closeDate = new DateOnly(2025, 1, 14);
-        var originalUntilDate = new DateOnly(2025, 12, 31);
-        var sealedOrder = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.SealedOrder,
-            UntilDate = originalUntilDate
-        };
-
-        var shifts = new List<Shift> { sealedOrder };
-
-        // Act
-        _service.CloseExistingSplitShifts(shifts, closeDate);
-
-        // Assert
-        sealedOrder.UntilDate.ShouldBe(originalUntilDate);
-    }
-
-    [Test]
-    public void CloseExistingSplitShifts_WithEmptyList_ShouldNotThrow()
-    {
-        // Arrange
-        var closeDate = new DateOnly(2025, 1, 14);
-        var shifts = new List<Shift>();
-
-        // Act
-        Action act = () => _service.CloseExistingSplitShifts(shifts, closeDate);
-
-        // Assert
-        act.ShouldNotThrow();
-    }
-
-    [Test]
-    public void CloseExistingSplitShifts_WithMixedStatuses_ShouldCloseOnlySplitShifts()
-    {
-        // Arrange
-        var closeDate = new DateOnly(2025, 1, 14);
-        var splitShift = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.SplitShift,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
-        var originalShift = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.OriginalShift,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
-        var sealedOrder = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Status = ShiftStatus.SealedOrder,
-            UntilDate = new DateOnly(2025, 12, 31)
-        };
-
-        var shifts = new List<Shift> { splitShift, originalShift, sealedOrder };
-
-        // Act
-        _service.CloseExistingSplitShifts(shifts, closeDate);
-
-        // Assert
-        splitShift.UntilDate.ShouldBe(closeDate);
-        originalShift.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
-        sealedOrder.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
+        var copy = result.ShiftExpenses.ShouldHaveSingleItem();
+        result.Id.ShouldNotBe(Guid.Empty);
+        copy.Id.ShouldNotBe(stored.Id);
+        copy.ShiftId.ShouldBe(result.Id);
+        (copy.Amount, copy.Description, copy.Taxable).ShouldBe((12.5m, "Parking", true));
     }
 }
