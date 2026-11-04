@@ -114,7 +114,8 @@ public class GetReplacementStatusSkillTests
         ShiftStartUtc = r.ShiftStartUtc,
         OutcomeAtUtc = r.OutcomeAtUtc,
         AnalyseToken = r.AnalyseToken,
-        AppliedAtUtc = r.AppliedAtUtc
+        AppliedAtUtc = r.AppliedAtUtc,
+        ReversedAtUtc = r.ReversedAtUtc
     };
 
     private static ReplacementRequestResource Row(
@@ -354,6 +355,46 @@ public class GetReplacementStatusSkillTests
         {
             Assert.That(reason.ValueKind, Is.EqualTo(JsonValueKind.Null));
         }
+    }
+
+    [Test]
+    public async Task ReversedMove_SlotIsNotCovered_AndTheAcceptanceStaysInTheHistoryAsTakenBack()
+    {
+        var reversedAt = Today.ToDateTime(new TimeOnly(9, 30));
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Accepted, applied: true) with
+        {
+            Kind = ReplacementRequestKind.Move,
+            ReversedAtUtc = reversedAt
+        });
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        var slot = json.GetProperty("Slots")[0];
+        Assert.That(slot.GetProperty("Status").GetString(), Is.EqualTo(nameof(ReplacementSlotStatus.MoveReversed)));
+        Assert.That(slot.GetProperty("AppliedToPlan").GetBoolean(), Is.False);
+        var candidate = slot.GetProperty("Candidates")[0];
+        Assert.That(candidate.GetProperty("Contact").GetString(), Is.EqualTo("Accepted"));
+        Assert.That(candidate.GetProperty("AppliedToPlan").GetBoolean(), Is.False);
+        Assert.That(candidate.GetProperty("MoveReversedAt").GetString(), Is.Not.Null.And.Not.Empty);
+        var notes = json.GetProperty("Notes").EnumerateArray().Select(n => n.GetString()).ToList();
+        Assert.That(notes, Has.Some.Contains("MoveReversed"));
+        Assert.That(result.Message, Does.Contain("0 covered"));
+    }
+
+    [Test]
+    public async Task AppliedMoveNotTakenBack_StaysCovered_WithoutTheReversedNote()
+    {
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Accepted, applied: true) with { Kind = ReplacementRequestKind.Move });
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        var slot = json.GetProperty("Slots")[0];
+        Assert.That(slot.GetProperty("Status").GetString(), Is.EqualTo(nameof(ReplacementSlotStatus.Covered)));
+        Assert.That(slot.GetProperty("Candidates")[0].GetProperty("AppliedToPlan").GetBoolean(), Is.True);
+        var notes = json.GetProperty("Notes").EnumerateArray().Select(n => n.GetString()).ToList();
+        Assert.That(notes, Has.None.Contains("MoveReversed"));
     }
 
     [Test]
