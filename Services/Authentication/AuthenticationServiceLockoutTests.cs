@@ -1,3 +1,5 @@
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Authentication;
 using Klacks.Api.Application.Validation.Accounts;
@@ -17,6 +19,11 @@ internal class AuthenticationServiceLockoutTests
 {
     private const string Email = "user@test.com";
     private const string Password = "P@ssw0rt1";
+    private const string NewPassword = "N3w-P@ssw0rt";
+    private const int PolicyLength = 12;
+    private const int LockedOutFailedCount = 5;
+    private const int LockoutMinutes = 15;
+    private const string ResetToken = "reset-token";
 
     private UserManager<AppUser> _userManager = null!;
     private IIdentityProviderRepository _identityProviderRepository = null!;
@@ -165,6 +172,76 @@ internal class AuthenticationServiceLockoutTests
         await _userManager.DidNotReceive().IsLockedOutAsync(user);
         await _userManager.DidNotReceive().AccessFailedAsync(user);
         await _identityProviderRepository.Received(1).GetAuthenticationProviders();
+    }
+
+    [Test]
+    public async Task ChangePassword_WhenOldPasswordIsWrong_IncrementsFailedAccessCount()
+    {
+        var user = new AppUser { Id = "10", Email = Email };
+        _userManager.ChangePasswordAsync(user, Password, NewPassword)
+            .Returns(IdentityResult.Failed(new IdentityErrorDescriber().PasswordMismatch()));
+        _userManager.AccessFailedAsync(user).Returns(IdentityResult.Success);
+
+        var (success, _) = await _sut.ChangePasswordAsync(user, Password, NewPassword);
+
+        success.ShouldBeFalse();
+        await _userManager.Received(1).AccessFailedAsync(user);
+        await _userManager.DidNotReceive().ResetAccessFailedCountAsync(user);
+    }
+
+    [Test]
+    public async Task ChangePassword_WhenOnlyThePasswordPolicyFails_DoesNotCountAFailedAccess()
+    {
+        var user = new AppUser { Id = "11", Email = Email };
+        _userManager.ChangePasswordAsync(user, Password, NewPassword)
+            .Returns(IdentityResult.Failed(new IdentityErrorDescriber().PasswordTooShort(PolicyLength)));
+
+        var (success, _) = await _sut.ChangePasswordAsync(user, Password, NewPassword);
+
+        success.ShouldBeFalse();
+        await _userManager.DidNotReceive().AccessFailedAsync(user);
+        await _userManager.DidNotReceive().ResetAccessFailedCountAsync(user);
+    }
+
+    [Test]
+    public async Task ChangePassword_WhenSuccessful_ResetsFailedAccessCount()
+    {
+        var user = new AppUser { Id = "12", Email = Email };
+        _userManager.ChangePasswordAsync(user, Password, NewPassword).Returns(IdentityResult.Success);
+        _userManager.ResetAccessFailedCountAsync(user).Returns(IdentityResult.Success);
+
+        var (success, _) = await _sut.ChangePasswordAsync(user, Password, NewPassword);
+
+        success.ShouldBeTrue();
+        await _userManager.Received(1).ResetAccessFailedCountAsync(user);
+        await _userManager.DidNotReceive().AccessFailedAsync(user);
+    }
+
+    [Test]
+    public async Task ResetPassword_ClearsTheLockoutAndTheFailedAccessCount_InTheSameUpdate()
+    {
+        var user = new AppUser
+        {
+            Id = "13",
+            Email = Email,
+            AccessFailedCount = LockedOutFailedCount,
+            LockoutEnd = DateTimeOffset.UtcNow.AddMinutes(LockoutMinutes)
+        };
+        int? failedCountAtUpdate = null;
+        DateTimeOffset? lockoutEndAtUpdate = DateTimeOffset.MaxValue;
+        _userManager.UpdateAsync(user).Returns(call =>
+        {
+            failedCountAtUpdate = user.AccessFailedCount;
+            lockoutEndAtUpdate = user.LockoutEnd;
+            return Task.FromResult(IdentityResult.Success);
+        });
+
+        var (success, _) = await _sut.ResetPasswordAsync(user, ResetToken, NewPassword);
+
+        success.ShouldBeTrue();
+        await _userManager.Received(1).UpdateAsync(user);
+        failedCountAtUpdate.ShouldBe(0);
+        lockoutEndAtUpdate.ShouldBeNull();
     }
 
     private static UserManager<AppUser> CreateUserManager()

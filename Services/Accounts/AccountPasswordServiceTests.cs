@@ -1,4 +1,6 @@
-﻿using Shouldly;
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+
+using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Accounts;
 using Klacks.Api.Domain.Models.Authentification;
@@ -6,6 +8,7 @@ using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Security;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Application.DTOs.Registrations;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -15,10 +18,18 @@ namespace Klacks.UnitTest.Services.Accounts;
 [TestFixture]
 public class AccountPasswordServiceTests
 {
+    private const string CallerId = "11111111-aaaa-bbbb-cccc-000000000001";
+    private const string CallerEmail = "caller@example.com";
+    private const string OtherUserId = "22222222-aaaa-bbbb-cccc-000000000002";
+    private const string OtherEmail = "colleague@example.com";
+
     private AccountPasswordService _passwordService;
     private IAuthenticationService _mockAuthService;
     private IUserManagementService _mockUserManagementService;
     private IAccountNotificationService _mockNotificationService;
+    private IAccountAuthenticationService _mockAccountAuthenticationService;
+    private IRefreshTokenService _mockRefreshTokenService;
+    private IPersonalAccessTokenRepository _mockPersonalAccessTokenRepository;
     private ILogger<AccountPasswordService> _mockLogger;
 
     [SetUp]
@@ -27,115 +38,148 @@ public class AccountPasswordServiceTests
         _mockAuthService = Substitute.For<IAuthenticationService>();
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockNotificationService = Substitute.For<IAccountNotificationService>();
+        _mockAccountAuthenticationService = Substitute.For<IAccountAuthenticationService>();
+        _mockRefreshTokenService = Substitute.For<IRefreshTokenService>();
+        _mockPersonalAccessTokenRepository = Substitute.For<IPersonalAccessTokenRepository>();
         _mockLogger = Substitute.For<ILogger<AccountPasswordService>>();
 
         var settings = Options.Create(new PasswordResetSettings { BaseUrl = "https://localhost:7002" });
 
-        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockNotificationService, settings, _mockLogger);
+        _passwordService = new AccountPasswordService(
+            _mockAuthService,
+            _mockUserManagementService,
+            _mockNotificationService,
+            _mockAccountAuthenticationService,
+            _mockRefreshTokenService,
+            _mockPersonalAccessTokenRepository,
+            settings,
+            _mockLogger);
     }
 
     [Test]
-    public async Task ChangePasswordAsync_WithValidCredentials_ShouldReturnSuccess()
+    public async Task ChangePasswordAsync_ResolvesTheAccountByCallerId_AndIgnoresTheBodyEmail()
     {
-        var changePasswordResource = new ChangePasswordResource
-        {
-            Email = "test@example.com",
-            OldPassword = "OldPassword123!",
-            Password = "NewPassword123!"
-        };
+        var caller = CreateUser(CallerId, CallerEmail);
+        var colleague = CreateUser(OtherUserId, OtherEmail);
+        var model = CreateChangeModel(OtherEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockUserManagementService.FindUserByEmailAsync(OtherEmail).Returns(colleague);
+        _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password).Returns((true, null));
+        _mockAccountAuthenticationService.GenerateAuthenticationAsync(caller).Returns(new AuthenticatedResult { Success = true });
 
-        var testUser = new AppUser
-        {
-            Id = Guid.NewGuid().ToString(),
-            Email = changePasswordResource.Email,
-            UserName = changePasswordResource.Email,
-            FirstName = "John",
-            LastName = "Doe"
-        };
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
 
-        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns(testUser);
-        _mockAuthService.ValidateCredentialsAsync(changePasswordResource.Email, changePasswordResource.OldPassword)
-            .Returns((true, testUser));
-        _mockAuthService.ChangePasswordAsync(testUser, changePasswordResource.OldPassword, changePasswordResource.Password)
-            .Returns((true, null));
-
-        var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
-
-        result.ShouldNotBeNull();
         result.Success.ShouldBeTrue();
+        result.Email.ShouldBe(CallerEmail);
+        await _mockAuthService.Received(1).ChangePasswordAsync(caller, model.OldPassword, model.Password);
+        await _mockAuthService.DidNotReceive().ChangePasswordAsync(colleague, Arg.Any<string>(), Arg.Any<string>());
+        await _mockUserManagementService.DidNotReceive().FindUserByEmailAsync(Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(OtherUserId);
     }
 
     [Test]
-    public async Task ChangePasswordAsync_WithInvalidEmail_ShouldReturnFailure()
+    public async Task ChangePasswordAsync_WithUnknownCallerId_FailsWithoutRevealingThatTheAccountIsMissing()
     {
-        var changePasswordResource = new ChangePasswordResource
-        {
-            Email = "nonexistent@example.com",
-            OldPassword = "OldPassword123!",
-            Password = "NewPassword123!"
-        };
+        var model = CreateChangeModel(OtherEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns((AppUser?)null);
+        string? errorKey = null;
+        string? errorMessage = null;
+        _mockAuthService
+            .When(x => x.SetModelError(Arg.Any<AuthenticatedResult>(), Arg.Any<string>(), Arg.Any<string>()))
+            .Do(call =>
+            {
+                errorKey = call.ArgAt<string>(1);
+                errorMessage = call.ArgAt<string>(2);
+            });
 
-        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns((AppUser?)null);
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
 
-        var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
-
-        result.ShouldNotBeNull();
         result.Success.ShouldBeFalse();
+        errorKey.ShouldNotBeNull();
+        errorKey!.ShouldNotContain("does not exist");
+        errorMessage.ShouldNotBeNull();
+        errorMessage!.ShouldNotContain("no user");
+        await _mockAuthService.DidNotReceive().ChangePasswordAsync(Arg.Any<AppUser>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
     [Test]
-    public async Task ChangePasswordAsync_WithInvalidOldPassword_ShouldReturnFailure()
+    public async Task ChangePasswordAsync_WhenAccountIsBlocked_IsRejectedBeforeTheOldPasswordIsChecked()
     {
-        var changePasswordResource = new ChangePasswordResource
-        {
-            Email = "test@example.com",
-            OldPassword = "WrongOldPassword",
-            Password = "NewPassword123!"
-        };
+        var caller = CreateUser(CallerId, CallerEmail);
+        var model = CreateChangeModel(CallerEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockUserManagementService.IsAccountBlockedAsync(caller).Returns(true);
 
-        var testUser = new AppUser
-        {
-            Id = Guid.NewGuid().ToString(),
-            Email = changePasswordResource.Email,
-            UserName = changePasswordResource.Email
-        };
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
 
-        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns(testUser);
-        _mockAuthService.ValidateCredentialsAsync(changePasswordResource.Email, changePasswordResource.OldPassword)
-            .Returns((false, (AppUser?)null));
-
-        var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
-
-        result.ShouldNotBeNull();
         result.Success.ShouldBeFalse();
+        await _mockAuthService.DidNotReceive().ChangePasswordAsync(Arg.Any<AppUser>(), Arg.Any<string>(), Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
     }
 
     [Test]
-    public async Task ChangePasswordAsync_WithChangePasswordFailure_ShouldReturnFailure()
+    public async Task ChangePasswordAsync_OnSuccess_RevokesAllRefreshTokensBeforeIssuingTheFreshPair()
     {
-        var changePasswordResource = new ChangePasswordResource
+        var caller = CreateUser(CallerId, CallerEmail);
+        var model = CreateChangeModel(CallerEmail);
+        var renewed = new AuthenticatedResult { Success = true, Token = "access", RefreshToken = "refresh" };
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password).Returns((true, null));
+        _mockAccountAuthenticationService.GenerateAuthenticationAsync(caller).Returns(renewed);
+
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
+
+        result.ShouldBeSameAs(renewed);
+        result.RefreshToken.ShouldBe("refresh");
+        Received.InOrder(() =>
         {
-            Email = "test@example.com",
-            OldPassword = "OldPassword123!",
-            Password = "weak"
-        };
+            _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password);
+            _mockRefreshTokenService.RemoveAllUserRefreshTokensAsync(CallerId);
+            _mockAccountAuthenticationService.GenerateAuthenticationAsync(caller);
+        });
+    }
 
-        var testUser = new AppUser
-        {
-            Id = Guid.NewGuid().ToString(),
-            Email = changePasswordResource.Email,
-            UserName = changePasswordResource.Email
-        };
+    [Test]
+    public async Task ChangePasswordAsync_OnSuccess_KeepsThePersonalAccessTokens()
+    {
+        var caller = CreateUser(CallerId, CallerEmail);
+        var model = CreateChangeModel(CallerEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password).Returns((true, null));
+        _mockAccountAuthenticationService.GenerateAuthenticationAsync(caller).Returns(new AuthenticatedResult { Success = true });
 
-        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns(testUser);
-        _mockAuthService.ValidateCredentialsAsync(changePasswordResource.Email, changePasswordResource.OldPassword)
-            .Returns((true, testUser));
-        _mockAuthService.ChangePasswordAsync(testUser, changePasswordResource.OldPassword, changePasswordResource.Password)
-            .Returns((false, null));
+        await _passwordService.ChangePasswordAsync(CallerId, model);
 
-        var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
+        await _mockRefreshTokenService.Received(1).RemoveAllUserRefreshTokensAsync(CallerId);
+        await _mockPersonalAccessTokenRepository.DidNotReceive().RevokeAllByUserAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
 
-        result.ShouldNotBeNull();
+    [Test]
+    public async Task ChangePasswordAsync_WithWrongOldPassword_RevokesNothingAndIssuesNoTokens()
+    {
+        var caller = CreateUser(CallerId, CallerEmail);
+        var model = CreateChangeModel(CallerEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password)
+            .Returns((false, IdentityResult.Failed(new IdentityErrorDescriber().PasswordMismatch())));
+
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
+
+        result.Success.ShouldBeFalse();
+        await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
+        await _mockAccountAuthenticationService.DidNotReceive().GenerateAuthenticationAsync(Arg.Any<AppUser>(), Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task ChangePasswordAsync_WithUnexpectedFailure_ShouldReturnFailure()
+    {
+        var caller = CreateUser(CallerId, CallerEmail);
+        var model = CreateChangeModel(CallerEmail);
+        _mockUserManagementService.FindUserByIdAsync(CallerId).Returns(caller);
+        _mockAuthService.ChangePasswordAsync(caller, model.OldPassword, model.Password).Returns((false, null));
+
+        var result = await _passwordService.ChangePasswordAsync(CallerId, model);
+
         result.Success.ShouldBeFalse();
     }
 
@@ -215,7 +259,7 @@ public class AccountPasswordServiceTests
             Id = Guid.NewGuid().ToString(),
             Email = "test@example.com",
             PasswordResetToken = PasswordResetTokenHasher.Hash(token),
-            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(-1) // Expired
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(-1)
         };
 
         _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
@@ -253,4 +297,65 @@ public class AccountPasswordServiceTests
         result.ShouldNotBeNull();
         result.Success.ShouldBeTrue();
     }
+
+    [Test]
+    public async Task ResetPasswordAsync_OnSuccess_RevokesAllRefreshTokensAndAllPersonalAccessTokens()
+    {
+        var token = "validtoken";
+        var resetPasswordResource = new ResetPasswordResource { Token = token, Password = "NewPassword123!" };
+        var testUser = new AppUser
+        {
+            Id = CallerId,
+            Email = CallerEmail,
+            PasswordResetToken = PasswordResetTokenHasher.Hash(token),
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
+        };
+        _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
+        _mockAuthService.ResetPasswordAsync(testUser, token, resetPasswordResource.Password).Returns((true, null));
+        _mockUserManagementService.UpdateUserAsync(testUser).Returns((true, null));
+
+        var result = await _passwordService.ResetPasswordAsync(resetPasswordResource);
+
+        result.Success.ShouldBeTrue();
+        await _mockRefreshTokenService.Received(1).RemoveAllUserRefreshTokensAsync(CallerId);
+        await _mockPersonalAccessTokenRepository.Received(1).RevokeAllByUserAsync(CallerId, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task ResetPasswordAsync_WhenTheResetFails_RevokesNothing()
+    {
+        var token = "validtoken";
+        var resetPasswordResource = new ResetPasswordResource { Token = token, Password = "NewPassword123!" };
+        var testUser = new AppUser
+        {
+            Id = CallerId,
+            Email = CallerEmail,
+            PasswordResetToken = PasswordResetTokenHasher.Hash(token),
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
+        };
+        _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
+        _mockAuthService.ResetPasswordAsync(testUser, token, resetPasswordResource.Password).Returns((false, null));
+
+        var result = await _passwordService.ResetPasswordAsync(resetPasswordResource);
+
+        result.Success.ShouldBeFalse();
+        await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
+        await _mockPersonalAccessTokenRepository.DidNotReceive().RevokeAllByUserAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    private static AppUser CreateUser(string id, string email) => new()
+    {
+        Id = id,
+        Email = email,
+        UserName = email,
+        FirstName = "John",
+        LastName = "Doe"
+    };
+
+    private static ChangePasswordResource CreateChangeModel(string bodyEmail) => new()
+    {
+        Email = bodyEmail,
+        OldPassword = "OldPassword123!",
+        Password = "NewPassword123!"
+    };
 }

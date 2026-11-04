@@ -38,6 +38,9 @@ public class ResetAndRefreshTokenPolicyTests
             Substitute.For<IAuthenticationService>(),
             userManagement,
             notification,
+            Substitute.For<IAccountAuthenticationService>(),
+            Substitute.For<IRefreshTokenService>(),
+            Substitute.For<IPersonalAccessTokenRepository>(),
             Options.Create(new PasswordResetSettings { BaseUrl = "https://localhost:7002" }),
             Substitute.For<ILogger<AccountPasswordService>>());
 

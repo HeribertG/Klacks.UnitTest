@@ -9,7 +9,7 @@
 /// relations, transcription dictionary, proactive governance, standing approvals, plan creation, escalation cancel).
 /// Kept open on purpose (UI needs them): plan approve and abort, onboarding state (its setup kind is refused by its own
 /// filter, see BlockedSetupOnboardingOnPlaygroundFilterTests), delegate, ui-action-result.
-/// The blocked accounts actions include ChangePassword and ChangePasswordUser, which carry ExemptFromAdminSetupGate only so
+/// The blocked accounts actions include ChangePasswordUser, which carries ExemptFromAdminSetupGate only so
 /// an installation can finish its first-admin setup; AdminSetupGateService is exempt on the Playground, so nothing there
 /// depends on them.
 /// </summary>
@@ -55,7 +55,6 @@ public class PlaygroundBlockedEndpointsTests
     [TestCase("UpdateController", "Rollback")]
     [TestCase("UpdateController", "Cancel")]
     [TestCase("UpdateController", "Delete")]
-    [TestCase("AccountsController", "ChangePassword")]
     [TestCase("AccountsController", "ChangePasswordUser")]
     [TestCase("AccountsController", "ChangeRoleUser")]
     [TestCase("AccountsController", "DeactivateAccountUser")]
