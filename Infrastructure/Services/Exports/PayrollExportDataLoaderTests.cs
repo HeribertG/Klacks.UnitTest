@@ -106,6 +106,24 @@ public class PayrollExportDataLoaderTests
     }
 
     [Test]
+    public async Task LoadAsync_TravelTimeOnAnInnerServiceOfAContainer_AddsNoHours()
+    {
+        var clientId = AddClient(111);
+        var containerId = AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        var childId = AddWork(clientId, WorkDay, _shiftBId, workTime: 3m);
+        AddWorkChange(childId, WorkChangeType.CorrectionStart, changeTime: 1m, description: "travel_time_before");
+        await _context.SaveChangesAsync();
+        var child = await _context.Work.SingleAsync(w => w.Id == childId);
+        child.ParentWorkId = containerId;
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldHaveSingleItem().Entries
+            .Single(e => e.Date == WorkDay && e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(8m);
+    }
+
+    [Test]
     public async Task LoadAsync_PersonWithoutAnyGroup_IsIncluded()
     {
         var clientId = AddClient(102);

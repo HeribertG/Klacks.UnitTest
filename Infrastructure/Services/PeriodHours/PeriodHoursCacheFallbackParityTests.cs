@@ -221,6 +221,46 @@ public class PeriodHoursCacheFallbackParityTests
         }
     }
 
+    [Test]
+    public async Task PeriodHours_TravelTimeOnAnInnerService_CountsForNeitherThePersonNorTheCustomer()
+    {
+        var customerId = Guid.NewGuid();
+        var container = NewContainerWork(ClientId, null, 8m, 0m);
+        var ownChild = NewContainerWork(ClientId, container.Id, 3m, 0m);
+        var customerChild = NewContainerWork(customerId, container.Id, 3m, 0m);
+        _context.Work.AddRange(container, ownChild, customerChild);
+        foreach (var child in new[] { ownChild, customerChild })
+        {
+            _context.WorkChange.Add(new WorkChange
+            {
+                Id = Guid.NewGuid(),
+                WorkId = child.Id,
+                Work = child,
+                Type = WorkChangeType.CorrectionStart,
+                ChangeTime = 1m,
+                Surcharges = 0.5m,
+                AnalyseToken = null,
+                StartTime = new TimeOnly(7, 0),
+                EndTime = new TimeOnly(8, 0),
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        var (periodHoursService, workRepository) = CreateServices();
+        var clientIds = new List<Guid> { ClientId, customerId };
+        var core = await periodHoursService.GetPeriodHoursAsync(clientIds, Start, End);
+        var fallback = await workRepository.GetPeriodHoursForClients(clientIds, Start, End);
+
+        foreach (var result in new[] { core, fallback })
+        {
+            result[ClientId].Hours.ShouldBe(container.WorkTime);
+            result[ClientId].Surcharges.ShouldBe(0m);
+            result[customerId].Hours.ShouldBe(customerChild.WorkTime);
+            result[customerId].Surcharges.ShouldBe(0m);
+        }
+    }
+
     private static Work NewContainerWork(Guid clientId, Guid? parentWorkId, decimal workTime, decimal surcharges) => new()
     {
         Id = Guid.NewGuid(),
