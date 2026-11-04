@@ -271,6 +271,21 @@ public class AbsenceCoverMaterializerTests
     }
 
     [Test]
+    public async Task AContainerThatMayNotMoveAsAWhole_IsHeld_AnotherContainerIsNot()
+    {
+        _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { IsContainer = true };
+        _facts[OtherClonedWork] = Facts(OtherClonedWork, Bob) with { IsContainer = true, HasLockedChild = true };
+        var map = new Dictionary<Guid, Guid> { [SourceWork] = ClonedWork, [OtherSourceWork] = OtherClonedWork };
+
+        var beforeTheStart = await _materializer.FindSourceWorksAsync(map, Token, BeforeTheStart, CancellationToken.None);
+        var afterTheStart = await _materializer.FindSourceWorksAsync(
+            map, Token, new CoverReport(ReplacementRequestSource.Messenger, AfterTheStart), CancellationToken.None);
+
+        beforeTheStart.HeldContainers.ShouldBe(new[] { OtherSourceWork });
+        afterTheStart.HeldContainers.ShouldBe(new[] { SourceWork, OtherSourceWork }, ignoreOrder: true);
+    }
+
+    [Test]
     public async Task AMovedClone_CountsAsMoved_AndStaysCoverable()
     {
         _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { IsMoved = true };
@@ -294,6 +309,40 @@ public class AbsenceCoverMaterializerTests
         moved.ShouldBe(new[] { ClonedWork });
         await _mediator.Received(1).Send(
             Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.WorkId == OtherClonedWork), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AContainerWhoseRecalculationFails_StaysUncovered_WithoutAReplacement()
+    {
+        _facts[ClonedWork] = Facts(ClonedWork, Elsa) with { IsContainer = true };
+        _handOver.TransferAsync(Arg.Is<Work>(w => w.Id == ClonedWork), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        var delta = Delta(Elsa, Bob);
+
+        var result = await MaterialiseAll(delta);
+
+        result.MovedWorkIds.ShouldBeEmpty();
+        result.HeldCovers.ShouldBe(new[] { delta });
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AContainerHopThatCannotMove_HoldsItsWholeOption_SoTheCoverHopIsNotWritten()
+    {
+        const int optionId = 7;
+        _facts[OtherClonedWork] = Facts(OtherClonedWork, Bob) with { IsContainer = true };
+        _handOver.TransferAsync(Arg.Is<Work>(w => w.Id == OtherClonedWork), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        var cover = Delta(Elsa, Bob) with { OptionId = optionId };
+        var relocation = Delta(Bob, Carla) with { SourceWorkIds = [OtherSourceWork], OptionId = optionId };
+
+        var result = await MaterialiseAll(cover, relocation);
+
+        result.HeldCovers.ShouldBe(new[] { relocation, cover }, ignoreOrder: true);
+        result.MovedWorkIds.ShouldBeEmpty();
+        await _handOver.DidNotReceive().TransferAsync(
+            Arg.Is<Work>(w => w.Id == ClonedWork), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -325,7 +374,8 @@ public class AbsenceCoverMaterializerTests
 
         moved.ShouldBeEmpty();
         await _mediator.Received(2).Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
-        await _factsReader.DidNotReceiveWithAnyArgs().LoadAsync(default!, default, default);
+        await _factsReader.Received(1).LoadAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Distinct().Single() == ClonedWork), Token, Arg.Any<CancellationToken>());
     }
 
     [Test]

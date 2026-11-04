@@ -25,6 +25,7 @@ public class UnconfirmWorkCommandHandlerTests
     private IWorkRepository _workRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IContainerWorkCascadeService _cascadeService = null!;
     private UnconfirmWorkCommandHandler _handler = null!;
 
     [SetUp]
@@ -33,6 +34,7 @@ public class UnconfirmWorkCommandHandlerTests
         _workRepository = Substitute.For<IWorkRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        _cascadeService = Substitute.For<IContainerWorkCascadeService>();
 
         _handler = new UnconfirmWorkCommandHandler(
             _workRepository,
@@ -41,6 +43,7 @@ public class UnconfirmWorkCommandHandlerTests
             new WorkLockLevelService(),
             new ScheduleMapper(),
             _httpContextAccessor,
+            _cascadeService,
             Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
     }
 
@@ -64,6 +67,7 @@ public class UnconfirmWorkCommandHandlerTests
         work.SealedAt.ShouldBeNull();
         work.SealedBy.ShouldBeNull();
         await _unitOfWork.Received(1).CompleteAsync();
+        await _cascadeService.Received(1).ReleaseLockLevelAsync(work.Id, WorkLockLevel.Approved);
     }
 
     [Test]

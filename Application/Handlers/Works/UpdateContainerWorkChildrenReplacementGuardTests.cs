@@ -402,7 +402,8 @@ public class UpdateContainerWorkChildrenReplacementGuardTests
             Substitute.For<IUnitOfWork>(), Substitute.For<IWorkNotificationFacade>(), lockRepository,
             Substitute.For<IUserService>(), _childrenManager, Substitute.For<IOvertimeCascadeService>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<IWorkWriteGuard>(),
-            new ReplacementWriteGuard(_clientRepository, _conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>()),
+            new ReplacementWriteGuard(_clientRepository, _conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IContainerWorkChangeGuard>()),
+            Substitute.For<IContainerWorkChangeGuard>(),
             Substitute.For<IContainerChildrenWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
     }

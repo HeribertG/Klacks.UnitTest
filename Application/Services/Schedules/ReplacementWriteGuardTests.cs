@@ -60,7 +60,7 @@ public class ReplacementWriteGuardTests
         _conflictChecker.CheckAsync(
                 Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
-        _guard = new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer);
+        _guard = new ReplacementWriteGuard(_clientRepository, _conflictChecker, _overrideAuthorizer, Substitute.For<IContainerWorkChangeGuard>());
     }
 
     [TestCase(WorkChangeType.ReplacementStart)]

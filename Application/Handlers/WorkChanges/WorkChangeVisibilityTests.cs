@@ -379,6 +379,7 @@ public class WorkChangeVisibilityTests
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(),
             Substitute.For<IParentWorkLockGuard>(), Substitute.For<IReplacementWriteGuard>(),
+            Substitute.For<IContainerWorkChangeGuard>(),
             Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler()
@@ -386,7 +387,7 @@ public class WorkChangeVisibilityTests
             _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _completionService, _resultService, Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             _recorder, Substitute.For<IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
-            Substitute.For<IReplacementWriteGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, ShiftId = Guid.NewGuid(), CurrentDate = Day };

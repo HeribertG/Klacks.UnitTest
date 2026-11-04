@@ -450,7 +450,7 @@ public class WorkVisibilityTests
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new UnconfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
-            Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new UnconfirmWorkCommand(hidden.Id), CancellationToken.None));
@@ -468,7 +468,7 @@ public class WorkVisibilityTests
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new UnconfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
-            Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new UnconfirmWorkCommand(hidden.Id), CancellationToken.None));
@@ -714,7 +714,7 @@ public class WorkVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
             lockRepository, Substitute.For<IUserService>(), childrenManager, _overtimeCascadeService,
-            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerChildrenWriteGuard>(),
+            ShiftVisibilityGuards.AllowAll(), _writeGuard, Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), Substitute.For<IContainerChildrenWriteGuard>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager);
     }
