@@ -364,7 +364,6 @@ public class ContainerChildrenWriteGuardTests
         await Prepare([storedWork], [], [], [Rebuilt(storedWork)], [], [Change(storedWork.Id, Guid.Empty, replacement)]);
 
         _checkedDays.ShouldNotContain((Day, replacement, (Guid?)null));
-        await _shiftRepository.DidNotReceiveWithAnyArgs().GetWithClientByIdsAsync(default!, default);
     }
 
     [Test]

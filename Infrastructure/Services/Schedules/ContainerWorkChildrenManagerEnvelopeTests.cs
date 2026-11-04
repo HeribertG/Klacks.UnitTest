@@ -4,7 +4,8 @@
 /// Container rule "no overhang" on the children save path, against a real in-memory DataBaseContext:
 /// whenever a save moves the container bounds (as both halves of a container split do), every sub-work
 /// and sub-break must lie inside the new bounds; a save that would cut through a task is rejected before
-/// anything is written. Saves that leave the bounds untouched are not checked.
+/// anything is written. Saves that leave the bounds untouched are checked against the stored bounds (Owner 2026-11-03:
+/// a child reaching outside the container cannot be saved).
 /// </summary>
 
 using Klacks.Api.Domain.Exceptions;
@@ -89,7 +90,7 @@ public class ContainerWorkChildrenManagerEnvelopeTests
     {
         var works = new List<Work> { SubWork(T(7, 15), T(8, 30)), SubWork(T(10, 30), T(11, 30)) };
 
-        var ex = await Should.ThrowAsync<InvalidRequestException>(() => Save(null, T(11), works));
+        var ex = await Should.ThrowAsync<ContainerFitRefusedException>(() => Save(null, T(11), works));
 
         ex.Message.ShouldContain("10:30");
         var stored = await _context.Work.SingleAsync(w => w.Id == _parentId);
@@ -106,17 +107,14 @@ public class ContainerWorkChildrenManagerEnvelopeTests
             new() { Id = Guid.NewGuid(), AbsenceId = Guid.NewGuid(), CurrentDate = Day, StartTime = T(11, 30), EndTime = T(12, 30) },
         };
 
-        await Should.ThrowAsync<InvalidRequestException>(() => Save(T(12), null, works, breaks));
+        await Should.ThrowAsync<ContainerFitRefusedException>(() => Save(T(12), null, works, breaks));
     }
 
     [Test]
-    public async Task SaveWithoutBoundChange_IsNotChecked()
+    public async Task SaveWithoutBoundChange_ChildOutsideTheStoredBounds_IsRefused()
     {
         var works = new List<Work> { SubWork(T(14), T(16)) };
 
-        var parent = await Save(null, null, works);
-
-        parent.ShouldNotBeNull();
-        parent.EndTime.ShouldBe(T(15));
+        await Should.ThrowAsync<ContainerFitRefusedException>(() => Save(null, null, works));
     }
 }

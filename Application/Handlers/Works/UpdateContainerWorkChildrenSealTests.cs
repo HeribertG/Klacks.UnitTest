@@ -211,9 +211,12 @@ public class UpdateContainerWorkChildrenSealTests
         lockRepository.IsHeldBy(
                 Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
+        var shiftRepository = Substitute.For<IShiftRepository>();
+        shiftRepository.GetWithClientByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Shift>());
         var childrenGuard = new ContainerChildrenWriteGuard(
             _childrenReadRepository, new ParentWorkLockGuard(new WorkLockLevelService()),
-            Substitute.For<IDayLockService>(), _httpContextAccessor, Substitute.For<IShiftRepository>());
+            Substitute.For<IDayLockService>(), _httpContextAccessor, shiftRepository);
         return new UpdateContainerWorkChildrenCommandHandler(
             _childrenReadRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IUnitOfWork>(), Substitute.For<IWorkNotificationFacade>(), lockRepository,
