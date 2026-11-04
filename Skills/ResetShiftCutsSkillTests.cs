@@ -142,15 +142,18 @@ public class ResetShiftCutsSkillTests
     }
 
     [Test]
-    public async Task WithoutWork_ReportsTheRealStart_NotTheRequestedDate()
+    public async Task WithoutWork_ReportsTheRequestedStart_AndThePieceKeptBeforeIt()
     {
-        var merged = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalShift, OriginalId = SealedOrderId, FromDate = OrderFrom, UntilDate = OrderUntil };
-        _shiftRepository.CutList(SealedOrderId).Returns(new List<Shift> { merged });
+        var start = new DateOnly(2026, 6, 1);
+        var kept = new Shift { Id = PartId, Status = ShiftStatus.SplitShift, OriginalId = SealedOrderId, FromDate = OrderFrom, UntilDate = start.AddDays(-1) };
+        var merged = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalShift, OriginalId = SealedOrderId, FromDate = start, UntilDate = OrderUntil };
+        _shiftRepository.CutList(SealedOrderId).Returns(new List<Shift> { kept, merged });
 
-        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
+        var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, start));
 
         result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldContain(OrderFrom.ToString());
+        result.Message.ShouldContain(start.ToString());
+        result.Message.ShouldContain("1 part(s) beginning before it stay");
     }
 
     [Test]

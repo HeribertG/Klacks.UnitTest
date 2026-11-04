@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for ShiftFamilyReset: the lock comes before the first read, every refusal comes before any write, a caller
-/// who does not see the whole family gets the answer of a missing order, and a removed row is deleted before its tree is
+/// who does not see the whole family gets the answer of a missing order, the asked day counts with or without work, rows
+/// before it stay and end the day before, rows from it on are removed, and a removed row is deleted before its tree is
 /// numbered in a second save.
 /// </summary>
 
@@ -46,8 +47,6 @@ public class ShiftFamilyResetTests
             .Returns(call => call.Arg<Func<Task<List<Shift>>>>()());
         _shiftRepository.GetSealedOrder(_order.Id, null).Returns(_order);
         _expenses.GetByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<ShiftExpenses>());
-        _familyRepository.FindShiftIdsWithRealWorkAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new HashSet<Guid>());
         _familyRepository.GetUsageAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => new OrderFamilyUsage(call.Arg<IReadOnlyList<Guid>>(), false, false, false));
 
@@ -56,22 +55,19 @@ public class ShiftFamilyResetTests
             Substitute.For<ILogger<ShiftFamilyReset>>());
     }
 
-    private Shift Piece(DateOnly from, DateOnly? until = null, Guid? rootId = null) => new()
+    private Shift Piece(DateOnly from, DateOnly? until = null, Guid? rootId = null, Guid? parentId = null) => new()
     {
         Id = Guid.NewGuid(),
         OriginalId = _order.Id,
         Status = ShiftStatus.SplitShift,
         FromDate = from,
         UntilDate = until,
-        RootId = rootId
+        RootId = rootId,
+        ParentId = parentId
     };
 
     private void Family(params Shift[] rows) =>
         _shiftRepository.CutList(_order.Id, null, true, null).Returns(rows.ToList());
-
-    private void WorkOn(params Guid[] ids) =>
-        _familyRepository.FindShiftIdsWithRealWorkAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(ids.ToHashSet());
 
     private void LastWork(DateOnly day) =>
         _familyRepository.FindLastWorkDateAfterAsync(_order.Id, DateOnly.MinValue, Arg.Any<CancellationToken>()).Returns(day);
@@ -187,7 +183,7 @@ public class ShiftFamilyResetTests
     public async Task Reset_WithAScenarioWorkFromTheStart_IsRefusedWithoutAWorkDate()
     {
         Family(Piece(OrderFrom));
-        _familyRepository.FindLastScenarioWorkDateAfterAsync(_order.Id, OrderFrom.AddDays(-1), Arg.Any<CancellationToken>())
+        _familyRepository.FindLastScenarioWorkDateAfterAsync(_order.Id, Day.AddDays(-1), Arg.Any<CancellationToken>())
             .Returns(Day);
 
         var thrown = await RefusedAsync(ShiftResetRefusedException.ScenarioWorksOnOrAfterReason);
@@ -201,7 +197,6 @@ public class ShiftFamilyResetTests
         var worked = Piece(OrderFrom);
         Family(worked);
         LastWork(Day.AddDays(-1));
-        WorkOn(worked.Id);
 
         await _reset.ResetAsync(_order, Day);
 
@@ -217,12 +212,10 @@ public class ShiftFamilyResetTests
     }
 
     [Test]
-    public async Task Reset_WithAKeptRowFromTheStart_IsRefused()
+    public async Task Reset_WithAParentFromTheStartAboveAChildBeforeIt_IsRefused()
     {
-        var worked = Piece(Day);
-        Family(Piece(OrderFrom), worked);
-        LastWork(Day.AddDays(-1));
-        WorkOn(worked.Id);
+        var parent = Piece(Day);
+        Family(parent, Piece(OrderFrom, parentId: parent.Id));
 
         await RefusedAsync(ShiftResetRefusedException.RowsInUseReason);
     }
@@ -232,7 +225,7 @@ public class ShiftFamilyResetTests
     [TestCase(false, false, true)]
     public async Task Reset_WithARowToRemoveInUse_IsRefusedWithoutADate(bool works, bool clones, bool containers)
     {
-        Family(Piece(OrderFrom));
+        Family(Piece(OrderFrom), Piece(Day));
         _familyRepository.GetUsageAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => new OrderFamilyUsage(call.Arg<IReadOnlyList<Guid>>(), works, clones, containers));
 
@@ -248,7 +241,6 @@ public class ShiftFamilyResetTests
         var later = Piece(Day.AddDays(10));
         Family(worked, later);
         LastWork(Day.AddDays(-1));
-        WorkOn(worked.Id);
 
         await _reset.ResetAsync(_order, Day);
 
@@ -257,7 +249,7 @@ public class ShiftFamilyResetTests
     }
 
     [Test]
-    public async Task Reset_WithoutWork_StartsOnTheOrderStart_AndCopiesTheExpensesOfTheOrder()
+    public async Task Reset_WithoutWork_StartsOnTheRequestedDay_AndCopiesTheExpensesOfTheOrder()
     {
         var stored = new List<ShiftExpenses> { new() { ShiftId = _order.Id, Amount = 3m } };
         _expenses.GetByShiftIdsAsync(Arg.Is<IEnumerable<Guid>>(ids => ids.Single() == _order.Id), Arg.Any<CancellationToken>()).Returns(stored);
@@ -265,7 +257,50 @@ public class ShiftFamilyResetTests
 
         await _reset.ResetAsync(_order, Day);
 
-        await _resetService.Received(1).CreateNewOriginalShiftFromSealedOrderAsync(_order, OrderFrom, stored);
+        await _resetService.Received(1).CreateNewOriginalShiftFromSealedOrderAsync(_order, Day, stored);
+    }
+
+    [Test]
+    public async Task Reset_WithADayBeforeTheOriginRow_StartsOnItsFirstDay_AndRemovesEveryRow()
+    {
+        var piece = Piece(OrderFrom, OrderFrom.AddDays(20));
+        var later = Piece(OrderFrom.AddDays(21));
+        Family(piece, later);
+
+        await _reset.ResetAsync(_order, OrderFrom.AddDays(-5));
+
+        await _resetService.Received(1).CreateNewOriginalShiftFromSealedOrderAsync(_order, OrderFrom, Arg.Any<IReadOnlyCollection<ShiftExpenses>>());
+        await _shiftRepository.Received(1).DeleteOrderFamilyAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(piece.Id) && ids.Contains(later.Id)), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Reset_WithoutWork_KeepsThePiecesBeforeTheDay_EndsTheOpenOneTheDayBefore_AndRemovesTheOneFromTheDay()
+    {
+        var closedEarly = Piece(OrderFrom, OrderFrom.AddDays(30));
+        var reachingOver = Piece(OrderFrom.AddDays(31), Day.AddDays(20));
+        var fromTheDay = Piece(Day.AddDays(21));
+        Family(closedEarly, reachingOver, fromTheDay);
+
+        await _reset.ResetAsync(_order, Day);
+
+        closedEarly.UntilDate.ShouldBe(OrderFrom.AddDays(30));
+        reachingOver.UntilDate.ShouldBe(Day.AddDays(-1));
+        await _resetService.Received(1).CreateNewOriginalShiftFromSealedOrderAsync(_order, Day, Arg.Any<IReadOnlyCollection<ShiftExpenses>>());
+        await _shiftRepository.Received(1).DeleteOrderFamilyAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == fromTheDay.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Reset_WithoutWork_BehindTheEndOfTheOriginRow_IsRefused_AndWritesNothing()
+    {
+        var endedOrder = new Shift { Id = _order.Id, Status = ShiftStatus.SealedOrder, FromDate = OrderFrom, UntilDate = Day.AddDays(-1) };
+        _shiftRepository.GetSealedOrder(_order.Id, null).Returns(endedOrder);
+        Family(Piece(OrderFrom));
+
+        await Should.ThrowAsync<BadRequestException>(() => _reset.ResetAsync(_order, Day));
+
+        await AssertNothingWrittenAsync();
     }
 
     [Test]
@@ -276,7 +311,6 @@ public class ShiftFamilyResetTests
         var later = Piece(Day.AddDays(10), rootId: rootId);
         Family(worked, later);
         LastWork(Day.AddDays(-1));
-        WorkOn(worked.Id);
 
         await _reset.ResetAsync(_order, Day);
 
@@ -297,7 +331,6 @@ public class ShiftFamilyResetTests
         var worked = Piece(OrderFrom);
         Family(worked);
         LastWork(Day.AddDays(-1));
-        WorkOn(worked.Id);
 
         await _reset.ResetAsync(_order, Day);
 
