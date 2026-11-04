@@ -140,6 +140,32 @@ public class ContainerWorkCascadeServiceTests
         reloadedBreak.PreSealSealedBy.ShouldBeNull();
     }
 
+    [TestCase(WorkLockLevel.Confirmed, WorkLockLevel.None)]
+    [TestCase(WorkLockLevel.Closed, WorkLockLevel.Closed)]
+    public async Task ReleaseLockLevelAsync_UnsealsTheChildrenTheContainerHeld(WorkLockLevel childLevel, WorkLockLevel expected)
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = childLevel, SealedAt = DateTime.UtcNow, SealedBy = "planner",
+        };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = childLevel, SealedAt = DateTime.UtcNow, SealedBy = "planner",
+        };
+        _context.Work.AddRange(parent, childWork);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        await _sut.ReleaseLockLevelAsync(parent.Id, WorkLockLevel.Confirmed);
+        await _context.SaveChangesAsync();
+
+        (await _context.Work.SingleAsync(w => w.Id == childWork.Id)).LockLevel.ShouldBe(expected);
+        (await _context.Break.SingleAsync(b => b.Id == childBreak.Id)).LockLevel.ShouldBe(expected);
+    }
+
     [TestCase(WorkLockLevel.Approved)]
     [TestCase(WorkLockLevel.Closed)]
     [TestCase(WorkLockLevel.Confirmed)]

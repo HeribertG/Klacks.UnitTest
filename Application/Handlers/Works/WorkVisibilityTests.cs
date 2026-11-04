@@ -450,7 +450,7 @@ public class WorkVisibilityTests
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new UnconfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
-            Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new UnconfirmWorkCommand(hidden.Id), CancellationToken.None));
@@ -468,7 +468,7 @@ public class WorkVisibilityTests
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new UnconfirmWorkCommandHandler(
             _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
-            Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new UnconfirmWorkCommand(hidden.Id), CancellationToken.None));
