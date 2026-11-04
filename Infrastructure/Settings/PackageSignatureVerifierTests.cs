@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for the region-package signature verifier: a valid RSA-SHA256 signature is accepted,
+/// Unit tests for the marketplace package signature verifier (region packages, language packs, plugins): a valid RSA-SHA256 signature is accepted,
 /// a tampered payload or malformed signature is always rejected (independent of the requirement
 /// flag), a missing signature is always rejected once a public key is configured (no downgrade by
 /// stripping the header), and without a configured public key downloads are only rejected when
-/// RequireSignedRegionPackages is set.
+/// signed packages are required - by RequireSignedPackages or by the earlier RequireSignedRegionPackages.
 /// </summary>
 
 using System.Security.Cryptography;
@@ -20,7 +20,7 @@ using Shouldly;
 namespace Klacks.UnitTest.Infrastructure.Settings;
 
 [TestFixture]
-public class RegionPackageSignatureVerifierTests
+public class PackageSignatureVerifierTests
 {
     private const int RsaKeySizeBits = 2048;
 
@@ -42,7 +42,7 @@ public class RegionPackageSignatureVerifierTests
         _rsa.Dispose();
     }
 
-    private RegionPackageSignatureVerifier CreateVerifier(bool requireSigned, string? publicKeyPem)
+    private PackageSignatureVerifier CreateVerifier(bool requireSigned, string? publicKeyPem)
     {
         var options = new UpdateTrustOptions
         {
@@ -50,9 +50,9 @@ public class RegionPackageSignatureVerifierTests
             RequireSignedRegionPackages = requireSigned
         };
 
-        return new RegionPackageSignatureVerifier(
+        return new PackageSignatureVerifier(
             Options.Create(options),
-            NullLogger<RegionPackageSignatureVerifier>.Instance);
+            NullLogger<PackageSignatureVerifier>.Instance);
     }
 
     private string Sign(byte[] payload)
@@ -180,5 +180,30 @@ public class RegionPackageSignatureVerifierTests
 
         result.Accepted.ShouldBeFalse();
         result.Error.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public void Verify_NoPublicKeyConfigured_GeneralRequireFlag_IsRejected()
+    {
+        var verifier = new PackageSignatureVerifier(
+            Options.Create(new UpdateTrustOptions { RequireSignedPackages = true }),
+            NullLogger<PackageSignatureVerifier>.Instance);
+
+        var result = verifier.Verify(Payload, Sign(Payload));
+
+        result.Accepted.ShouldBeFalse();
+        result.Error.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public void Verify_NoPublicKeyConfigured_LegacyRegionFlagOnly_StillRejects()
+    {
+        var verifier = new PackageSignatureVerifier(
+            Options.Create(new UpdateTrustOptions { RequireSignedPackages = false, RequireSignedRegionPackages = true }),
+            NullLogger<PackageSignatureVerifier>.Instance);
+
+        var result = verifier.Verify(Payload, null);
+
+        result.Accepted.ShouldBeFalse();
     }
 }

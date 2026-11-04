@@ -44,7 +44,7 @@ public class RegionPackageUpdateRunnerTests
 
     private ISettingsRepository _settingsRepository = null!;
     private IRegionPackageMarketplaceClient _marketplaceClient = null!;
-    private IRegionPackageSignatureVerifier _signatureVerifier = null!;
+    private IPackageSignatureVerifier _signatureVerifier = null!;
     private IRegionEntityImportService _entityImportService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private Dictionary<string, string> _settingValues = null!;
@@ -78,15 +78,15 @@ public class RegionPackageUpdateRunnerTests
             });
 
         _marketplaceClient = Substitute.For<IRegionPackageMarketplaceClient>();
-        _signatureVerifier = Substitute.For<IRegionPackageSignatureVerifier>();
+        _signatureVerifier = Substitute.For<IPackageSignatureVerifier>();
         _signatureVerifier
             .Verify(Arg.Any<byte[]>(), Arg.Any<string?>())
-            .Returns(RegionPackageSignatureVerification.Ok());
+            .Returns(PackageSignatureVerification.Ok());
         _entityImportService = Substitute.For<IRegionEntityImportService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
     }
 
-    private RegionPackageUpdateRunner CreateRunner(IRegionPackageSignatureVerifier? signatureVerifier = null)
+    private RegionPackageUpdateRunner CreateRunner(IPackageSignatureVerifier? signatureVerifier = null)
     {
         return new RegionPackageUpdateRunner(
             _settingsRepository,
@@ -378,7 +378,7 @@ public class RegionPackageUpdateRunnerTests
         _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
         _signatureVerifier
             .Verify(Arg.Any<byte[]>(), Arg.Any<string?>())
-            .Returns(RegionPackageSignatureVerification.Rejected("signature does not match"));
+            .Returns(PackageSignatureVerification.Rejected("signature does not match"));
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
@@ -390,7 +390,7 @@ public class RegionPackageUpdateRunnerTests
         status.LastError.ShouldContain("signature does not match");
     }
 
-    private static (RegionPackageSignatureVerifier Verifier, RSA Rsa) CreateRealVerifier(bool requireSigned, bool withPublicKey = true)
+    private static (PackageSignatureVerifier Verifier, RSA Rsa) CreateRealVerifier(bool requireSigned, bool withPublicKey = true)
     {
         var rsa = RSA.Create(2048);
         var options = new UpdateTrustOptions
@@ -399,9 +399,9 @@ public class RegionPackageUpdateRunnerTests
             RequireSignedRegionPackages = requireSigned
         };
 
-        var verifier = new RegionPackageSignatureVerifier(
+        var verifier = new PackageSignatureVerifier(
             Options.Create(options),
-            NullLogger<RegionPackageSignatureVerifier>.Instance);
+            NullLogger<PackageSignatureVerifier>.Instance);
         return (verifier, rsa);
     }
 

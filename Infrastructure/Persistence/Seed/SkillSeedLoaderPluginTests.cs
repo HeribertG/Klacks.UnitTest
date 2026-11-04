@@ -4,7 +4,8 @@
 /// Tests for the per-plugin entry points of SkillSeedLoader: seeding one plugin's skills at runtime
 /// and flipping their enabled flag. Before these existed, a feature plugin installed while the
 /// application was running only got its skills after the next start, and an uninstalled one kept
-/// them in the catalogue for good.
+/// them in the catalogue for good. Ownership: a plugin seed only writes skills its manifest lists in
+/// providedSkills and that are not core skills; a plugin can never rewrite or switch off a core skill.
 /// </summary>
 namespace Klacks.UnitTest.Infrastructure.Persistence.Seed;
 
@@ -24,6 +25,10 @@ public class SkillSeedLoaderPluginTests
 {
     private const string PluginName = "messaging";
     private const string PluginSkillName = "send_message";
+    private const string UnlistedPluginSkillName = "smuggled_skill";
+    private const string CoreSkillName = "create_shift";
+    private const string CorePermission = "CanEditShifts";
+    private const string CoreHandlerType = "CoreHandler";
 
     private IAgentSkillRepository _skillRepository = null!;
     private IAgentRepository _agentRepository = null!;
@@ -39,6 +44,8 @@ public class SkillSeedLoaderPluginTests
     {
         _contentRoot = Path.Combine(Path.GetTempPath(), "klacks-seed-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(_contentRoot, "Plugins", "Features", PluginName));
+        WriteCoreSeed();
+        WriteManifest(PluginSkillName);
 
         _agent = new Agent { Id = Guid.NewGuid(), Name = "klacks-default", IsDefault = true };
 
@@ -181,6 +188,163 @@ public class SkillSeedLoaderPluginTests
         stored.Description.ShouldBe("Sends a message through a configured messenger provider.");
         stored.SeedVersion.ShouldBe(1);
         stored.IsEnabled.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_DefinitionNamedLikeACoreSkill_DoesNotOverwriteTheCoreSkill()
+    {
+        WriteManifest(PluginSkillName, CoreSkillName);
+        WritePluginSeedDefinitions(
+            Definition(PluginSkillName, version: 1),
+            Definition(CoreSkillName, version: 99, handlerType: "PluginHandler", requiredPermission: "None"));
+        var core = new AgentSkill
+        {
+            Name = CoreSkillName, Version = 3, SeedVersion = 3, IsEnabled = true,
+            RequiredPermission = CorePermission, HandlerType = CoreHandlerType
+        };
+        _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([core]);
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        core.RequiredPermission.ShouldBe(CorePermission);
+        core.HandlerType.ShouldBe(CoreHandlerType);
+        core.SeedVersion.ShouldBe(3);
+        await _skillRepository.DidNotReceive().UpdateAsync(core, Arg.Any<CancellationToken>());
+        await _skillRepository.Received(1).AddAsync(
+            Arg.Is<AgentSkill>(s => s.Name == PluginSkillName), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_CoreNameWithDifferentCasing_IsStillTreatedAsCore()
+    {
+        WriteManifest(PluginSkillName, "Create_Shift");
+        WritePluginSeedDefinitions(Definition("Create_Shift", version: 99));
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        await _skillRepository.DidNotReceive().AddAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_DefinitionNotInProvidedSkills_IsSkipped()
+    {
+        WritePluginSeedDefinitions(
+            Definition(PluginSkillName, version: 1),
+            Definition(UnlistedPluginSkillName, version: 1));
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        await _skillRepository.Received(1).AddAsync(
+            Arg.Is<AgentSkill>(s => s.Name == PluginSkillName), Arg.Any<CancellationToken>());
+        await _skillRepository.DidNotReceive().AddAsync(
+            Arg.Is<AgentSkill>(s => s.Name == UnlistedPluginSkillName), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_ListedSkillWithHigherVersion_IsApplied()
+    {
+        WritePluginSeed(version: 2);
+        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = true };
+        _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([stored]);
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        stored.SeedVersion.ShouldBe(2);
+        await _skillRepository.Received(1).UpdateAsync(stored, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_ManifestMissing_AppliesNothing()
+    {
+        File.Delete(Path.Combine(_contentRoot, "Plugins", "Features", PluginName, "manifest.json"));
+        WritePluginSeed(version: 1);
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        await _skillRepository.DidNotReceive().AddAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_CoreSeedFileMissing_AppliesNothing()
+    {
+        File.Delete(Path.Combine(_contentRoot, "Application", "Skills", "Definitions", "skill-seeds.json"));
+        WritePluginSeed(version: 1);
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        await _skillRepository.DidNotReceive().AddAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetPluginSkillsEnabledAsync_DefinitionNamedLikeACoreSkill_DoesNotDisableTheCoreSkill()
+    {
+        WriteManifest(PluginSkillName, CoreSkillName);
+        WritePluginSeedDefinitions(Definition(PluginSkillName, version: 1), Definition(CoreSkillName, version: 1));
+        var core = new AgentSkill { Name = CoreSkillName, Version = 3, SeedVersion = 3, IsEnabled = true };
+        var own = new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = true };
+        _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([core, own]);
+
+        var changed = await _loader.SetPluginSkillsEnabledAsync(PluginName, isEnabled: false);
+
+        changed.ShouldBe(1);
+        core.IsEnabled.ShouldBeTrue();
+        own.IsEnabled.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetPluginSkillNamesAsync_ReturnsOnlyOwnedSkills()
+    {
+        WriteManifest(PluginSkillName, CoreSkillName);
+        WritePluginSeedDefinitions(
+            Definition(PluginSkillName, version: 1),
+            Definition(CoreSkillName, version: 1),
+            Definition(UnlistedPluginSkillName, version: 1));
+
+        var names = await _loader.GetPluginSkillNamesAsync(PluginName);
+
+        names.ShouldBe(new[] { PluginSkillName });
+    }
+
+    private void WriteCoreSeed()
+    {
+        var directory = Path.Combine(_contentRoot, "Application", "Skills", "Definitions");
+        Directory.CreateDirectory(directory);
+        var seed = new { version = 1, skills = new[] { new { name = CoreSkillName, version = 3 } } };
+        File.WriteAllText(Path.Combine(directory, "skill-seeds.json"), JsonSerializer.Serialize(seed));
+    }
+
+    private void WriteManifest(params string[] providedSkills)
+    {
+        var manifest = new { name = PluginName, version = "1.0.0", providedSkills };
+        File.WriteAllText(
+            Path.Combine(_contentRoot, "Plugins", "Features", PluginName, "manifest.json"),
+            JsonSerializer.Serialize(manifest));
+    }
+
+    private static Dictionary<string, object?> Definition(
+        string name, int version, string? handlerType = null, string? requiredPermission = null)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["description"] = $"Plugin definition of {name}.",
+            ["category"] = "Action",
+            ["executionType"] = "Skill",
+            ["requiredPermissions"] = requiredPermission == null ? Array.Empty<string>() : new[] { requiredPermission },
+            ["handlerType"] = handlerType,
+            ["isEnabled"] = true,
+            ["version"] = version
+        };
+    }
+
+    private void WritePluginSeedDefinitions(params Dictionary<string, object?>[] definitions)
+    {
+        File.WriteAllText(
+            Path.Combine(_contentRoot, "Plugins", "Features", PluginName, "skill-seeds.json"),
+            JsonSerializer.Serialize(definitions));
     }
 
     private void WritePluginSeed(int version)

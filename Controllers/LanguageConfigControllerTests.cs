@@ -141,6 +141,44 @@ public class LanguageConfigControllerTests
         authorize.Roles.ShouldBe(Roles.Admin);
     }
 
+    [TestCase(MarketplaceDownloadStatus.SignatureRejected)]
+    [TestCase(MarketplaceDownloadStatus.TooLarge)]
+    public async Task DownloadAndInstallPackage_RejectedDownload_ReturnsBadRequestAndInstallsNothing(MarketplaceDownloadStatus status)
+    {
+        _marketplaceClient.DownloadPackageAsync("xx", Arg.Any<CancellationToken>())
+            .Returns(MarketplacePackageDownload.Failed(status));
+        var controller = CreateController();
+
+        var result = await controller.DownloadAndInstallPackage("xx", CancellationToken.None);
+
+        result.ShouldBeOfType<BadRequestObjectResult>();
+        await _languagePluginService.DidNotReceive().RefreshPluginsAsync();
+        await _languagePluginService.DidNotReceive().InstallAsync(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task DownloadAndInstallPackage_MarketplaceUnavailable_Returns503()
+    {
+        _marketplaceClient.DownloadPackageAsync("xx", Arg.Any<CancellationToken>())
+            .Returns(MarketplacePackageDownload.Failed(MarketplaceDownloadStatus.Unavailable));
+        var controller = CreateController();
+
+        var result = await controller.DownloadAndInstallPackage("xx", CancellationToken.None);
+
+        result.ShouldBeOfType<ObjectResult>().StatusCode.ShouldBe(503);
+    }
+
+    [Test]
+    public async Task DownloadAndInstallPackage_InvalidCode_NeverDownloads()
+    {
+        var controller = CreateController();
+
+        var result = await controller.DownloadAndInstallPackage("../xx", CancellationToken.None);
+
+        result.ShouldBeOfType<BadRequestObjectResult>();
+        await _marketplaceClient.DidNotReceive().DownloadPackageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private void StubDefaultLanguageSetting(string value)
     {
         _settingsReader.GetSetting(SettingKeys.DefaultLanguage)
