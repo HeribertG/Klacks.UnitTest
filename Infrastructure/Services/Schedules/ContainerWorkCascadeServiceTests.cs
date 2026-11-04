@@ -141,6 +141,7 @@ public class ContainerWorkCascadeServiceTests
     }
 
     [TestCase(WorkLockLevel.Confirmed, WorkLockLevel.None)]
+    [TestCase(WorkLockLevel.Approved, WorkLockLevel.Approved)]
     [TestCase(WorkLockLevel.Closed, WorkLockLevel.Closed)]
     public async Task ReleaseLockLevelAsync_UnsealsTheChildrenTheContainerHeld(WorkLockLevel childLevel, WorkLockLevel expected)
     {
@@ -164,6 +165,48 @@ public class ContainerWorkCascadeServiceTests
 
         (await _context.Work.SingleAsync(w => w.Id == childWork.Id)).LockLevel.ShouldBe(expected);
         (await _context.Break.SingleAsync(b => b.Id == childBreak.Id)).LockLevel.ShouldBe(expected);
+    }
+
+    [Test]
+    public async Task ReleaseLockLevelAsync_DropsTheGroupASubBreakWasSealedFor()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            LockLevel = WorkLockLevel.Confirmed, SealedBy = "planner",
+            SealedByGroupId = Guid.NewGuid(), PreSealSealedByGroupId = Guid.NewGuid(),
+        };
+        _context.Work.Add(parent);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        await _sut.ReleaseLockLevelAsync(parent.Id, WorkLockLevel.Confirmed);
+        await _context.SaveChangesAsync();
+
+        var reloaded = await _context.Break.SingleAsync(b => b.Id == childBreak.Id);
+        reloaded.LockLevel.ShouldBe(WorkLockLevel.None);
+        reloaded.SealedByGroupId.ShouldBeNull();
+        reloaded.PreSealSealedByGroupId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task UpdateLockLevelAsync_DropsTheGroupASubBreakWasSealedFor_WhenItRaisesIt()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            PreSealSealedByGroupId = Guid.NewGuid(),
+        };
+        _context.Work.Add(parent);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        await _sut.UpdateLockLevelAsync(parent.Id, WorkLockLevel.Confirmed, "planner");
+        await _context.SaveChangesAsync();
+
+        (await _context.Break.SingleAsync(b => b.Id == childBreak.Id)).PreSealSealedByGroupId.ShouldBeNull();
     }
 
     [TestCase(WorkLockLevel.Approved)]
