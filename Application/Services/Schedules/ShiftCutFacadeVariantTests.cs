@@ -68,8 +68,6 @@ public class ShiftCutFacadeVariantTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<List<Shift>>>>())
             .Returns(call => call.Arg<Func<Task<List<Shift>>>>()());
         _familyRepository = Substitute.For<IOrderFamilyEndRepository>();
-        _familyRepository.FindShiftIdsWithRealWorkAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new HashSet<Guid>());
         _familyRepository.GetUsageAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => new OrderFamilyUsage(call.Arg<IReadOnlyList<Guid>>(), false, false, false));
         var requirements = Substitute.For<IShiftRequiredQualificationRepository>();
@@ -271,7 +269,7 @@ public class ShiftCutFacadeVariantTests
     }
 
     [Test]
-    public async Task Reset_InAKey_RemovesRowsOfTheKeyOnly_NumbersNoTree_AndTheNewPlannableCopyKeepsTheToken()
+    public async Task Reset_InAKey_FromItsFirstDay_RemovesRowsOfTheKeyOnly_NumbersNoTree_AndTheNewPlannableCopyKeepsTheToken()
     {
         var sealedOrder = Stored(_sealedOrderId, ShiftStatus.SealedOrder, null, _keyToken);
         sealedOrder.GroupItems = [new GroupItem { GroupId = _groupId, AnalyseToken = _keyToken }];
@@ -283,7 +281,7 @@ public class ShiftCutFacadeVariantTests
         _shiftRepository.CutList(_sealedOrderId, null, true, _keyToken).Returns([plannable, cut]);
         _shiftRepository.CutList(_sealedOrderId, null, false, _keyToken).Returns(freshList);
 
-        var result = await _facade.ResetCutsAsync(_sealedOrderId, ResetDate);
+        var result = await _facade.ResetCutsAsync(_sealedOrderId, FromDate);
 
         result.ShouldBeSameAs(freshList);
         await _shiftRepository.Received(1).DeleteOrderFamilyAsync(
