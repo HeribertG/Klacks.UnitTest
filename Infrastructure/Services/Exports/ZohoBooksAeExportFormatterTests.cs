@@ -89,21 +89,6 @@ public class ZohoBooksAeExportFormatterTests
     }
 
     [Test]
-    public void Format_ExpenseBecomesOwnBalancedJournal()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Taxable = true, Description = "Taxi" },
-        ]));
-
-        var expenseDebit = lines.Skip(1).Select(l => l.Split(',')).First(c => c[1] == "2" && !string.IsNullOrEmpty(c[6]));
-        var expenseCredit = lines.Skip(1).Select(l => l.Split(',')).First(c => c[1] == "2" && !string.IsNullOrEmpty(c[7]));
-
-        expenseDebit[6].ShouldBe("12.00");
-        expenseCredit[7].ShouldBe("12.00");
-    }
-
-    [Test]
     public void Format_NeutralizesFormulaInjection_InDescription()
     {
         var text = Encoding.UTF8.GetString(_formatter.Format(BuildData(o => o.WorkEntries[0].EmployeeName = "=cmd"), SampleOptions()));

@@ -164,17 +164,6 @@ public class MoveinIlExportFormatterTests
         line.Substring(82, 12).ShouldBe("        9.25");
     }
 
-    [Test]
-    public void Format_EmitsOneLinePerExpense_InAdditionToWorkLine()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Travel", Taxable = true },
-        ]));
-
-        lines.Length.ShouldBe(2);
-    }
-
     private string[] FormatLines(OrderExportData data, string currencyCode = "ILS")
     {
         var bytes = _formatter.Format(data, new ExportOptions { CurrencyCode = currencyCode });

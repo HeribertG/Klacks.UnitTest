@@ -53,7 +53,6 @@ public class XmlTextSanitizerTests
                             EmployeeName = Dirty,
                             Information = Dirty,
                             Changes = [new WorkChangeExportEntry { Description = Dirty, ReplaceEmployeeName = Dirty }],
-                            Expenses = [new ExpensesExportEntry { Description = Dirty }],
                             Breaks = [new BreakExportEntry { AbsenceName = Dirty }],
                         },
                     ],

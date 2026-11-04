@@ -324,4 +324,35 @@ public class ClientPlanningPeriodGuardTests
         await _clientRepository.DidNotReceiveWithAnyArgs().GetByIdsAsync(
             Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task EnsurePlannablePerson_AcceptsAnEmployeeAndAnExternalEmployee()
+    {
+        var external = NewClient(OtherClientId, membership: null);
+        external.Type = EntityTypeEnum.ExternEmp;
+
+        await _guard.EnsurePlannablePersonsAsync([ClientId], CancellationToken.None);
+        GivenClients(external);
+        await _guard.EnsurePlannablePersonsAsync([OtherClientId], CancellationToken.None);
+    }
+
+    [Test]
+    public async Task EnsurePlannablePerson_RefusesAMissingOrDeletedClient_LikeAMissingOne()
+    {
+        GivenClients();
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => _guard.EnsurePlannablePersonsAsync([ClientId], CancellationToken.None));
+    }
+
+    [Test]
+    public async Task EnsurePlannablePerson_RefusesACustomer()
+    {
+        var customer = NewClient(ClientId, membership: null);
+        customer.Type = EntityTypeEnum.Customer;
+        GivenClients(customer);
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _guard.EnsurePlannablePersonsAsync([ClientId], CancellationToken.None));
+    }
 }

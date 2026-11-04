@@ -1,7 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for CsvExportFormatter: column positions per entry type, carriage return quoting,
+/// Unit tests for CsvExportFormatter: column positions per entry type (no expense columns, because
+/// expenses belong to the employee and never go into a customer order export), carriage return quoting,
 /// and tolerance for unknown or non-Gregorian language codes.
 /// </summary>
 using System.Text;
@@ -15,10 +16,12 @@ namespace Klacks.UnitTest.Infrastructure.Services.Exports;
 [TestFixture]
 public class CsvExportFormatterColumnTests
 {
+    private const int ColumnCount = 25;
     private const int DescriptionIndex = 20;
-    private const int ExpenseTaxableIndex = 23;
-    private const int InformationIndex = 25;
-    private const int ToInvoiceIndex = 26;
+    private const int ReplaceEmployeeIndex = 21;
+    private const int AbsenceNameIndex = 22;
+    private const int InformationIndex = 23;
+    private const int ToInvoiceIndex = 24;
 
     private CsvExportFormatter _formatter = null!;
 
@@ -29,13 +32,16 @@ public class CsvExportFormatterColumnTests
     }
 
     [Test]
-    public void Header_KeepsExistingPositions_AndAppendsToInvoiceAtEnd()
+    public void Header_HasNoExpenseColumns_AndAppendsToInvoiceAtEnd()
     {
         var header = ReadLines(_formatter.Format(BuildData(), new ExportOptions()))[0].Split(';');
 
-        header.Length.ShouldBe(27);
+        header.Length.ShouldBe(ColumnCount);
+        header.ShouldNotContain("ExpenseAmount");
+        header.ShouldNotContain("ExpenseTaxable");
         header[DescriptionIndex].ShouldBe("Description");
-        header[ExpenseTaxableIndex].ShouldBe("ExpenseTaxable");
+        header[ReplaceEmployeeIndex].ShouldBe("ReplaceEmployee");
+        header[AbsenceNameIndex].ShouldBe("AbsenceName");
         header[InformationIndex].ShouldBe("Information");
         header[ToInvoiceIndex].ShouldBe("ToInvoice");
     }
@@ -47,7 +53,7 @@ public class CsvExportFormatterColumnTests
 
         foreach (var line in lines)
         {
-            line.Split(';').Length.ShouldBe(27, line);
+            line.Split(';').Length.ShouldBe(ColumnCount, line);
         }
     }
 
@@ -62,22 +68,22 @@ public class CsvExportFormatterColumnTests
     }
 
     [Test]
-    public void ChangeRow_WritesToInvoiceInOwnColumn_AndLeavesExpenseTaxableEmpty()
+    public void ChangeRow_WritesToInvoiceInOwnColumn_AndLeavesAbsenceNameEmpty()
     {
         var row = ReadLines(_formatter.Format(BuildData(), new ExportOptions())).First(l => l.Contains(";WorkChange;")).Split(';');
 
         row[DescriptionIndex].ShouldBe("change desc");
-        row[ExpenseTaxableIndex].ShouldBe(string.Empty);
+        row[AbsenceNameIndex].ShouldBe(string.Empty);
         row[ToInvoiceIndex].ShouldBe("1");
     }
 
     [Test]
-    public void ExpenseRow_WritesTaxableInExpenseTaxableColumn()
+    public void BreakRow_WritesAbsenceNameIntoAbsenceNameColumn()
     {
-        var row = ReadLines(_formatter.Format(BuildData(), new ExportOptions())).First(l => l.Contains(";Expenses;")).Split(';');
+        var row = ReadLines(_formatter.Format(BuildData(), new ExportOptions())).First(l => l.Contains(";Break;")).Split(';');
 
-        row[22].ShouldBe("12.50");
-        row[ExpenseTaxableIndex].ShouldBe("1");
+        row[AbsenceNameIndex].ShouldBe("Pause");
+        row[InformationIndex].ShouldBe(string.Empty);
         row[ToInvoiceIndex].ShouldBe(string.Empty);
     }
 
@@ -157,9 +163,16 @@ public class CsvExportFormatterColumnTests
                                     ToInvoice = true,
                                 },
                             ],
-                            Expenses =
+                            Breaks =
                             [
-                                new ExpensesExportEntry { Amount = 12.5m, Description = "taxi", Taxable = true },
+                                new BreakExportEntry
+                                {
+                                    AbsenceName = "Pause",
+                                    BreakDate = new DateOnly(2026, 1, 10),
+                                    StartTime = new TimeOnly(12, 0),
+                                    EndTime = new TimeOnly(12, 30),
+                                    BreakTime = 0.5m,
+                                },
                             ],
                         },
                     ],

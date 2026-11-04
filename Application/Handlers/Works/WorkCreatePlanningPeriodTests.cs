@@ -202,6 +202,55 @@ public class WorkCreatePlanningPeriodTests
     }
 
     [Test]
+    public async Task Post_ForACustomerOrAMissingClient_IsRefused_NothingWritten()
+    {
+        var token = new CancellationTokenSource().Token;
+        _planningPeriodGuard.EnsurePlannablePersonsAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == _clientId), token)
+            .Returns(_ => throw new InvalidRequestException("a customer"));
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPostHandler().Handle(
+            new PostCommand<WorkResource>(NewResource()), token));
+
+        await _workRepository.DidNotReceive().Add(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task BulkAdd_WithACustomerAmongTheClients_IsRefusedAsAWhole_NothingWritten()
+    {
+        var token = new CancellationTokenSource().Token;
+        var otherClient = Guid.NewGuid();
+        _planningPeriodGuard.EnsurePlannablePersonsAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(_clientId) && ids.Contains(otherClient)), token)
+            .Returns(_ => throw new InvalidRequestException("a customer"));
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewBulkHandler().Handle(
+            new BulkAddWorksCommand(NewBulkRequest(_clientId, otherClient, _clientId)), token));
+
+        await _workRepository.DidNotReceive().Add(Arg.Any<Work>());
+    }
+
+    [Test]
+    public async Task Put_GivingTheWorkToAnotherClient_ChecksThatTheNewClientIsAPerson()
+    {
+        var stored = GivenStoredWork();
+        var token = new CancellationTokenSource().Token;
+        var otherClient = Guid.NewGuid();
+        _planningPeriodGuard.EnsurePlannablePersonsAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == otherClient), token)
+            .Returns(_ => throw new InvalidRequestException("a customer"));
+        var moved = NewResource();
+        moved.Id = stored.Id;
+        moved.ClientId = otherClient;
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkResource>(moved), token));
+
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+    }
+
+    [Test]
     public async Task Put_KeepingTheStoredCell_IsNotChecked_SoAWorkInALockedCellStaysEditable()
     {
         var stored = GivenStoredWork();

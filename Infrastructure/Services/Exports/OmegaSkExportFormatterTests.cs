@@ -81,42 +81,6 @@ public class OmegaSkExportFormatterTests
     }
 
     [Test]
-    public void Format_WritesNonTaxableExpense_AsAccountingEntryItemType()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Train ticket", Taxable = false },
-        ]));
-
-        var expenseLine = lines.Where(l => l.StartsWith("R02\t")).ElementAt(1);
-        expenseLine.Split(Tab)[ItemTypeColumn].ShouldBe("0");
-    }
-
-    [Test]
-    public void Format_WritesTaxableAllowance_AsAccountingEntryItemType()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Allowance", Taxable = true },
-        ]));
-
-        var expenseLine = lines.Where(l => l.StartsWith("R02\t")).ElementAt(1);
-        expenseLine.Split(Tab)[ItemTypeColumn].ShouldBe("0");
-    }
-
-    [Test]
-    public void Format_NeverWritesPaymentOrReductionItemType_ForExpenses()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Train ticket", Taxable = false },
-            new ExpensesExportEntry { Amount = 5m, Description = "Allowance", Taxable = true },
-        ]));
-
-        lines.Where(l => l.StartsWith("R02\t")).ShouldAllBe(l => l.Split(Tab)[ItemTypeColumn] == "0");
-    }
-
-    [Test]
     public void Format_WritesIssueDate_AsDdMmYyyy_InDocumentHeader()
     {
         var lines = FormatLines(BuildData(_ => { }));

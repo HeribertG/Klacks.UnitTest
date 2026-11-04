@@ -27,7 +27,6 @@
           "surcharges": 1.25,
           "information": "Fr\u00FChdienst",
           "changes": [],
-          "expenses": [],
           "breaks": []
         },
         {
@@ -41,7 +40,6 @@
           "workTime": 8,
           "surcharges": 0,
           "changes": [],
-          "expenses": [],
           "breaks": []
         }
       ]

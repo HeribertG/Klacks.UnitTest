@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Unit tests for Sie4bSeExportFormatter verifying the SIE 4B tagged-text structure: the
-/// #FORMAT PC8/#SIETYP 4 header, one #VER block with exactly two #TRANS lines per work entry
-/// and per expense, balanced debit/credit amounts, and CP437 encoding.
+/// #FORMAT PC8/#SIETYP 4 header, only the wages and payables #KONTO declarations (expenses belong to the
+/// employee and never go into a customer order export), one #VER block with exactly two #TRANS lines per
+/// work entry, balanced debit/credit amounts, and CP437 encoding.
 /// </summary>
 using System.Text;
 using Shouldly;
@@ -167,44 +168,37 @@ public class Sie4bSeExportFormatterTests
     }
 
     [Test]
-    public void Format_EmitsAdditionalVerBlock_PerExpense_UsingTaxableOrNonTaxableAccount()
+    public void Format_DeclaresOnlyWagesAndPayablesAccounts()
     {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
+        var lines = FormatLines(BuildData(_ => { }));
+
+        Array.FindAll(lines, l => l.StartsWith("#KONTO", StringComparison.Ordinal)).ShouldBe(
         [
-            new ExpensesExportEntry { Amount = 12m, Description = "Travel", Taxable = true },
-            new ExpensesExportEntry { Amount = 5m, Description = "Toll", Taxable = false },
-        ]));
-
-        var verIndices = new List<int>();
-        for (var i = 0; i < lines.Length; i++)
-        {
-            if (lines[i].StartsWith("#VER", StringComparison.Ordinal))
-            {
-                verIndices.Add(i);
-            }
-        }
-
-        verIndices.Count.ShouldBe(3);
-
-        lines[verIndices[1] + 2].ShouldBe("#TRANS 7690 {} 12.00");
-        lines[verIndices[1] + 3].ShouldBe("#TRANS 2890 {} -12.00");
-
-        lines[verIndices[2] + 2].ShouldBe("#TRANS 7389 {} 5.00");
-        lines[verIndices[2] + 3].ShouldBe("#TRANS 2890 {} -5.00");
+            "#KONTO 7010 \"Salaries and wages (placeholder)\"",
+            "#KONTO 2890 \"Other short-term liabilities (placeholder)\"",
+        ]);
     }
 
     [Test]
     public void Format_UsesAscendingVerificationNumbers()
     {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Travel", Taxable = true },
-        ]));
+        var lines = FormatLines(BuildData(o => o.WorkEntries.Add(new WorkExportEntry
+        {
+            WorkId = Guid.NewGuid(),
+            EmployeeId = Guid.NewGuid(),
+            EmployeeName = "Worker Two",
+            EmployeeIdNumber = 2,
+            WorkDate = new DateOnly(2026, 1, 11),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(12, 0),
+            WorkTime = 4m,
+        })));
 
         var verLines = Array.FindAll(lines, l => l.StartsWith("#VER", StringComparison.Ordinal));
 
+        verLines.Length.ShouldBe(2);
         verLines[0].ShouldBe("#VER A 1 20260110 \"Worker One - Night Watch\"");
-        verLines[1].ShouldBe("#VER A 2 20260110 \"Travel - Worker One\"");
+        verLines[1].ShouldBe("#VER A 2 20260111 \"Worker Two - Night Watch\"");
     }
 
     private string FormatText(OrderExportData data, string companyName = "")

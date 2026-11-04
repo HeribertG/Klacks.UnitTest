@@ -36,6 +36,7 @@ public class SplitContainerWorkCommandHandlerTests
     private IPeriodHoursService _periodHours = null!;
     private IScheduleCompletionService _completion = null!;
     private IHttpContextAccessor _http = null!;
+    private IClientPlanningPeriodGuard _planningGuard = null!;
     private Work _container = null!;
     private Work _early = null!;
     private Work _late = null!;
@@ -87,6 +88,7 @@ public class SplitContainerWorkCommandHandlerTests
             .Returns((new PeriodHoursResource(), (PeriodHoursResource?)null));
         _http = Substitute.For<IHttpContextAccessor>();
         _http.HttpContext.Returns(new DefaultHttpContext());
+        _planningGuard = Substitute.For<IClientPlanningPeriodGuard>();
 
         _handler = CreateHandler(TestGroupWriteVisibility.AllClientsVisible());
     }
@@ -95,7 +97,7 @@ public class SplitContainerWorkCommandHandlerTests
         new(
             _workRepository, _shiftRepository, TestScheduleRowAccess.Over(clientVisibility),
             _lockRepository, Substitute.For<IUserService>(), _cascadeService, _childrenReadRepository, new ParentWorkLockGuard(new WorkLockLevelService()),
-            _http, Substitute.For<IDayLockService>(), Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<IWorkWriteGuard>(),
+            _http, Substitute.For<IDayLockService>(), _planningGuard, Substitute.For<IWorkWriteGuard>(),
             _splitWriter, _childrenManager, _unitOfWork, Substitute.For<IOvertimeCascadeService>(), _periodHours, _completion,
             Substitute.For<IWorkNotificationFacade>(), new ScheduleMapper(),
             Substitute.For<ILogger<SplitContainerWorkCommandHandler>>());
@@ -114,6 +116,84 @@ public class SplitContainerWorkCommandHandlerTests
             Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<(Work, Work)>>>());
         response.SecondPart.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task ASealedContainer_IsRefusedBeforeAnythingIsStaged()
+    {
+        _container.LockLevel = WorkLockLevel.Confirmed;
+
+        await Should.ThrowAsync<ContainerSplitSealedRefusedException>(() => Split(12));
+
+        await _splitWriter.DidNotReceive().StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AMissingOrDeletedTarget_IsRefusedBeforeAnythingIsStaged()
+    {
+        var token = new CancellationTokenSource().Token;
+        _planningGuard.EnsurePlannablePersonsAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == _target), token)
+            .Returns(_ => throw new KeyNotFoundException("missing target"));
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => _handler.Handle(new SplitContainerWorkCommand(_container.Id, T(12), _target), token));
+
+        await _splitWriter.DidNotReceive().StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ANightSplitIntoANewPeriod_RecalculatesEachPartInItsOwnPeriod_ForTheSamePerson()
+    {
+        var nextDay = Day.AddDays(1);
+        var firstPeriod = (Day.AddDays(-9), Day);
+        var secondPeriod = (nextDay, nextDay.AddDays(29));
+        _container.StartTime = T(20);
+        _container.EndTime = T(4);
+        _early.StartTime = T(20);
+        _early.EndTime = T(23);
+        _late.StartTime = T(1);
+        _late.EndTime = T(3);
+        _periodHours.GetPeriodBoundariesAsync(Day).Returns(firstPeriod);
+        _periodHours.GetPeriodBoundariesAsync(nextDay).Returns(secondPeriod);
+        _splitWriter.StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new Work { Id = Guid.NewGuid(), ClientId = _container.ClientId, CurrentDate = nextDay, StartTime = T(0), EndTime = T(4) });
+        _completion.SaveAndTrackAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
+            .Returns(new PeriodHoursResource());
+
+        await _handler.Handle(new SplitContainerWorkCommand(_container.Id, T(0), _container.ClientId), CancellationToken.None);
+
+        await _completion.Received(1).SaveAndTrackMoveAsync(
+            _container.ClientId, nextDay, secondPeriod.Item1, secondPeriod.Item2,
+            _container.ClientId, Day, Arg.Any<Guid?>());
+        await _completion.Received(1).SaveAndTrackAsync(
+            _container.ClientId, Day, firstPeriod.Item1, firstPeriod.Item2, Arg.Any<Guid?>());
+    }
+
+    [Test]
+    public async Task ANightSplitIntoANewPeriod_ForAnotherPerson_RecalculatesEachPersonInItsOwnPeriod()
+    {
+        var nextDay = Day.AddDays(1);
+        var firstPeriod = (Day.AddDays(-9), Day);
+        var secondPeriod = (nextDay, nextDay.AddDays(29));
+        _container.StartTime = T(20);
+        _container.EndTime = T(4);
+        _early.StartTime = T(20);
+        _early.EndTime = T(23);
+        _late.StartTime = T(1);
+        _late.EndTime = T(3);
+        _periodHours.GetPeriodBoundariesAsync(Day).Returns(firstPeriod);
+        _periodHours.GetPeriodBoundariesAsync(nextDay).Returns(secondPeriod);
+        _splitWriter.StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new Work { Id = Guid.NewGuid(), ClientId = _target, CurrentDate = nextDay, StartTime = T(0), EndTime = T(4) });
+        _completion.SaveAndTrackAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
+            .Returns(new PeriodHoursResource());
+
+        await _handler.Handle(new SplitContainerWorkCommand(_container.Id, T(0), _target), CancellationToken.None);
+
+        await _completion.Received(1).SaveAndTrackMoveAsync(
+            _target, nextDay, secondPeriod.Item1, secondPeriod.Item2, _container.ClientId, Day, Arg.Any<Guid?>());
+        await _completion.Received(1).SaveAndTrackAsync(
+            _container.ClientId, Day, firstPeriod.Item1, firstPeriod.Item2, Arg.Any<Guid?>());
     }
 
     [Test]

@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for BananaChExportFormatter verifying the Banana "Text file with column headers"
 /// transaction import: NameXml header row, tab delimiter, ISO dates, decimal point amounts, one row
-/// per work entry and per expense with placeholder KMU accounts, sanitising of tabs/newlines/quotes
-/// in free text, the empty export and UTF-8 encoding without BOM.
+/// per work entry with placeholder KMU accounts, sanitising of tabs/newlines/quotes in free text, the
+/// empty export and UTF-8 encoding without BOM. Expenses belong to the employee and never become a row
+/// (covered by OrderExportExpensesExclusionTests).
 /// </summary>
 using System.Text;
 using Shouldly;
@@ -47,20 +48,13 @@ public class BananaChExportFormatterTests
             [
                 new WorkChangeExportEntry { Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m, Surcharges = 0.25m },
             ];
-            o.WorkEntries[0].Expenses =
-            [
-                new ExpensesExportEntry { Amount = 12.5m, Taxable = true, Description = "Zulage" },
-                new ExpensesExportEntry { Amount = 7m, Taxable = false, Description = "Taxi" },
-            ];
         });
 
         var text = FormatText(data);
 
         text.ShouldBe(
             Header + "\n"
-            + "2026-01-10\t1\tERP-42\tWorker One - Night Watch\t5000\t2210\t9.75\n"
-            + "2026-01-10\t2\tERP-42\tZulage - Worker One\t5800\t2210\t12.50\n"
-            + "2026-01-10\t3\tERP-42\tTaxi - Worker One\t5820\t2210\t7.00\n");
+            + "2026-01-10\t1\tERP-42\tWorker One - Night Watch\t5000\t2210\t9.75\n");
     }
 
     [Test]
@@ -94,10 +88,11 @@ public class BananaChExportFormatterTests
     [Test]
     public void Format_UsesDecimalPoint_WithoutThousandsSeparator()
     {
-        var cells = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 1234.567m, Taxable = false, Description = "Hotel" },
-        ]))[2].Split('\t');
+        var cells = FormatLines(BuildData(o =>
+        {
+            o.WorkEntries[0].WorkTime = 1234.567m;
+            o.WorkEntries[0].Surcharges = 0m;
+        }))[1].Split('\t');
 
         cells[6].ShouldBe("1234.57");
     }
@@ -133,27 +128,6 @@ public class BananaChExportFormatterTests
         var cells = FormatLines(BuildData(o => o.WorkEntries[0].EmployeeName = "=cmd"))[1].Split('\t');
 
         cells[3].ShouldStartWith("'=cmd");
-    }
-
-    [Test]
-    public void Format_ExpenseRows_UseTaxableAndNonTaxablePlaceholderAccounts()
-    {
-        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 3m, Taxable = true, Description = "Zulage" },
-            new ExpensesExportEntry { Amount = 4m, Taxable = false, Description = "Spesen" },
-        ]));
-
-        lines.Length.ShouldBe(4);
-        var taxable = lines[2].Split('\t');
-        var nonTaxable = lines[3].Split('\t');
-
-        taxable[4].ShouldBe("5800");
-        taxable[5].ShouldBe("2210");
-        taxable[6].ShouldBe("3.00");
-        nonTaxable[4].ShouldBe("5820");
-        nonTaxable[5].ShouldBe("2210");
-        nonTaxable[6].ShouldBe("4.00");
     }
 
     [Test]

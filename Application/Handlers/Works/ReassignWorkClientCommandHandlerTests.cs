@@ -187,6 +187,21 @@ public class ReassignWorkClientCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_Refuses_AMissingOrDeletedTarget_AndWritesNothing()
+    {
+        var token = new CancellationTokenSource().Token;
+        _planningPeriodGuard.EnsurePlannablePersonsAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == _targetClientId), token)
+            .Returns(_ => throw new KeyNotFoundException("missing target"));
+
+        await Should.ThrowAsync<KeyNotFoundException>(
+            () => _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), token));
+
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        await _workRepository.DidNotReceive().Get(_workId);
+    }
+
+    [Test]
     public async Task Handle_ReassignsClientId_AndCascadesChildrenToNewClient()
     {
         var result = await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);

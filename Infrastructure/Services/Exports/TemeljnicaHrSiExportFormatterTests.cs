@@ -2,8 +2,8 @@
 
 /// <summary>
 /// Unit tests for TemeljnicaHrSiExportFormatter verifying the 22-column PANTHEON temeljnica
-/// header row, work-entry booking values (account, amount, date) and the additional booking
-/// line emitted per expense with taxable/non-taxable counter-account selection.
+/// header row and the work-entry booking values (account, amount, date). Expenses belong to the employee
+/// and never go into a customer order export (covered by OrderExportExpensesExclusionTests).
 /// </summary>
 using ClosedXML.Excel;
 using Klacks.Api.Application.Constants;
@@ -80,32 +80,6 @@ public class TemeljnicaHrSiExportFormatterTests
         sheet.Cell(2, 5).GetValue<decimal>().ShouldBe(10m);
         sheet.Cell(2, 6).IsEmpty().ShouldBeTrue();
         sheet.Cell(2, 16).GetString().ShouldBe("3600");
-    }
-
-    [Test]
-    public void Format_TaxableExpense_AddsBookingLine_WithTaxableCounterAccount()
-    {
-        var sheet = OpenSheet(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 45.5m, Description = "Travel", Taxable = true },
-        ]));
-
-        sheet.Cell(3, 1).GetValue<int>().ShouldBe(2);
-        sheet.Cell(3, 5).GetValue<decimal>().ShouldBe(45.5m);
-        sheet.Cell(3, 15).GetString().ShouldBe("Travel - Worker One");
-        sheet.Cell(3, 16).GetString().ShouldBe("7600");
-    }
-
-    [Test]
-    public void Format_NonTaxableExpense_AddsBookingLine_WithNonTaxableCounterAccount()
-    {
-        var sheet = OpenSheet(BuildData(o => o.WorkEntries[0].Expenses =
-        [
-            new ExpensesExportEntry { Amount = 12m, Description = "Refund", Taxable = false },
-        ]));
-
-        sheet.Cell(3, 5).GetValue<decimal>().ShouldBe(12m);
-        sheet.Cell(3, 16).GetString().ShouldBe("7800");
     }
 
     [Test]
