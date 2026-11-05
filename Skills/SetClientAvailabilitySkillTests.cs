@@ -23,6 +23,7 @@ public class SetClientAvailabilitySkillTests
 
     private IMediator _mediator = null!;
     private IClientAvailabilityRepository _availabilityRepository = null!;
+    private IClientRepository _clientRepository = null!;
     private SetClientAvailabilitySkill _skill = null!;
     private ClientAvailabilityBulkRequest? _captured;
 
@@ -31,6 +32,8 @@ public class SetClientAvailabilitySkillTests
     {
         _mediator = Substitute.For<IMediator>();
         _availabilityRepository = Substitute.For<IClientAvailabilityRepository>();
+        _clientRepository = Substitute.For<IClientRepository>();
+        _clientRepository.Exists(ClientId).Returns(true);
         _captured = null;
 
         _mediator.Send(Arg.Do<BulkUpdateClientAvailabilityCommand>(c => _captured = c.Request), Arg.Any<CancellationToken>())
@@ -47,8 +50,11 @@ public class SetClientAvailabilitySkillTests
                     IsAvailable = i.IsAvailable
                 }).ToList()));
 
-        _skill = new SetClientAvailabilitySkill(_mediator, _availabilityRepository);
+        _skill = NewSkill(Substitute.For<IClientSearchRepository>());
     }
+
+    private SetClientAvailabilitySkill NewSkill(IClientSearchRepository search) =>
+        new(_mediator, _availabilityRepository, _clientRepository, search, SkillClientVisibility.AllVisible());
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -171,5 +177,85 @@ public class SetClientAvailabilitySkillTests
         result.Message.ShouldContain("not-a-date");
         await _mediator.DidNotReceive().Send(
             Arg.Any<BulkUpdateClientAvailabilityCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NameInsteadOfClientId_ResolvesThePerson_AndWritesTheHourWindowForThatClient()
+    {
+        var miaId = Guid.NewGuid();
+        var search = SkillClientNameSearch.Finding(SkillClientNameSearch.Row(miaId, "Mia", "Baer", 5041));
+        SkillClientNameSearch.Loads(_clientRepository, miaId, "Mia", "Baer", 5041);
+        _availabilityRepository.GetByClientAndDateRange(miaId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(ci => Task.FromResult(
+                (_captured?.Items ?? []).Select(i => new ClientAvailability
+                {
+                    Id = Guid.NewGuid(), ClientId = i.ClientId, Date = i.Date, Hour = i.Hour, IsAvailable = i.IsAvailable
+                }).ToList()));
+
+        var result = await NewSkill(search).ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["firstName"] = "Mia",
+            ["lastName"] = "Baer",
+            ["dates"] = "2026-12-07,2026-12-08,2026-12-09",
+            ["startHour"] = 7,
+            ["endHour"] = 14,
+            ["isAvailable"] = true
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        _captured.ShouldNotBeNull();
+        _captured!.Items.Count.ShouldBe(24);
+        _captured.Items.ShouldAllBe(i => i.ClientId == miaId && i.IsAvailable && i.Hour >= 7 && i.Hour <= 14);
+    }
+
+    [Test]
+    public async Task ClientNumberPassedAsClientId_IsRefusedWithTheIdNumberHint_WithoutWrite()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = "5044",
+            ["startDate"] = "2026-12-21",
+            ["isAvailable"] = false
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("idNumber");
+        await _mediator.DidNotReceiveWithAnyArgs().Send(default(BulkUpdateClientAvailabilityCommand)!, default);
+    }
+
+    [Test]
+    public async Task UnknownClientId_IsRefused_WithoutWrite()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["startDate"] = "2026-12-21",
+            ["isAvailable"] = false
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        await _mediator.DidNotReceiveWithAnyArgs().Send(default(BulkUpdateClientAvailabilityCommand)!, default);
+    }
+
+    [Test]
+    public async Task AmbiguousName_AsksForTheClientNumber_WithoutWrite()
+    {
+        var search = SkillClientNameSearch.Finding(
+            SkillClientNameSearch.Row(Guid.NewGuid(), "Priya", "Nair", 7),
+            SkillClientNameSearch.Row(Guid.NewGuid(), "Priya", "Nair", 9));
+
+        var result = await NewSkill(search).ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["firstName"] = "Priya",
+            ["lastName"] = "Nair",
+            ["startDate"] = "2026-12-21",
+            ["isAvailable"] = false
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("#7");
+        result.Message.ShouldContain("#9");
+        await _mediator.DidNotReceiveWithAnyArgs().Send(default(BulkUpdateClientAvailabilityCommand)!, default);
     }
 }

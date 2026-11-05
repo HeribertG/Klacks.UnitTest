@@ -340,4 +340,68 @@ public class OpenScheduleSkillTests
 
         parameters["date"].Type.ShouldBe("Date");
     }
+
+    [Test]
+    public async Task ShowAvailability_AddsTheDisplayParameterThePageReads()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupName"] = "Bern",
+            ["showAvailability"] = true
+        });
+
+        RouteOf(result).ShouldBe($"/workplace/schedule?groupId={GroupId}&showAvailability=true");
+        result.Message.ShouldContain("availabilities");
+    }
+
+    [Test]
+    public async Task ShowCommands_AddsTheDisplayParameterThePageReads()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["date"] = "2026-12-01",
+            ["showCommands"] = true
+        });
+
+        RouteOf(result).ShouldBe("/workplace/schedule?date=2026-12-01&showCommands=true");
+        result.Message.ShouldContain("planning commands");
+    }
+
+    [Test]
+    public async Task BothDisplays_TravelWithAPersonScopeToo()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["showAvailability"] = "true",
+            ["showCommands"] = true
+        });
+
+        RouteOf(result).ShouldBe($"/workplace/schedule?clientId={ClientId}&showAvailability=true&showCommands=true");
+    }
+
+    [Test]
+    public async Task DisplaysSetToFalse_LeaveTheRouteUnchanged()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["showAvailability"] = false,
+            ["showCommands"] = false
+        });
+
+        RouteOf(result).ShouldBe("/workplace/schedule");
+    }
+
+    [Test]
+    public void Seed_DeclaresTheDisplayParameters_AsOptionalBooleans()
+    {
+        var parameters = SkillSeedCatalogue.Get("open_schedule").Parameters!.ToDictionary(p => p.Name);
+
+        foreach (var name in new[] { "showAvailability", "showCommands" })
+        {
+            parameters.ShouldContainKey(name);
+            parameters[name].Required.ShouldBeFalse();
+            parameters[name].Type.ShouldBe("Boolean");
+        }
+    }
 }

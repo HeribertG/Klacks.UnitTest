@@ -25,6 +25,7 @@ public class AddScheduleCommandsRangeSkillTests
 
     private IScheduleCommandRepository _scheduleCommandRepository = null!;
     private IClientRepository _clientRepository = null!;
+    private IClientSearchRepository _clientSearch = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private IDayLockService _dayLockService = null!;
@@ -37,6 +38,7 @@ public class AddScheduleCommandsRangeSkillTests
     {
         _scheduleCommandRepository = Substitute.For<IScheduleCommandRepository>();
         _clientRepository = Substitute.For<IClientRepository>();
+        _clientSearch = Substitute.For<IClientSearchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         _dayLockService = Substitute.For<IDayLockService>();
@@ -48,8 +50,11 @@ public class AddScheduleCommandsRangeSkillTests
             .Returns([]);
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider, _dayLockService);
+        _skill = NewSkill(_clientSearch, SkillClientVisibility.AllVisible());
     }
+
+    private AddScheduleCommandsRangeSkill NewSkill(IClientSearchRepository search, IClientVisibilityGuard guard) =>
+        new(_scheduleCommandRepository, _clientRepository, search, guard, _unitOfWork, _keywordProvider, _dayLockService);
 
     private static SkillExecutionContext Context() => new()
     {
@@ -211,7 +216,7 @@ public class AddScheduleCommandsRangeSkillTests
     public async Task HiddenClient_AnswersLikeUnknownId_WithoutWrite()
     {
         var guard = SkillClientVisibility.Hiding(ClientId);
-        var skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider, _dayLockService);
+        var skill = NewSkill(_clientSearch, guard);
         var unknownId = Guid.NewGuid();
         var unknownParameters = Parameters();
         unknownParameters["clientId"] = unknownId.ToString();
@@ -229,4 +234,74 @@ public class AddScheduleCommandsRangeSkillTests
         await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
+
+    [Test]
+    public async Task NameInsteadOfClientId_ResolvesThePerson_AndWritesForThatClient()
+    {
+        var nameId = Guid.NewGuid();
+        var search = SkillClientNameSearch.Finding(SkillClientNameSearch.Row(nameId, "Jonas", "Vogel", 5044));
+        SkillClientNameSearch.Loads(_clientRepository, nameId, "Jonas", "Vogel", 5044);
+        var skill = NewSkill(search, SkillClientVisibility.AllVisible());
+        var added = new List<ScheduleCommand>();
+        await _scheduleCommandRepository.Add(Arg.Do<ScheduleCommand>(c => added.Add(c)));
+        var parameters = Parameters();
+        parameters.Remove("clientId");
+        parameters["firstName"] = "Jonas";
+        parameters["lastName"] = "Vogel";
+
+        var result = await skill.ExecuteAsync(Context(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        added.ShouldNotBeEmpty();
+        added.ShouldAllBe(c => c.ClientId == nameId);
+    }
+
+    [Test]
+    public async Task ClientNumberPassedAsClientId_IsRefusedWithTheIdNumberHint_WithoutWrite()
+    {
+        var parameters = Parameters();
+        parameters["clientId"] = "5044";
+
+        var result = await _skill.ExecuteAsync(Context(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("5044");
+        result.Message.ShouldContain("idNumber");
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task AmbiguousName_AsksForTheClientNumber_WithoutWrite()
+    {
+        var search = SkillClientNameSearch.Finding(
+            SkillClientNameSearch.Row(Guid.NewGuid(), "Jonas", "Vogel", 7),
+            SkillClientNameSearch.Row(Guid.NewGuid(), "Jonas", "Vogel", 9));
+        var skill = NewSkill(search, SkillClientVisibility.AllVisible());
+        var parameters = Parameters();
+        parameters.Remove("clientId");
+        parameters["firstName"] = "Jonas";
+        parameters["lastName"] = "Vogel";
+
+        var result = await skill.ExecuteAsync(Context(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("#7");
+        result.Message.ShouldContain("#9");
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task NeitherIdNorName_AsksForTheName_WithoutWrite()
+    {
+        var parameters = Parameters();
+        parameters.Remove("clientId");
+
+        var result = await _skill.ExecuteAsync(Context(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("first and last name");
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
 }
