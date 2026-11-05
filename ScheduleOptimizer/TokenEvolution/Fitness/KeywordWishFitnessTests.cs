@@ -131,30 +131,9 @@ public class KeywordWishFitnessTests
             1e-12);
     }
 
-    [Test]
-    public void HardMode_EvolutionGivesTheNightsToTheEmployeeWhoAskedForThem()
-    {
-        var shifts = new List<CoreShift>();
-        var commands = new List<CoreScheduleCommand>();
-        for (var day = 0; day < 3; day++)
-        {
-            var date = Monday.AddDays(day);
-            shifts.Add(Slot(Guid.NewGuid(), date, Night));
-            commands.Add(new CoreScheduleCommand("A", date, ScheduleCommandKeyword.OnlyNight));
-        }
-
-        var context = Context([Agent("B"), Agent("A")], shifts, commands, KeywordMode.Hard);
-        var config = new TokenEvolutionConfig { PopulationSize = 16, MaxGenerations = 25, RandomSeed = 7, EvaluationParallelism = 1 };
-
-        var best = TokenEvolutionLoop.Create().Run(context, config);
-
-        best.Tokens.Count(t => t.AgentId == "A").ShouldBe(3);
-        WizardKeywordWishes.For(context).Evaluate(best.Tokens, collectItems: false).Tally.Unfulfilled.ShouldBe(0);
-    }
-
     [TestCase(true)]
     [TestCase(false)]
-    public void HardMode_EvolutionWithTheWishOnTheTopRosterAgent_PullsTheNightsToHer(bool withWish)
+    public void HardMode_EvolutionPullsTheNightsToTheLowerRankedEmployeeWhoAskedForThem(bool withWish)
     {
         var shifts = new List<CoreShift>();
         var commands = new List<CoreScheduleCommand>();
@@ -165,7 +144,7 @@ public class KeywordWishFitnessTests
             commands.Add(new CoreScheduleCommand("A", date, ScheduleCommandKeyword.OnlyNight));
         }
 
-        var context = Context([Agent("A"), Agent("B")], shifts, withWish ? commands : [], KeywordMode.Hard);
+        var context = Context([Agent("B"), Agent("A")], shifts, withWish ? commands : [], KeywordMode.Hard);
         var config = new TokenEvolutionConfig { PopulationSize = 16, MaxGenerations = 25, RandomSeed = 7, EvaluationParallelism = 1 };
 
         var best = TokenEvolutionLoop.Create().Run(context, config);
@@ -178,7 +157,7 @@ public class KeywordWishFitnessTests
         }
         else
         {
-            nightsOfA.ShouldBeLessThan(3, "control: without the wish the surplus nights go down the roster");
+            nightsOfA.ShouldBeLessThan(3, "control: without the wish the target-hours stage serves the top roster agent B first");
         }
     }
 
