@@ -45,7 +45,8 @@ public class AccountsControllerPasswordChangeTests
             _mediator,
             Substitute.For<ILogger<AccountsController>>(),
             Substitute.For<IUsernameGeneratorService>(),
-            Substitute.For<IRefreshTokenCookieService>());
+            Substitute.For<IRefreshTokenCookieService>(),
+            Substitute.For<IAccessTokenCookieService>());
     }
 
     [Test]

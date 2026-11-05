@@ -7,6 +7,8 @@
 /// (a refresh that fails must not delete a cookie another request just renewed). Logout revokes only this device's token
 /// (cookie, else body), also for an authenticated caller, and always answers 200. The endpoints carry the CSRF guard,
 /// Logout is anonymous, RefreshToken and Logout accept an empty body, and the routes lie below the cookie path.
+/// Next to it the same flows set the klacks_access cookie with the issued access token (Path=/, HttpOnly, Max-Age = access
+/// token lifetime), and logout and a successful password reset delete it as well; a rejected refresh leaves it alone.
 /// </summary>
 
 using System.Reflection;
@@ -18,6 +20,7 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.OAuth2;
 using Klacks.Api.Application.DTOs.Registrations;
 using Klacks.Api.Application.Queries.Accounts;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Infrastructure.Mediator;
@@ -41,6 +44,7 @@ public class AccountsControllerRefreshCookieTests
     private const string CallerId = "11111111-aaaa-bbbb-cccc-000000000002";
     private const string IssuedToken = "issued-refresh-token";
     private const string CookieToken = "cookie-refresh-token";
+    private const string IssuedAccessToken = "issued-access-token";
     private const int MinimumRefreshPermitsPerWindow = 120;
     private const string RouteSeparator = "/";
     private const string ControllerToken = "[controller]";
@@ -58,7 +62,8 @@ public class AccountsControllerRefreshCookieTests
             _mediator,
             Substitute.For<ILogger<AccountsController>>(),
             Substitute.For<IUsernameGeneratorService>(),
-            CreateCookieService());
+            CreateCookieService(),
+            CreateAccessCookieService());
         _httpContext = CreateHttpContext();
         _sut.ControllerContext = new ControllerContext { HttpContext = _httpContext };
     }
@@ -72,6 +77,7 @@ public class AccountsControllerRefreshCookieTests
 
         response.ShouldBeOfType<OkObjectResult>();
         SetCookie(_httpContext).Value.ToString().ShouldBe(IssuedToken);
+        AccessCookie(_httpContext).Value.ToString().ShouldBe(IssuedAccessToken);
     }
 
     [Test]
@@ -88,6 +94,7 @@ public class AccountsControllerRefreshCookieTests
         sent!.CookieRefreshToken.ShouldBe(CookieToken);
         sent.RefreshRequest.RefreshToken.ShouldBeEmpty();
         SetCookie(_httpContext).Value.ToString().ShouldBe(IssuedToken);
+        AccessCookie(_httpContext).Value.ToString().ShouldBe(IssuedAccessToken);
     }
 
     [Test]
@@ -128,15 +135,26 @@ public class AccountsControllerRefreshCookieTests
     }
 
     [Test]
+    public async Task LoginUser_WithoutAnIssuedAccessToken_SetsNoAccessCookie()
+    {
+        _mediator.Send(Arg.Any<LoginUserQuery>(), Arg.Any<CancellationToken>()).Returns(new TokenResource { Success = false });
+
+        await _sut.LoginUser(new LogInResource { Email = "user@example.com", Password = "wrong" });
+
+        _httpContext.Response.Headers.SetCookie.Count.ShouldBe(0);
+    }
+
+    [Test]
     public async Task ChangePasswordUser_SetsTheCookieOfTheRenewedSession()
     {
         SetCaller(new Claim(ClaimTypes.NameIdentifier, CallerId));
         _mediator.Send(Arg.Any<ChangePasswordUserCommand>(), Arg.Any<CancellationToken>())
-            .Returns(new AuthenticatedResult { Success = true, RefreshToken = IssuedToken });
+            .Returns(new AuthenticatedResult { Success = true, RefreshToken = IssuedToken, Token = IssuedAccessToken });
 
         await _sut.ChangePasswordUser(new ChangePasswordResource { OldPassword = "Old123!", Password = "New123!" });
 
         SetCookie(_httpContext).Value.ToString().ShouldBe(IssuedToken);
+        AccessCookie(_httpContext).Value.ToString().ShouldBe(IssuedAccessToken);
     }
 
     [Test]
@@ -177,6 +195,7 @@ public class AccountsControllerRefreshCookieTests
         response.ShouldBeOfType<OkResult>();
         sent.ShouldBe(new LogoutCommand(null));
         AssertCookieDeleted(_httpContext);
+        AssertAccessCookieDeleted(_httpContext);
     }
 
     [Test]
@@ -188,6 +207,7 @@ public class AccountsControllerRefreshCookieTests
         await _sut.ResetPassword(new ResetPasswordResource { Token = "reset", Password = "New123!" });
 
         AssertCookieDeleted(_httpContext);
+        AssertAccessCookieDeleted(_httpContext);
     }
 
     [Test]
@@ -196,7 +216,8 @@ public class AccountsControllerRefreshCookieTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<OAuth2CallbackCommand>(), Arg.Any<CancellationToken>()).Returns(Issued());
         var httpContext = CreateHttpContext();
-        var controller = new OAuth2Controller(mediator, Substitute.For<ILogger<OAuth2Controller>>(), CreateCookieService())
+        var controller = new OAuth2Controller(
+            mediator, Substitute.For<ILogger<OAuth2Controller>>(), CreateCookieService(), CreateAccessCookieService())
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -205,6 +226,7 @@ public class AccountsControllerRefreshCookieTests
 
         response.ShouldBeOfType<OkObjectResult>();
         SetCookie(httpContext).Value.ToString().ShouldBe(IssuedToken);
+        AccessCookie(httpContext).Value.ToString().ShouldBe(IssuedAccessToken);
     }
 
     [TestCase(nameof(AccountsController.RefreshToken))]
@@ -273,6 +295,9 @@ public class AccountsControllerRefreshCookieTests
     private static RefreshTokenCookieService CreateCookieService() =>
         new(Options.Create(new RefreshTokenCookieOptions()));
 
+    private static AccessTokenCookieService CreateAccessCookieService() =>
+        new(Options.Create(new RefreshTokenCookieOptions()));
+
     private static DefaultHttpContext CreateHttpContext()
     {
         var context = new DefaultHttpContext();
@@ -281,17 +306,44 @@ public class AccountsControllerRefreshCookieTests
         return context;
     }
 
-    private static TokenResource Issued() => new() { Success = true, Token = "access", RefreshToken = IssuedToken };
+    private static TokenResource Issued() => new() { Success = true, Token = IssuedAccessToken, RefreshToken = IssuedToken };
 
     private static SetCookieHeaderValue SetCookie(HttpContext context)
     {
-        var headers = context.Response.Headers.SetCookie;
-        headers.Count.ShouldBe(1);
-        var cookie = SetCookieHeaderValue.Parse(headers[0]);
-        cookie.Name.ToString().ShouldBe(RefreshTokenCookieConstants.CookieName);
-        cookie.HttpOnly.ShouldBeTrue();
+        var cookie = SingleCookieNamed(context, RefreshTokenCookieConstants.CookieName);
         cookie.Path.ToString().ShouldBe(RefreshTokenCookieConstants.CookiePath);
         return cookie;
+    }
+
+    private static SetCookieHeaderValue AccessCookie(HttpContext context)
+    {
+        var cookie = SingleCookieNamed(context, AccessTokenCookieConstants.CookieName);
+        cookie.Path.ToString().ShouldBe(AccessTokenCookieConstants.CookiePath);
+        cookie.Secure.ShouldBeTrue();
+        cookie.SameSite.ShouldBe(Microsoft.Net.Http.Headers.SameSiteMode.Strict);
+        if (!string.IsNullOrEmpty(cookie.Value.ToString()))
+        {
+            cookie.MaxAge.ShouldBe(AccessTokenLifetime.Duration);
+        }
+
+        return cookie;
+    }
+
+    private static SetCookieHeaderValue SingleCookieNamed(HttpContext context, string name)
+    {
+        var cookies = SetCookieHeaderValue.ParseList(context.Response.Headers.SetCookie.ToList())
+            .Where(c => c.Name.Equals(name))
+            .ToList();
+        cookies.Count.ShouldBe(1, name);
+        cookies[0].HttpOnly.ShouldBeTrue();
+        return cookies[0];
+    }
+
+    private static void AssertAccessCookieDeleted(HttpContext context)
+    {
+        var cookie = AccessCookie(context);
+        cookie.Value.ToString().ShouldBeEmpty();
+        cookie.Expires!.Value.ShouldBeLessThan(DateTimeOffset.UtcNow);
     }
 
     private static void AssertCookieDeleted(HttpContext context)

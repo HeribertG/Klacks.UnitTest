@@ -10,6 +10,7 @@
 
 using Klacks.Api.Application.Configuration;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Presentation.Authentication;
 using Klacks.Api.Presentation.Filters;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
@@ -41,7 +42,7 @@ public class RefreshCookieRequestGuardFilterTests
             CorsOriginsOptions.PolicyName,
             policy => policy.WithOrigins(WhitelistedOrigin).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
         _provider = services.BuildServiceProvider();
-        _filter = new RefreshCookieRequestGuardFilter(_provider.GetRequiredService<ICorsPolicyProvider>());
+        _filter = new RefreshCookieRequestGuardFilter(new CookieCsrfRules(_provider.GetRequiredService<ICorsPolicyProvider>()));
     }
 
     [TearDown]
@@ -146,7 +147,7 @@ public class RefreshCookieRequestGuardFilterTests
     private async Task<(ActionExecutingContext Context, bool NextCalled)> RunAsync(
         bool withHeader,
         string? origin,
-        string headerValue = RefreshTokenCookieConstants.RequestedWithValue,
+        string headerValue = CsrfProofConstants.RequestedWithValue,
         string? contentType = null)
     {
         var httpContext = new DefaultHttpContext { RequestServices = _provider };
@@ -155,7 +156,7 @@ public class RefreshCookieRequestGuardFilterTests
         httpContext.Request.Method = HttpMethods.Post;
         if (withHeader)
         {
-            httpContext.Request.Headers[RefreshTokenCookieConstants.RequestedWithHeader] = headerValue;
+            httpContext.Request.Headers[CsrfProofConstants.RequestedWithHeader] = headerValue;
         }
 
         if (origin != null)
