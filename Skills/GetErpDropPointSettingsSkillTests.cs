@@ -4,7 +4,8 @@
 /// Unit tests for get_erp_drop_point_settings: reports the drop point's configuration plus the
 /// resolved absolute on-disk folder path (files stay there, no sub-folders any more) and the
 /// import's poll schedule, resolving the path through the same IObjectStorageService.ResolvePath
-/// the folder-health check and the runner use. The installation kind (native or docker) and the hand-over
+/// the folder-health check and the runner use (via ErpDropFolderResolver). On Docker the host folder from the
+/// compose-reported host path hint is reported and named in the advice. The installation kind (native or docker) and the hand-over
 /// channels that fit it are reported alongside, so the assistant advises how an ERP delivers without guessing.
 /// </summary>
 
@@ -17,9 +18,11 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Interfaces.Update;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Update;
+using Klacks.Api.Domain.Services.Imports;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using Klacks.Api.Application.Services.Imports;
 
@@ -45,7 +48,13 @@ public class GetErpDropPointSettingsSkillTests
         return provider;
     }
 
-    private static GetErpDropPointSettingsSkill CreateSkill(InstallationKind kind)
+    private static ErpDropFolderResolver Resolver(IObjectStorageService objectStorageService, InstallationKind kind, string hostPathHint = "")
+    {
+        var options = Options.Create(new ErpObjectStorageOptions { HostPathHint = hostPathHint });
+        return new ErpDropFolderResolver(objectStorageService, Installation(kind), options);
+    }
+
+    private static GetErpDropPointSettingsSkill CreateSkill(InstallationKind kind, string hostPathHint = "")
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())
@@ -55,9 +64,9 @@ public class GetErpDropPointSettingsSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         return new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(kind));
+            Resolver(objectStorageService, kind, hostPathHint));
     }
 
     private static object GetProperty(object? data, string name)
@@ -86,9 +95,9 @@ public class GetErpDropPointSettingsSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(InstallationKind.Docker));
+            Resolver(objectStorageService, InstallationKind.Docker));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -108,9 +117,9 @@ public class GetErpDropPointSettingsSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(InstallationKind.Docker));
+            Resolver(objectStorageService, InstallationKind.Docker));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -135,9 +144,9 @@ public class GetErpDropPointSettingsSkillTests
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.CronTimeZoneId, Value = "Europe/Zurich" });
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(InstallationKind.Docker));
+            Resolver(objectStorageService, InstallationKind.Docker));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -157,9 +166,9 @@ public class GetErpDropPointSettingsSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
         var skill = new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(InstallationKind.Docker));
+            Resolver(objectStorageService, InstallationKind.Docker));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -178,9 +187,9 @@ public class GetErpDropPointSettingsSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
-            mediator, objectStorageService, settingsReader, companyClock,
+            mediator, settingsReader, companyClock,
             NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier(),
-            Installation(InstallationKind.Docker));
+            Resolver(objectStorageService, InstallationKind.Docker));
 
         await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -203,7 +212,7 @@ public class GetErpDropPointSettingsSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_DockerInstallation_ReportsPushFirstAndTheHostMount()
+    public async Task ExecuteAsync_DockerWithoutHostPathHint_ReportsPushFirstAndTheHostMount()
     {
         var result = await CreateSkill(InstallationKind.Docker).ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -211,7 +220,32 @@ public class GetErpDropPointSettingsSkillTests
         GetProperty(result.Data, "Installation").ShouldBe("docker");
         ((IReadOnlyList<string>)GetProperty(result.Data, "RecommendedChannels"))[0].ShouldBe(ErpHandoverChannels.HttpsPush);
         GetProperty(result.Data, "FolderDropRequirement").ShouldBe(ErpFolderDropRequirements.MountHostFolder);
-        result.Message.ShouldContain("mounts a host folder onto /app/ErpImport");
+        result.Data!.GetType().GetProperty("HostFolderPath")!.GetValue(result.Data).ShouldBeNull();
+        result.Message.ShouldContain("does not report which server (host) folder is mounted onto /app/ErpImport");
         result.Message.ShouldNotContain("Copy ERP order XML files to");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_DockerWithHostPathHint_ReportsTheHostFolderAndFolderDropFirst()
+    {
+        var result = await CreateSkill(InstallationKind.Docker, "/opt/klacks/erp-import")
+            .ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue();
+        GetProperty(result.Data, "HostFolderPath").ShouldBe("/opt/klacks/erp-import/erp/orders");
+        GetProperty(result.Data, "AbsolutePath").ShouldBe(ResolvedPath);
+        ((IReadOnlyList<string>)GetProperty(result.Data, "RecommendedChannels"))[0].ShouldBe(ErpHandoverChannels.FolderDrop);
+        GetProperty(result.Data, "FolderDropRequirement").ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnHostFolder);
+        result.Message.ShouldContain("server (host) folder '/opt/klacks/erp-import/erp/orders'");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_NativeInstallation_IgnoresAHostPathHint()
+    {
+        var result = await CreateSkill(InstallationKind.Native, "/opt/klacks/erp-import")
+            .ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Data!.GetType().GetProperty("HostFolderPath")!.GetValue(result.Data).ShouldBeNull();
+        result.Message.ShouldNotContain("/opt/klacks");
     }
 }

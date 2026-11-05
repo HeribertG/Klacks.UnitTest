@@ -14,12 +14,14 @@ public class FileSystemObjectStorageServiceTests
     private static readonly DateTime StableTimestampUtc = DateTime.UtcNow.AddMinutes(-5);
 
     private string _rootPath = null!;
+    private string _outsidePath = null!;
     private FileSystemObjectStorageService _service = null!;
 
     [SetUp]
     public void SetUp()
     {
         _rootPath = Path.Combine(Path.GetTempPath(), "klacks-fs-storage-tests", Guid.NewGuid().ToString("N"));
+        _outsidePath = _rootPath + "-outside";
         var options = Options.Create(new ErpObjectStorageOptions { RootPath = _rootPath });
         _service = new FileSystemObjectStorageService(options);
     }
@@ -31,6 +33,11 @@ public class FileSystemObjectStorageServiceTests
         {
             Directory.Delete(_rootPath, recursive: true);
         }
+
+        if (Directory.Exists(_outsidePath))
+        {
+            Directory.Delete(_outsidePath, recursive: true);
+        }
     }
 
     private static Stream ToStream(string content) => new MemoryStream(Encoding.UTF8.GetBytes(content));
@@ -39,6 +46,29 @@ public class FileSystemObjectStorageServiceTests
     {
         var path = Path.Combine(_rootPath, key.Replace('/', Path.DirectorySeparatorChar));
         File.SetLastWriteTimeUtc(path, StableTimestampUtc);
+    }
+
+    private void CreateStableSymlinksToFilesOutsideTheRoot()
+    {
+        var outsideFile = Path.Combine(_outsidePath, "linked-order.xml");
+        var outsideDirectory = Path.Combine(_outsidePath, "linked-folder");
+        var outsideNestedFile = Path.Combine(outsideDirectory, "nested-order.xml");
+        Directory.CreateDirectory(outsideDirectory);
+        File.WriteAllText(outsideFile, "outside");
+        File.WriteAllText(outsideNestedFile, "outside");
+        File.SetLastWriteTimeUtc(outsideFile, StableTimestampUtc);
+        File.SetLastWriteTimeUtc(outsideNestedFile, StableTimestampUtc);
+        var dropFolder = Path.Combine(_rootPath, "erp", "exports");
+
+        try
+        {
+            File.CreateSymbolicLink(Path.Combine(dropFolder, "linked-order.xml"), outsideFile);
+            Directory.CreateSymbolicLink(Path.Combine(dropFolder, "linked-folder"), outsideDirectory);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Assert.Ignore($"Creating symbolic links is not permitted on this machine: {ex.Message}");
+        }
     }
 
     [Test]
@@ -217,6 +247,30 @@ public class FileSystemObjectStorageServiceTests
         var objects = await _service.ListWithMetadataAsync(DropPointPrefix);
 
         objects.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ListAsync_SkipsSymlinkedFileAndSymlinkedDirectory()
+    {
+        await _service.UploadAsync(DropPointPrefix + "order-1.xml", ToStream("a"));
+        MarkStable(DropPointPrefix + "order-1.xml");
+        CreateStableSymlinksToFilesOutsideTheRoot();
+
+        var keys = await _service.ListAsync(DropPointPrefix);
+
+        keys.ShouldBe(new[] { DropPointPrefix + "order-1.xml" });
+    }
+
+    [Test]
+    public async Task ListWithMetadataAsync_SkipsSymlinkedFileAndSymlinkedDirectory()
+    {
+        await _service.UploadAsync(DropPointPrefix + "order-1.xml", ToStream("a"));
+        MarkStable(DropPointPrefix + "order-1.xml");
+        CreateStableSymlinksToFilesOutsideTheRoot();
+
+        var objects = await _service.ListWithMetadataAsync(DropPointPrefix);
+
+        objects.Select(o => o.Key).ShouldBe(new[] { DropPointPrefix + "order-1.xml" });
     }
 
     [Test]

@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for ErpHandoverAdvisor: a native Windows installation prefers the folder and names the grant on
-/// exactly that folder, a Docker installation prefers push and upload and names the host-folder mount, the Docker
+/// exactly that folder, a Docker installation without a reported host folder prefers push and upload and points at the
+/// standard bind mount, a Docker installation with a host folder prefers the folder and names the host path, the Docker
 /// advice covers both an own and a vendor-hosted server, and the path the caller passes appears in the advice.
 /// </summary>
 
@@ -20,6 +21,7 @@ public class ErpHandoverAdvisorTests
     private const string MacRuntime = "osx-arm64";
     private const string WindowsFolder = @"C:\ProgramData\Klacks\ErpImport\erp\orders\";
     private const string DockerFolder = "/app/ErpImport/erp/orders/";
+    private const string HostFolder = "/opt/klacks/erp-import/erp/orders";
     private const int ChannelCount = 3;
 
     [Test]
@@ -49,7 +51,7 @@ public class ErpHandoverAdvisorTests
     }
 
     [Test]
-    public void Advise_Docker_PrefersPushAndUploadAndNamesTheHostFolderMount()
+    public void Advise_DockerWithoutHostFolder_PrefersPushAndUploadAndNamesTheHostFolderMount()
     {
         var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(InstallationKind.Docker, LinuxRuntime), DockerFolder);
 
@@ -58,8 +60,44 @@ public class ErpHandoverAdvisorTests
             [ErpHandoverChannels.HttpsPush, ErpHandoverChannels.AdminUpload, ErpHandoverChannels.FolderDrop]);
         guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.MountHostFolder);
         guidance.Advice.ShouldContain(DockerFolder);
-        guidance.Advice.ShouldContain("mounts a host folder onto /app/ErpImport");
+        guidance.Advice.ShouldContain("does not report which server (host) folder is mounted onto /app/ErpImport");
+        guidance.Advice.ShouldContain("./erp-import");
+        guidance.Advice.ShouldNotContain("named volume");
         guidance.Advice.ShouldContain("hosts this installation");
+    }
+
+    [Test]
+    public void Advise_DockerWithHostFolder_PrefersTheFolderAndNamesBothPaths()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(
+            new InstallationIdentity(InstallationKind.Docker, LinuxRuntime), DockerFolder, HostFolder);
+
+        guidance.Installation.ShouldBe("docker");
+        guidance.RecommendedChannels.ShouldBe(
+            [ErpHandoverChannels.FolderDrop, ErpHandoverChannels.HttpsPush, ErpHandoverChannels.AdminUpload]);
+        guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnHostFolder);
+        guidance.Advice.ShouldContain($"server (host) folder '{HostFolder}'");
+        guidance.Advice.ShouldContain(DockerFolder);
+        guidance.Advice.ShouldContain("hosts this installation");
+    }
+
+    [Test]
+    public void Advise_DockerWithBlankHostFolder_FallsBackToTheContainerAdvice()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(
+            new InstallationIdentity(InstallationKind.Docker, LinuxRuntime), DockerFolder, "  ");
+
+        guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.MountHostFolder);
+    }
+
+    [Test]
+    public void Advise_NativeWithHostFolder_IgnoresIt()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(
+            new InstallationIdentity(InstallationKind.Native, WindowsRuntime), WindowsFolder, HostFolder);
+
+        guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnFolder);
+        guidance.Advice.ShouldNotContain(HostFolder);
     }
 
     [Test]
@@ -67,10 +105,13 @@ public class ErpHandoverAdvisorTests
     {
         foreach (var kind in new[] { InstallationKind.Native, InstallationKind.Docker })
         {
-            var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(kind, WindowsRuntime), WindowsFolder);
+            foreach (var hostFolder in new[] { null, HostFolder })
+            {
+                var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(kind, WindowsRuntime), WindowsFolder, hostFolder);
 
-            guidance.RecommendedChannels.Count.ShouldBe(ChannelCount);
-            guidance.RecommendedChannels.Distinct().Count().ShouldBe(ChannelCount);
+                guidance.RecommendedChannels.Count.ShouldBe(ChannelCount);
+                guidance.RecommendedChannels.Distinct().Count().ShouldBe(ChannelCount);
+            }
         }
     }
 }
