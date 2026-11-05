@@ -9,6 +9,7 @@
 
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
@@ -84,7 +85,7 @@ public class ScenarioSummaryBuilderTests
             .Returns(contracts);
 
         return new ScenarioSummaryBuilder(
-            _context, scenarioRepository, Substitute.For<IAnalyseScenarioService>(), contractProvider);
+            _context, scenarioRepository, Substitute.For<IAnalyseScenarioService>(), contractProvider, Substitute.For<IKeywordWishCountService>());
     }
 
     [Test]
@@ -92,7 +93,8 @@ public class ScenarioSummaryBuilderTests
     {
         var sut = new ScenarioSummaryBuilder(
             _context, Substitute.For<IAnalyseScenarioRepository>(), Substitute.For<IAnalyseScenarioService>(),
-            Substitute.For<IClientContractDataProvider>());
+            Substitute.For<IClientContractDataProvider>(),
+            Substitute.For<IKeywordWishCountService>());
 
         (await sut.BuildAsync(Guid.NewGuid(), CancellationToken.None)).ShouldBeNull();
     }

@@ -85,7 +85,8 @@ public class WizardApplyServiceCaptureTests
             _nameGenerator,
             Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
             _planningPeriodGuard,
-            NullLogger<WizardApplyService>.Instance);
+            NullLogger<WizardApplyService>.Instance,
+            Substitute.For<IKeywordWishCountService>());
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same
         // or the apply would silently produce nothing.

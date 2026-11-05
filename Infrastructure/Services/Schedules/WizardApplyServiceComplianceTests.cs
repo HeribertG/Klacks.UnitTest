@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Schedules.KeywordWishes;
 using Klacks.Api.Application.DTOs.Schedules.Wizard;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
@@ -40,6 +41,7 @@ public class WizardApplyServiceComplianceTests
     private IWorkSofteningRepository _softeningRepository = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
     private ICompliancePartitionService _partitionService = null!;
+    private IKeywordWishCountService _keywordWishCounter = null!;
     private const string GeneratedName = "generated name";
     private IScenarioNameGenerator _nameGenerator = null!;
     private WizardApplyService _sut = null!;
@@ -74,6 +76,10 @@ public class WizardApplyServiceComplianceTests
             .Returns(GeneratedName);
 
         _planningPeriodGuard = Klacks.UnitTest.TestHelpers.TestPlanningPeriodGuard.NoViolations();
+        _keywordWishCounter = Substitute.For<IKeywordWishCountService>();
+        _keywordWishCounter
+            .CountAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(KeywordWishesDto.Empty);
         _sut = new WizardApplyService(
             _cache,
             _mediator,
@@ -89,7 +95,8 @@ public class WizardApplyServiceComplianceTests
             _nameGenerator,
             Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
             _planningPeriodGuard,
-            NullLogger<WizardApplyService>.Instance);
+            NullLogger<WizardApplyService>.Instance,
+            _keywordWishCounter);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same
         // or the apply would silently produce nothing.
@@ -123,14 +130,14 @@ public class WizardApplyServiceComplianceTests
         IReadOnlyList<ScheduleValidationNotificationDto>? reportable = null, bool overrideApplied = false)
     {
         _partitionService
-            .PartitionAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .PartitionAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<KeywordMode>())
             .Returns(new CompliancePartitionResult(accepted, blocked, reportable ?? [], overrideApplied));
     }
 
     private void SetPartitionPassThrough()
     {
         _partitionService
-            .PartitionAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .PartitionAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<KeywordMode>())
             .Returns(ci => new CompliancePartitionResult(
                 Enumerable.Range(0, ci.Arg<IReadOnlyList<PlannedWorkRow>>().Count).ToList(), [], [], false));
     }
@@ -253,6 +260,50 @@ public class WizardApplyServiceComplianceTests
 
         await _partitionService.Received(1).PartitionAsync(
             Arg.Any<IReadOnlyList<PlannedWorkRow>>(), sourceToken, false, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(KeywordMode.Hard)]
+    [TestCase(KeywordMode.Soft)]
+    public async Task ApplyAsync_PassesTheRunsKeywordModeToPartition(KeywordMode mode)
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)], KeywordMode = mode }, null);
+        SetPartitionPassThrough();
+
+        await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        await _partitionService.Received(1).PartitionAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), mode);
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_SoftRun_PassesSoftKeywordModeToPartition()
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)], KeywordMode = KeywordMode.Soft }, null);
+        SetPartitionPassThrough();
+
+        await _sut.ApplyAsScenarioAsync(jobId, groupId: null, overrideBlock: false, CancellationToken.None);
+
+        await _partitionService.Received(1).PartitionAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), KeywordMode.Soft);
+    }
+
+    [Test]
+    public async Task ApplyAsync_ReportsTheKeywordWishesOfTheRunsEmployeesInTheWrittenWorld()
+    {
+        var agent = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var counted = new KeywordWishesDto(1, 0, 0, 2, []);
+        _keywordWishCounter
+            .CountAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(agent)), Day1, Day2, null, Arg.Any<CancellationToken>())
+            .Returns(counted);
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(agent, Day1), MakeToken(agent, Day2)] }, null);
+        SetPartitionPassThrough();
+
+        var outcome = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        outcome.KeywordWishes.ShouldBeSameAs(counted);
     }
 
     [Test]

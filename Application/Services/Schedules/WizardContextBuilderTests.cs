@@ -97,18 +97,35 @@ public class WizardContextBuilderTests
         result.IneligibleAssignments.ShouldContain((agentId.ToString(), shiftId, date));
     }
 
-    [Test]
-    public async Task BuildContextAsync_AvailabilityBlock_OnKeywordDay_IsSuppressed()
+    [TestCase(ScheduleCommandKeyword.OnlyLate)]
+    [TestCase(ScheduleCommandKeyword.NotFree)]
+    [TestCase(ScheduleCommandKeyword.Free)]
+    [TestCase(ScheduleCommandKeyword.NoNight)]
+    public async Task BuildContextAsync_AvailabilityBlock_OnKeywordDay_StaysHard(ScheduleCommandKeyword keywordValue)
     {
         var agentId = Guid.NewGuid();
         var shiftId = Guid.NewGuid();
         var date = new DateOnly(2026, 4, 20);
-        var keyword = new CoreScheduleCommand(agentId.ToString(), date, ScheduleCommandKeyword.OnlyLate);
+        var keyword = new CoreScheduleCommand(agentId.ToString(), date, keywordValue);
         ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([keyword], [], [], [], []));
 
         var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
 
-        result.IneligibleAssignments.ShouldNotContain((agentId.ToString(), shiftId, date));
+        result.IneligibleAssignments.ShouldContain((agentId.ToString(), shiftId, date));
+    }
+
+    [TestCase(KeywordMode.Hard)]
+    [TestCase(KeywordMode.Soft)]
+    public async Task BuildContextAsync_PassesTheRequestedKeywordModeToTheContext(KeywordMode mode)
+    {
+        var agentId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        ArrangeAvailabilityHierarchyCase(agentId, Guid.NewGuid(), date, new HardConstraintResult([], [], [], [], []));
+
+        var result = await _sut.BuildContextAsync(
+            HierarchyRequest(agentId, date) with { KeywordMode = mode }, CancellationToken.None);
+
+        result.KeywordMode.ShouldBe(mode);
     }
 
     [Test]
