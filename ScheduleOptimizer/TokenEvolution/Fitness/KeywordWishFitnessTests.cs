@@ -151,4 +151,63 @@ public class KeywordWishFitnessTests
         best.Tokens.Count(t => t.AgentId == "A").ShouldBe(3);
         WizardKeywordWishes.For(context).Evaluate(best.Tokens, collectItems: false).Tally.Unfulfilled.ShouldBe(0);
     }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void HardMode_EvolutionWithTheWishOnTheTopRosterAgent_PullsTheNightsToHer(bool withWish)
+    {
+        var shifts = new List<CoreShift>();
+        var commands = new List<CoreScheduleCommand>();
+        for (var day = 0; day < 3; day++)
+        {
+            var date = Monday.AddDays(day);
+            shifts.Add(Slot(Guid.NewGuid(), date, Night));
+            commands.Add(new CoreScheduleCommand("A", date, ScheduleCommandKeyword.OnlyNight));
+        }
+
+        var context = Context([Agent("A"), Agent("B")], shifts, withWish ? commands : [], KeywordMode.Hard);
+        var config = new TokenEvolutionConfig { PopulationSize = 16, MaxGenerations = 25, RandomSeed = 7, EvaluationParallelism = 1 };
+
+        var best = TokenEvolutionLoop.Create().Run(context, config);
+
+        best.Tokens.Count.ShouldBe(3);
+        var nightsOfA = best.Tokens.Count(t => t.AgentId == "A");
+        if (withWish)
+        {
+            nightsOfA.ShouldBe(3);
+        }
+        else
+        {
+            nightsOfA.ShouldBeLessThan(3, "control: without the wish the surplus nights go down the roster");
+        }
+    }
+
+    [Test]
+    public void SoftMode_EvolutionCoversTheOnlySlotOnAFreeDay_AndTheCountShowsTheBrokenFree()
+    {
+        var context = Context(
+            [Agent("A")],
+            [Slot(ShiftId, Monday, Early)],
+            [new CoreScheduleCommand("A", Monday, ScheduleCommandKeyword.Free)],
+            KeywordMode.Soft);
+        var config = new TokenEvolutionConfig { PopulationSize = 8, MaxGenerations = 10, RandomSeed = 3, EvaluationParallelism = 1 };
+
+        var best = TokenEvolutionLoop.Create().Run(context, config);
+
+        best.Tokens.Count.ShouldBe(1);
+        WizardKeywordWishes.For(context).Evaluate(best.Tokens, collectItems: true).Tally.BrokenFree.ShouldBe(1);
+    }
+
+    [Test]
+    public void HardMode_EvolutionLeavesTheOnlySlotOnAFreeDayOpen()
+    {
+        var context = Context(
+            [Agent("A")],
+            [Slot(ShiftId, Monday, Early)],
+            [new CoreScheduleCommand("A", Monday, ScheduleCommandKeyword.Free)],
+            KeywordMode.Hard);
+        var config = new TokenEvolutionConfig { PopulationSize = 8, MaxGenerations = 10, RandomSeed = 3, EvaluationParallelism = 1 };
+
+        TokenEvolutionLoop.Create().Run(context, config).Tokens.ShouldBeEmpty();
+    }
 }
