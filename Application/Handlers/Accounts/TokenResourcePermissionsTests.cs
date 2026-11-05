@@ -52,7 +52,7 @@ public class TokenResourcePermissionsTests
     {
         var permissions = Permissions.ExpandRoles(new[] { Roles.Authorised });
         var request = new RefreshRequestResource { Token = "token", RefreshToken = "refresh" };
-        _authenticationService.RefreshTokenAsync(request).Returns(Authenticated(permissions));
+        _authenticationService.MigrateRefreshTokenAsync(request).Returns(Authenticated(permissions));
 
         var handler = new RefreshTokenQueryHandler(
             _authenticationService,

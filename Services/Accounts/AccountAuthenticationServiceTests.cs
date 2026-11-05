@@ -119,8 +119,7 @@ public class AccountAuthenticationServiceTests
         };
 
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
-        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
-        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
@@ -129,7 +128,7 @@ public class AccountAuthenticationServiceTests
     }
 
     [Test]
-    public async Task RefreshTokenAsync_WithValidToken_ShouldRotateInsteadOfRecreate()
+    public async Task RefreshTokenAsync_WithValidToken_KeepsTheSameTokenAndExtendsIt()
     {
         var refreshRequest = new RefreshRequestResource
         {
@@ -145,13 +144,12 @@ public class AccountAuthenticationServiceTests
         };
 
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
-        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
-        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
-        result.RefreshToken.ShouldBe("new-refresh-token");
-        await _mockRefreshTokenService.Received(1).RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken);
+        result.RefreshToken.ShouldBe(refreshRequest.RefreshToken);
+        await _mockRefreshTokenService.Received(1).ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken);
         await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
         await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
     }
@@ -175,7 +173,7 @@ public class AccountAuthenticationServiceTests
 
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
         _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(true);
-        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
@@ -183,7 +181,7 @@ public class AccountAuthenticationServiceTests
         // refreshing never passes the credential check that would otherwise refuse it.
         result.Success.ShouldBeFalse();
         result.Token.ShouldBeNullOrEmpty();
-        await _mockRefreshTokenService.DidNotReceive().RotateRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().ExtendRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
         await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
         await _mockTokenService.DidNotReceive().CreateToken(Arg.Any<AppUser>(), Arg.Any<DateTime>());
     }
@@ -208,12 +206,12 @@ public class AccountAuthenticationServiceTests
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns((AppUser?)null);
         _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
         _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(true);
-        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
         result.Success.ShouldBeFalse();
-        await _mockRefreshTokenService.DidNotReceive().RotateRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().ExtendRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
     }
 
     [Test]
@@ -234,12 +232,69 @@ public class AccountAuthenticationServiceTests
 
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
         _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(false);
-        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
-        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
         result.Success.ShouldBeTrue();
-        result.RefreshToken.ShouldBe("new-refresh-token");
+        result.RefreshToken.ShouldBe(refreshRequest.RefreshToken);
+    }
+
+    [Test]
+    public async Task RefreshTokenAsync_WithARevokedOrExpiredToken_FailsAndIssuesNothing()
+    {
+        var refreshRequest = new RefreshRequestResource { RefreshToken = "revoked-refresh-token" };
+        var testUser = new AppUser { Id = Guid.NewGuid().ToString(), Email = "revoked@example.com", UserName = "revoked@example.com" };
+        _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
+        _mockRefreshTokenService.ExtendRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(false);
+
+        var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeFalse();
+        await _mockTokenService.DidNotReceive().CreateToken(Arg.Any<AppUser>(), Arg.Any<DateTime>());
+        await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task MigrateRefreshTokenAsync_IssuesTheReplacementToken_NotTheLegacyOne()
+    {
+        var refreshRequest = new RefreshRequestResource { RefreshToken = "legacy-refresh-token" };
+        var testUser = new AppUser { Id = Guid.NewGuid().ToString(), Email = "migrate@example.com", UserName = "migrate@example.com" };
+        _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
+        _mockRefreshTokenService.ReplaceRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("replacement-token");
+
+        var result = await _authenticationService.MigrateRefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeTrue();
+        result.RefreshToken.ShouldBe("replacement-token");
+        await _mockRefreshTokenService.DidNotReceive().ExtendRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task MigrateRefreshTokenAsync_WithAnInvalidLegacyToken_Fails()
+    {
+        var refreshRequest = new RefreshRequestResource { RefreshToken = "expired-legacy-token" };
+        var testUser = new AppUser { Id = Guid.NewGuid().ToString(), Email = "migrate2@example.com", UserName = "migrate2@example.com" };
+        _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
+        _mockRefreshTokenService.ReplaceRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns((string?)null);
+
+        var result = await _authenticationService.MigrateRefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeFalse();
+        await _mockTokenService.DidNotReceive().CreateToken(Arg.Any<AppUser>(), Arg.Any<DateTime>());
+    }
+
+    [Test]
+    public async Task MigrateRefreshTokenAsync_ForABlockedAccount_IsRefused()
+    {
+        var refreshRequest = new RefreshRequestResource { RefreshToken = "legacy-refresh-token" };
+        var testUser = new AppUser { Id = Guid.NewGuid().ToString(), Email = "blocked@example.com", UserName = "blocked@example.com" };
+        _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
+        _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(true);
+
+        var result = await _authenticationService.MigrateRefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeFalse();
+        await _mockRefreshTokenService.DidNotReceive().ReplaceRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
     }
 }

@@ -14,6 +14,7 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Presentation.Authentication;
 using Klacks.Api.Presentation.Controllers.UserBackend.Authentification;
 using Klacks.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Http;
@@ -43,7 +44,8 @@ public class AccountsControllerPasswordChangeTests
         _sut = new AccountsController(
             _mediator,
             Substitute.For<ILogger<AccountsController>>(),
-            Substitute.For<IUsernameGeneratorService>());
+            Substitute.For<IUsernameGeneratorService>(),
+            Substitute.For<IRefreshTokenCookieService>());
     }
 
     [Test]
