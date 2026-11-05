@@ -1,7 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests for GetScheduleEntriesQueryHandler: filter pass-through and GroupItem validity enrichment.
+/// Tests for GetScheduleEntriesQueryHandler: filter pass-through, GroupItem validity enrichment and the
+/// availability/blocked-range overlay maps.
 /// </summary>
 using Shouldly;
 using Klacks.Api.Application.DTOs.Filter;
@@ -288,6 +289,65 @@ public class GetScheduleEntriesQueryHandlerTests
 
         result.Clients.ShouldHaveSingleItem();
         result.Clients[0].HasContract.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Handle_AvailabilityEntries_SplitIntoClientAvailabilitiesAndBlockedRanges_LeavingOutEmptyValues()
+    {
+        var clientId = Guid.NewGuid();
+        var positiveDay = new DateOnly(2026, 1, 12);
+        var negativeOnlyDay = new DateOnly(2026, 1, 13);
+        SetupWorkListWithClient(clientId);
+        _groupFilterService.GetVisibleGroupIdsAsync(null).ReturnsForAnyArgs(new List<Guid>());
+        _clientAvailabilityScheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(new[]
+            {
+                new ClientAvailabilityScheduleEntry
+                {
+                    ClientId = clientId,
+                    AvailabilityDate = positiveDay.ToDateTime(TimeOnly.MinValue),
+                    AvailabilityRanges = "08:00-12:00",
+                    BlockedRanges = "00:00-08:00,12:00-24:00",
+                },
+                new ClientAvailabilityScheduleEntry
+                {
+                    ClientId = clientId,
+                    AvailabilityDate = negativeOnlyDay.ToDateTime(TimeOnly.MinValue),
+                    AvailabilityRanges = string.Empty,
+                    BlockedRanges = "14:00-16:00",
+                },
+            });
+
+        var result = await _handler.Handle(CreateQuery(), CancellationToken.None);
+
+        result.ClientAvailabilities[clientId].ShouldBe(new Dictionary<DateOnly, string>
+        {
+            [positiveDay] = "08:00-12:00",
+        });
+        result.BlockedRanges[clientId].ShouldBe(new Dictionary<DateOnly, string>
+        {
+            [positiveDay] = "00:00-08:00,12:00-24:00",
+            [negativeOnlyDay] = "14:00-16:00",
+        });
+    }
+
+    [Test]
+    public void WorkScheduleResponse_SerializesBlockedRangesNextToClientAvailabilities()
+    {
+        var clientId = Guid.Parse("6f1c0d3e-0000-4000-8000-000000000001");
+        var response = new WorkScheduleResponse
+        {
+            BlockedRanges = new Dictionary<Guid, Dictionary<DateOnly, string>>
+            {
+                [clientId] = new() { [new DateOnly(2026, 1, 13)] = "14:00-16:00" },
+            },
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            response, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        json.ShouldContain("\"clientAvailabilities\":{}");
+        json.ShouldContain($"\"blockedRanges\":{{\"{clientId}\":{{\"2026-01-13\":\"14:00-16:00\"}}}}");
     }
 
     private GetScheduleEntriesQuery CreateQuery(Guid? selectedGroup = null) =>

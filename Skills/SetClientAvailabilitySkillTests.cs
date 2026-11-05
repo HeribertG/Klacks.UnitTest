@@ -47,7 +47,7 @@ public class SetClientAvailabilitySkillTests
                     ClientId = i.ClientId,
                     Date = i.Date,
                     Hour = i.Hour,
-                    IsAvailable = i.IsAvailable
+                    IsAvailable = i.IsAvailable!.Value
                 }).ToList()));
 
         _skill = NewSkill(Substitute.For<IClientSearchRepository>());
@@ -78,7 +78,7 @@ public class SetClientAvailabilitySkillTests
         result.Success.ShouldBeTrue();
         _captured.ShouldNotBeNull();
         _captured!.Items.Count.ShouldBe(48);
-        _captured.Items.ShouldAllBe(i => i.ClientId == ClientId && !i.IsAvailable);
+        _captured.Items.ShouldAllBe(i => i.ClientId == ClientId && i.IsAvailable == false);
         _captured.Items.Count(i => i.Date == new DateOnly(2026, 6, 15)).ShouldBe(24);
         _captured.Items.Count(i => i.Date == new DateOnly(2026, 6, 16)).ShouldBe(24);
         _captured.Items.Min(i => i.Hour).ShouldBe(0);
@@ -102,7 +102,7 @@ public class SetClientAvailabilitySkillTests
         result.Success.ShouldBeTrue();
         _captured.ShouldNotBeNull();
         _captured!.Items.Count.ShouldBe(6);
-        _captured.Items.ShouldAllBe(i => i.IsAvailable && i.Hour >= 8 && i.Hour <= 10);
+        _captured.Items.ShouldAllBe(i => i.IsAvailable == true && i.Hour >= 8 && i.Hour <= 10);
         _captured.Items.Select(i => i.Date).Distinct().Count().ShouldBe(2);
         result.Message.ShouldContain("available");
         result.Message.ShouldContain("verified");
@@ -189,7 +189,7 @@ public class SetClientAvailabilitySkillTests
             .Returns(ci => Task.FromResult(
                 (_captured?.Items ?? []).Select(i => new ClientAvailability
                 {
-                    Id = Guid.NewGuid(), ClientId = i.ClientId, Date = i.Date, Hour = i.Hour, IsAvailable = i.IsAvailable
+                    Id = Guid.NewGuid(), ClientId = i.ClientId, Date = i.Date, Hour = i.Hour, IsAvailable = i.IsAvailable!.Value
                 }).ToList()));
 
         var result = await NewSkill(search).ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -205,7 +205,7 @@ public class SetClientAvailabilitySkillTests
         result.Success.ShouldBeTrue(result.Message);
         _captured.ShouldNotBeNull();
         _captured!.Items.Count.ShouldBe(24);
-        _captured.Items.ShouldAllBe(i => i.ClientId == miaId && i.IsAvailable && i.Hour >= 7 && i.Hour <= 14);
+        _captured.Items.ShouldAllBe(i => i.ClientId == miaId && i.IsAvailable == true && i.Hour >= 7 && i.Hour <= 14);
     }
 
     [Test]

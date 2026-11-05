@@ -51,6 +51,27 @@ public class GetClientAvailabilityRangesQueryHandlerTests
     }
 
     [Test]
+    public async Task Handle_DayWithOnlyBlockedHours_IsLeftOut()
+    {
+        var clientId = Guid.NewGuid();
+        var entries = new[]
+        {
+            new ClientAvailabilityScheduleEntry { ClientId = clientId, AvailabilityDate = new DateTime(2026, 3, 1), AvailabilityRanges = "09:00-11:00", BlockedRanges = "00:00-09:00,11:00-24:00" },
+            new ClientAvailabilityScheduleEntry { ClientId = clientId, AvailabilityDate = new DateTime(2026, 3, 2), AvailabilityRanges = string.Empty, BlockedRanges = "13:00-17:00" },
+        };
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(entries);
+
+        var result = await _handler.Handle(
+            new GetClientAvailabilityRangesQuery(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), new List<Guid> { clientId }),
+            CancellationToken.None);
+
+        result.ShouldHaveSingleItem();
+        result[0].Date.ShouldBe(new DateOnly(2026, 3, 1));
+        result[0].Ranges.ShouldBe("09:00-11:00");
+    }
+
+    [Test]
     public async Task Handle_MultipleEntries_MapsAllInOrder()
     {
         var clientA = Guid.NewGuid();
