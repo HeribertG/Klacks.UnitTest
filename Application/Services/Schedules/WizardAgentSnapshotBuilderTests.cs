@@ -71,6 +71,29 @@ public class WizardAgentSnapshotBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_WithoutAnyContractAndEntryMidPeriod_ClosesTheDaysBeforeTheEntryAndUsesTheDefaultsOfTheEntryDay()
+    {
+        var agentId = Guid.NewGuid();
+        var entry = new DateOnly(2026, 3, 10);
+        StubContractData(date => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = AllWeekDefaults(guaranteedHours: date < entry ? 10 : 100),
+        });
+        StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(entry, null) });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12), new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12),
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.ContractDays.Where(d => !d.WorksOnDay).Select(d => d.Date).ShouldBe(
+            [new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 9)],
+            "Without any contract only the days before the entry are closed; the member days follow the settings defaults.");
+        result.Agents.Single().GuaranteedHours.ShouldBe(
+            100.0 * 3 / 5,
+            "Master data comes from the defaults of the first member day (100, not 10), prorated to the 3 member days of the 5-day period.");
+    }
+
+    [Test]
     public async Task BuildAsync_OutsideTheMembershipWithoutContractData_StillEmitsAClosedDay()
     {
         var agentId = Guid.NewGuid();
@@ -198,10 +221,13 @@ public class WizardAgentSnapshotBuilderTests
             .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)windows);
     }
 
-    private static EffectiveContractData AllWeekContract(decimal guaranteedHours = 120) => new()
+    private static EffectiveContractData AllWeekDefaults(decimal guaranteedHours) =>
+        AllWeekContract(guaranteedHours, hasActiveContract: false);
+
+    private static EffectiveContractData AllWeekContract(decimal guaranteedHours = 120, bool hasActiveContract = true) => new()
     {
-        HasActiveContract = true,
-        ContractId = Guid.NewGuid(),
+        HasActiveContract = hasActiveContract,
+        ContractId = hasActiveContract ? Guid.NewGuid() : null,
         FullTime = 160,
         GuaranteedHours = guaranteedHours,
         MaxDailyHours = 10,
@@ -324,7 +350,7 @@ public class WizardAgentSnapshotBuilderTests
     }
 
     [Test]
-    public async Task BuildAsync_ContractStartsMidPeriod_UsesFirstActiveDayAsAgentBasis()
+    public async Task BuildAsync_ContractStartsMidPeriod_UsesFirstActiveDayAsAgentBasis_AndPlansTheDaysBeforeWithTheSettingsDefaults()
     {
         var agentId = Guid.NewGuid();
         var from = new DateOnly(2026, 6, 1);
@@ -334,6 +360,8 @@ public class WizardAgentSnapshotBuilderTests
         var fallbackData = new EffectiveContractData
         {
             HasActiveContract = false,
+            WorkOnMonday = true,
+            WorkOnFriday = false,
         };
 
         var contractData = new EffectiveContractData
@@ -367,21 +395,29 @@ public class WizardAgentSnapshotBuilderTests
         agent.GuaranteedHours.ShouldBe(160);
         agent.WorkOnMonday.ShouldBeTrue();
 
-        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 1)).WorksOnDay.ShouldBeFalse();
-        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 5)).WorksOnDay.ShouldBeFalse();
+        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 1)).WorksOnDay.ShouldBeTrue(
+            "a member Monday before the contract uses the settings defaults, whose Monday flag is set");
+        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 5)).WorksOnDay.ShouldBeFalse(
+            "the settings defaults do not tick Friday");
         result.ContractDays.Single(d => d.Date == contractStart).WorksOnDay.ShouldBeTrue();
         result.ContractDays.Single(d => d.Date == until).WorksOnDay.ShouldBeTrue();
     }
 
     [Test]
-    public async Task BuildAsync_AgentWithoutAnyActiveContract_IsExcluded()
+    public async Task BuildAsync_AgentWithoutAnyActiveContract_IsPlannedWithTheSettingsDefaults()
     {
         var agentId = Guid.NewGuid();
         var date = new DateOnly(2026, 6, 1);
 
         StubContractData(_ => new Dictionary<Guid, EffectiveContractData>
         {
-            [agentId] = new EffectiveContractData { HasActiveContract = false },
+            [agentId] = new EffectiveContractData
+            {
+                HasActiveContract = false,
+                GuaranteedHours = 100,
+                WorkOnMonday = true,
+                WorkOnTuesday = false,
+            },
         });
 
         var result = await _sut.BuildAsync(
@@ -389,7 +425,9 @@ public class WizardAgentSnapshotBuilderTests
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
-        result.Agents.ShouldBeEmpty();
+        result.Agents.Single().GuaranteedHours.ShouldBe(100);
+        result.ContractDays.Single(d => d.Date == date).WorksOnDay.ShouldBeTrue();
+        result.ContractDays.Single(d => d.Date == date.AddDays(1)).WorksOnDay.ShouldBeFalse();
     }
 
     [Test]

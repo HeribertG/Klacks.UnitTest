@@ -679,18 +679,36 @@ public class InboundActionOrchestratorTests
     }
 
     [Test]
-    public async Task ShiftPreference_NoActiveContract_OnlySuggests()
+    public async Task ShiftPreference_WithoutContract_GuaranteedHoursOfTheSettingsDefaults_OnlySuggests()
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
-        SetContract(new EffectiveContractData { HasActiveContract = false });
+        SetContract(new EffectiveContractData { HasActiveContract = false, GuaranteedHours = 160, PerformsShiftWork = true });
 
         var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
-        outcome.Description.ShouldContain("no active contract");
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldContain("settings defaults");
+        outcome.Description.ShouldNotContain("no active contract");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_WithoutContract_ZeroHourShiftWorkDefaults_Executes()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = false, GuaranteedHours = 0, PerformsShiftWork = true });
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "-EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        invocations[0].SkillName.ShouldBe("add_schedule_commands_range");
     }
 
     [TestCase("EARLY")]
@@ -752,18 +770,19 @@ public class InboundActionOrchestratorTests
     }
 
     [Test]
-    public async Task ShiftPreference_NoActiveContractAndNoShiftWork_ReportsOnlyTheMissingContract()
+    public async Task ShiftPreference_WithoutContract_DefaultsWithoutShiftWork_PointToAvailability()
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
-        SetContract(new EffectiveContractData { HasActiveContract = false, PerformsShiftWork = false });
+        SetContract(new EffectiveContractData { HasActiveContract = false, GuaranteedHours = 0, PerformsShiftWork = false });
 
         var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
-        outcome.Description.ShouldContain("no active contract");
-        outcome.Description.ShouldNotContain("set_client_availability");
+        outcome.Description.ShouldContain("shift work");
+        outcome.Description.ShouldContain("settings defaults");
+        outcome.Description.ShouldContain("set_client_availability");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
 

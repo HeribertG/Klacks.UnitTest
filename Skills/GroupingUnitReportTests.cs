@@ -5,7 +5,8 @@
 /// severe first, at most MaxListedPlanningUnits with correct totals, a group-restricted caller sees only
 /// units in scope, a dominant blocking reason becomes a data line (code and counts), and the summary text
 /// names each unit's numbers, the capacity shortfall per weekday and the sentence that group changes do not
-/// fix missing contracts, unfillable duties or capacity gaps.
+/// fix unfillable duties, capacity gaps or other master-data gaps; employees without a contract are counted as
+/// planned with the settings defaults.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Grouping;
@@ -126,7 +127,7 @@ public class GroupingUnitReportTests
 
         text.ShouldContain("\"Deutschschweiz Ost\"");
         text.ShouldContain("196 duties analysed");
-        text.ShouldContain("246 of them without an active contract in the period");
+        text.ShouldContain("246 of them without a contract in the period (planned with the settings defaults)");
         text.ShouldContain("Monday (demand 88, available 1)");
         text.ShouldContain("reason=NoActiveContract employees=246/246");
         text.ShouldContain(GroupingReportTexts.MasterDataSentence);

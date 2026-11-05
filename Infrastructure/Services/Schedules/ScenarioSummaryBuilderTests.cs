@@ -3,7 +3,8 @@
 /// <summary>
 /// Guards the live scenario summary: demand per shift and day, filled slots from the scenario works, and the cause named
 /// for each open slot. The scenario mirrors the Bern case: an early and a late shift, one agent on a contract without
-/// shift work and without weekends, one early work placed.
+/// shift work and without weekends, one early work placed. Days outside the agent's company membership (entry and exit
+/// inclusive) leave nobody in scope.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -140,6 +141,40 @@ public class ScenarioSummaryBuilderTests
 
         summary!.ExpensesWithChangedEmployee.ShouldBe(2, "only the expenses of the work handed from the other agent count");
     }
+
+    [Test]
+    public async Task ExitedAgent_IsNoCandidateAfterTheExitDay()
+    {
+        AddMembership(From.AddDays(-100), From.AddDays(2));
+        await _context.SaveChangesAsync();
+
+        var summary = await BuildSut().BuildAsync(_token, CancellationToken.None);
+
+        var reasons = summary!.OpenSlotReasons.ToDictionary(r => r.ReasonCode, r => r.SlotCount);
+        reasons[ScenarioSummaryReasonCodes.NoAgentInScope].ShouldBe(8, "both shifts on the four days after the exit");
+        summary.OpenSlotReasons.Sum(r => r.SlotCount).ShouldBe(summary.OpenSlots);
+    }
+
+    [Test]
+    public async Task AgentEnteringMidPeriod_IsNoCandidateBeforeTheEntryDay()
+    {
+        AddMembership(From.AddDays(3), null);
+        await _context.SaveChangesAsync();
+
+        var summary = await BuildSut().BuildAsync(_token, CancellationToken.None);
+
+        var reasons = summary!.OpenSlotReasons.ToDictionary(r => r.ReasonCode, r => r.SlotCount);
+        reasons[ScenarioSummaryReasonCodes.NoAgentInScope].ShouldBe(5, "the open slots of the three days before the entry");
+    }
+
+    private void AddMembership(DateOnly validFrom, DateOnly? validUntil)
+        => _context.Membership.Add(new Membership
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _agentId,
+            ValidFrom = validFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            ValidUntil = validUntil?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+        });
 
     private Work AddWork(Guid clientId, DateOnly date, Guid? token, Guid? clonedFrom)
     {

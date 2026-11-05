@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Frozen copy of the original per-day eligibility scan (before the weekday-mask and per-client contract
-/// index optimisation). Serves only as the oracle of StaticEligibilityEvaluatorEquivalenceTests, which
-/// prove that the optimised evaluator returns identical verdicts, reasons and weekday sets.
+/// index optimisation), adjusted to the rules that a day outside the client's membership window is OutsideMembership,
+/// a member day with contract data (an active contract or the settings defaults) is evaluated with its weekday flags
+/// and shift-work flag, and only a member day without any contract data is NoActiveContract. Serves only as the oracle of StaticEligibilityEvaluatorEquivalenceTests, which prove that the
+/// optimised evaluator returns identical verdicts, reasons, weekday sets and active-contract flags.
 /// </summary>
 /// <param name="context">Pre-indexed inputs of one analysis.</param>
 
@@ -46,6 +48,12 @@ public sealed class NaiveEligibilityReference
         _verdicts[key] = verdict;
         return verdict;
     }
+
+    public bool HasActiveContractInPeriod(Guid clientId) =>
+        _context.Contracts.Any(entry =>
+            IsMember(clientId, entry.Key)
+            && entry.Value.TryGetValue(clientId, out var contract)
+            && contract.HasActiveContract);
 
     public IReadOnlySet<DayOfWeek> EligibleWeekdays(Guid clientId, Guid shiftId)
     {
@@ -110,9 +118,13 @@ public sealed class NaiveEligibilityReference
 
     private GroupingIneligibilityReason? FirstFailure(Guid clientId, Guid shiftId, DateOnly day)
     {
+        if (!IsMember(clientId, day))
+        {
+            return GroupingIneligibilityReason.OutsideMembership;
+        }
+
         if (!_context.Contracts.TryGetValue(day, out var perClient)
-            || !perClient.TryGetValue(clientId, out var contract)
-            || !contract.HasActiveContract)
+            || !perClient.TryGetValue(clientId, out var contract))
         {
             return GroupingIneligibilityReason.NoActiveContract;
         }
@@ -158,6 +170,9 @@ public sealed class NaiveEligibilityReference
 
         return null;
     }
+
+    private bool IsMember(Guid clientId, DateOnly day) =>
+        !_context.MembershipWindows.TryGetValue(clientId, out var window) || window.Contains(day);
 
     private IReadOnlyList<DateOnly> RunDaysOf(Guid shiftId) =>
         _context.RunDays.GetValueOrDefault(shiftId, NoRunDays);

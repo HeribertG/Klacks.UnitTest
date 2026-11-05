@@ -3,8 +3,10 @@
 /// <summary>
 /// Pins the orchestration of the analyzer: run days come from the wizard shift builder (never called
 /// with an empty shift list), contracts from the range provider, shifts without run day are dropped
-/// from findings, proposals and names, a client without contract yields F1 and F5, and the period is
-/// validated.
+/// from findings, proposals and names, a client without a contract is evaluated with the settings defaults
+/// (eligible on a ticked weekday, only counted in the unit summary), a client without any contract data yields
+/// F1 and F5 with NoActiveContract, membership windows come from the membership window reader and a client who
+/// enters the company after the duty's run day yields F1 with OutsideMembership, and the period is validated.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Grouping;
@@ -33,6 +35,7 @@ public class GroupingFeasibilityAnalyzerTests
     private IGroupingFeasibilityDataSource _dataSource = null!;
     private IWizardShiftBuilder _shiftBuilder = null!;
     private IClientContractDataProvider _contracts = null!;
+    private IMembershipWindowReader _membershipWindows = null!;
     private ISettingsReader _settings = null!;
     private ICompanyClock _clock = null!;
     private GroupingFeasibilityAnalyzer _sut = null!;
@@ -43,11 +46,15 @@ public class GroupingFeasibilityAnalyzerTests
         _dataSource = Substitute.For<IGroupingFeasibilityDataSource>();
         _shiftBuilder = Substitute.For<IWizardShiftBuilder>();
         _contracts = Substitute.For<IClientContractDataProvider>();
+        _membershipWindows = Substitute.For<IMembershipWindowReader>();
+        _membershipWindows.GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, MembershipWindow>());
         _settings = Substitute.For<ISettingsReader>();
         _clock = Substitute.For<ICompanyClock>();
         _clock.GetTodayDateAsync(Arg.Any<CancellationToken>()).Returns(Monday);
         _sut = new GroupingFeasibilityAnalyzer(
-            _dataSource, _shiftBuilder, _contracts, _settings, _clock, NullLogger<GroupingFeasibilityAnalyzer>.Instance);
+            _dataSource, _shiftBuilder, _contracts, _membershipWindows, _settings, _clock,
+            NullLogger<GroupingFeasibilityAnalyzer>.Instance);
     }
 
     private void GivenSnapshot(bool withShift = true, bool withShiftWithoutRunDay = false)
@@ -97,6 +104,12 @@ public class GroupingFeasibilityAnalyzerTests
             });
     }
 
+    private void GivenNoContractData()
+    {
+        _contracts.GetEffectiveContractDataForClientsRangeAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>());
+    }
+
     [Test]
     public async Task EligibleClientInTheShiftsGroup_ProducesNoFindings()
     {
@@ -112,10 +125,23 @@ public class GroupingFeasibilityAnalyzerTests
     }
 
     [Test]
-    public async Task ClientWithoutContract_YieldsUnfillableShiftAndClientWithoutFit()
+    public async Task ClientWithoutContract_IsPlannedWithTheSettingsDefaults_AndProducesNoFindings()
     {
         GivenSnapshot();
         GivenContract(active: false);
+
+        var report = await _sut.AnalyzeAsync(new GroupingAnalysisRequest(Monday, Monday.AddDays(7), null), CancellationToken.None);
+
+        report.Findings.ShouldBeEmpty();
+        report.Proposals.ShouldBeEmpty();
+        report.HasReportFindings.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ClientWithoutAnyContractData_YieldsUnfillableShiftAndClientWithoutFit()
+    {
+        GivenSnapshot();
+        GivenNoContractData();
 
         var report = await _sut.AnalyzeAsync(new GroupingAnalysisRequest(Monday, Monday.AddDays(7), null), CancellationToken.None);
 
@@ -123,6 +149,22 @@ public class GroupingFeasibilityAnalyzerTests
         report.Findings.ShouldContain(f => f.Code == GroupingFindingCode.ClientFitsNoShift);
         report.HasReportFindings.ShouldBeTrue();
         report.ReportFingerprint.Length.ShouldBe(64);
+    }
+
+    [Test]
+    public async Task ClientWhoEntersAfterTheRunDay_IsNotEligible_EvenWithTheSettingsDefaults()
+    {
+        GivenSnapshot();
+        GivenContract(active: false);
+        _membershipWindows.GetWindowsAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(ClientId)), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, MembershipWindow> { [ClientId] = new(Monday.AddDays(1), null) });
+
+        var report = await _sut.AnalyzeAsync(new GroupingAnalysisRequest(Monday, Monday.AddDays(7), null), CancellationToken.None);
+
+        report.Findings.ShouldContain(f => f.Code == GroupingFindingCode.ShiftUnfillableGlobally
+            && f.Reason == GroupingIneligibilityReason.OutsideMembership);
+        report.UnitSummaries.ShouldHaveSingleItem().DominantReason.ShouldBe(GroupingIneligibilityReason.OutsideMembership);
     }
 
     [Test]
@@ -199,7 +241,7 @@ public class GroupingFeasibilityAnalyzerTests
     }
 
     [Test]
-    public async Task ClientWithoutContract_IsNamedInTheUnitSummaryAsTheDominantCause()
+    public async Task ClientWithoutContract_IsCountedInTheUnitSummary_ButIsNotTheBlockingCause()
     {
         GivenSnapshot();
         GivenContract(active: false);
@@ -209,8 +251,24 @@ public class GroupingFeasibilityAnalyzerTests
         var unit = report.UnitSummaries.ShouldHaveSingleItem();
         unit.UnitId.ShouldBe(GroupId);
         unit.DutiesAnalysed.ShouldBe(1);
-        unit.DutiesUnfillableGlobally.ShouldBe(1);
+        unit.DutiesUnfillableGlobally.ShouldBe(0);
+        unit.DutiesUncoveredInUnit.ShouldBe(0);
         unit.EmployeesInScope.ShouldBe(1);
+        unit.EmployeesWithoutContract.ShouldBe(1);
+        unit.DominantReason.ShouldBeNull();
+        unit.HasGaps.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ClientWithoutAnyContractData_IsNamedInTheUnitSummaryAsTheDominantCause()
+    {
+        GivenSnapshot();
+        GivenNoContractData();
+
+        var report = await _sut.AnalyzeAsync(new GroupingAnalysisRequest(Monday, Monday.AddDays(7), null), CancellationToken.None);
+
+        var unit = report.UnitSummaries.ShouldHaveSingleItem();
+        unit.DutiesUnfillableGlobally.ShouldBe(1);
         unit.EmployeesWithoutContract.ShouldBe(1);
         unit.DominantReason.ShouldBe(GroupingIneligibilityReason.NoActiveContract);
     }

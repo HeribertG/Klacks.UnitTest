@@ -4,6 +4,9 @@
 /// Pins the static eligibility rules of the grouping analysis: each of the five conditions blocks on its
 /// own, the first eligible run day short-circuits, the reason blocking on the most run days wins (a tie
 /// goes to the lower enum index), and the weekday set contains only weekdays with an eligible run day.
+/// Settings-default data (HasActiveContract false) is evaluated like a contract with its weekday and shift-work
+/// flags; only a day without any contract data is NoActiveContract, and HasActiveContractInPeriod is informational.
+/// A run day outside the client's membership window (entry and exit inclusive) is OutsideMembership.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Grouping;
@@ -47,7 +50,8 @@ public class StaticEligibilityEvaluatorTests
         IReadOnlyList<ShiftRequiredQualification>? requirements = null,
         IReadOnlyList<ClientQualification>? qualifications = null,
         bool blacklisted = false,
-        IReadOnlyList<ClientAvailability>? availability = null)
+        IReadOnlyList<ClientAvailability>? availability = null,
+        MembershipWindow? membership = null)
     {
         var days = runDays ?? [Monday];
         contractFor ??= _ => Contract();
@@ -77,7 +81,10 @@ public class StaticEligibilityEvaluatorTests
             new Dictionary<Guid, IReadOnlyList<ClientQualification>> { [ClientId] = qualifications ?? [] },
             blacklisted ? new HashSet<GroupingEntityPair> { new(ClientId, ShiftId) } : new HashSet<GroupingEntityPair>(),
             availabilityByDay,
-            ExpiredMandatoryBlocks: false);
+            ExpiredMandatoryBlocks: false,
+            membership is null
+                ? new Dictionary<Guid, MembershipWindow>()
+                : new Dictionary<Guid, MembershipWindow> { [ClientId] = membership });
 
         return new StaticEligibilityEvaluator(context);
     }
@@ -98,10 +105,46 @@ public class StaticEligibilityEvaluatorTests
     }
 
     [Test]
-    public void Evaluate_InactiveContract_ReportsNoActiveContract()
+    public void SettingsDefaultsOnATickedWeekday_AreEligible()
     {
-        Build(contractFor: _ => Contract(active: false)).Evaluate(ClientId, ShiftId).Reason
-            .ShouldBe(GroupingIneligibilityReason.NoActiveContract);
+        var evaluator = Build(contractFor: _ => Contract(active: false));
+
+        evaluator.Evaluate(ClientId, ShiftId).ShouldBe(EligibilityVerdict.Eligible);
+        evaluator.IsEligible(ClientId, ShiftId).ShouldBeTrue();
+        evaluator.EligibleWeekdays(ClientId, ShiftId).ShouldBe(new[] { DayOfWeek.Monday }, ignoreOrder: true);
+        evaluator.HasActiveContractInPeriod(ClientId).ShouldBeFalse();
+    }
+
+    [Test]
+    public void SettingsDefaultsOnAnUntickedWeekday_ReportWeekdayNotAllowed()
+    {
+        var evaluator = Build(contractFor: _ => Contract(active: false, monday: false));
+
+        evaluator.Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.WeekdayNotAllowed);
+        evaluator.IsEligible(ClientId, ShiftId).ShouldBeFalse();
+    }
+
+    [Test]
+    public void SettingsDefaultsWithoutShiftWorkOnALateShift_ReportNotShiftWorker()
+    {
+        var evaluator = Build(contractFor: _ => Contract(active: false, shiftWork: false), start: LateStart, end: LateEnd);
+
+        evaluator.Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.NotShiftWorker);
+        evaluator.IsEligible(ClientId, ShiftId).ShouldBeFalse();
+    }
+
+    [Test]
+    public void HasActiveContractInPeriod_IsTrueAsSoonAsOneDayHasAnActiveContract()
+    {
+        var evaluator = Build(runDays: [Monday, Tuesday], contractFor: day => Contract(active: day == Tuesday));
+
+        evaluator.HasActiveContractInPeriod(ClientId).ShouldBeTrue();
+    }
+
+    [Test]
+    public void HasActiveContractInPeriod_IsFalseWithoutAnyContractData()
+    {
+        Build(contractFor: _ => null).HasActiveContractInPeriod(ClientId).ShouldBeFalse();
     }
 
     [Test]
@@ -232,6 +275,54 @@ public class StaticEligibilityEvaluatorTests
             blacklisted: true);
 
         evaluator.Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.NoActiveContract);
+    }
+
+    [Test]
+    public void ExitedEmployeeWithSettingsDefaults_IsNotEligibleAfterTheExit()
+    {
+        var evaluator = Build(
+            runDays: [Tuesday, NextTuesday],
+            contractFor: _ => Contract(active: false),
+            membership: new MembershipWindow(Monday.AddDays(-30), Monday));
+
+        evaluator.Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.OutsideMembership);
+        evaluator.IsEligible(ClientId, ShiftId).ShouldBeFalse();
+        evaluator.EligibleWeekdays(ClientId, ShiftId).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void ExitDay_IsStillAMemberDay()
+    {
+        var evaluator = Build(
+            runDays: [Monday, Tuesday],
+            contractFor: _ => Contract(active: false),
+            membership: new MembershipWindow(Monday.AddDays(-30), Monday));
+
+        evaluator.EligibleWeekdays(ClientId, ShiftId).ShouldBe(new[] { DayOfWeek.Monday }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void EntryInsideThePeriod_MakesOnlyTheDaysFromTheEntryEligible()
+    {
+        var evaluator = Build(
+            runDays: [Monday, NextTuesday],
+            contractFor: _ => Contract(active: false, monday: true, tuesday: true),
+            membership: new MembershipWindow(Tuesday, null));
+
+        evaluator.Evaluate(ClientId, ShiftId).IsEligible.ShouldBeTrue();
+        evaluator.IsEligible(ClientId, ShiftId).ShouldBeTrue();
+        evaluator.EligibleWeekdays(ClientId, ShiftId).ShouldBe(new[] { DayOfWeek.Tuesday }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void ActiveContractOnlyOutsideTheMembership_DoesNotCountAsActiveContractInPeriod()
+    {
+        var evaluator = Build(
+            runDays: [Monday, Tuesday],
+            contractFor: day => Contract(active: day == Monday),
+            membership: new MembershipWindow(Tuesday, null));
+
+        evaluator.HasActiveContractInPeriod(ClientId).ShouldBeFalse();
     }
 
     [Test]

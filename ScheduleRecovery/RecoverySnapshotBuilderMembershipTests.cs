@@ -14,7 +14,8 @@ namespace Klacks.UnitTest.ScheduleRecovery;
 /// <summary>
 /// M6: a day outside the agent's company membership is closed for recovery, also when an on-call break would otherwise
 /// open it; inside the membership the on-call rules stay unchanged. K16: the preference sets take the inherited
-/// preferences as they come from the scope query (a blacklist on an order bars its cut pieces).
+/// preferences as they come from the scope query (a blacklist on an order bars its cut pieces). A member without a
+/// contract follows the weekday flags of the settings defaults like everyone else.
 /// </summary>
 [TestFixture]
 public sealed class RecoverySnapshotBuilderMembershipTests
@@ -77,6 +78,34 @@ public sealed class RecoverySnapshotBuilderMembershipTests
     }
 
     [Test]
+    public void MemberWithoutContract_FollowsTheWeekdayFlagsOfTheSettingsDefaults()
+    {
+        RecoverySnapshotBuilder.BuildWorks([], new HashSet<Guid> { OnCallAbsence }, new HashSet<Guid>(), out var breakDays);
+
+        var cells = RecoverySnapshotBuilder.BuildAvailability(
+            [AgentA], WeekdayDefaults(), breakDays, NoKeywords(), Saturday, Monday, new Dictionary<Guid, MembershipWindow>());
+
+        cells[new CellKey(AgentA, Saturday)].WorksOnDay.ShouldBeFalse("the defaults do not tick Saturday");
+        cells[new CellKey(AgentA, Sunday)].WorksOnDay.ShouldBeFalse("the defaults do not tick Sunday");
+        cells[new CellKey(AgentA, Monday)].WorksOnDay.ShouldBeTrue("the defaults tick Monday");
+    }
+
+    [Test]
+    public void OnCallBreak_LiftsTheFreeSundayOfTheSettingsDefaultsToo()
+    {
+        var onCall = OnCallBreak(Sunday);
+        RecoverySnapshotBuilder.BuildWorks(
+            [onCall], new HashSet<Guid> { OnCallAbsence }, new HashSet<Guid> { onCall.SourceId }, out var breakDays);
+
+        var cell = RecoverySnapshotBuilder.BuildAvailability(
+            [AgentA], WeekdayDefaults(), breakDays, NoKeywords(), Sunday, Sunday,
+            new Dictionary<Guid, MembershipWindow>())[new CellKey(AgentA, Sunday)];
+
+        cell.IsOnCall.ShouldBeTrue();
+        cell.WorksOnDay.ShouldBeTrue();
+    }
+
+    [Test]
     public void PreferenceSets_KeepInheritedBlacklistsOfCutPieces()
     {
         var order = Guid.NewGuid();
@@ -118,6 +147,17 @@ public sealed class RecoverySnapshotBuilderMembershipTests
     };
 
     private static Dictionary<Guid, EffectiveContractData> AllDaysContract()
+        => new()
+        {
+            [AgentA] = new EffectiveContractData
+            {
+                HasActiveContract = false,
+                WorkOnSaturday = true,
+                WorkOnSunday = true,
+            }
+        };
+
+    private static Dictionary<Guid, EffectiveContractData> WeekdayDefaults()
         => new() { [AgentA] = new EffectiveContractData { HasActiveContract = false } };
 
     private static Dictionary<Guid, EffectiveContractData> WeekdayContract()

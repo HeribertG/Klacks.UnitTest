@@ -3,7 +3,8 @@
 /// <summary>
 /// Pins the per-planning-unit summary: duties and employees in the unit's scope (including sub-groups),
 /// duties nobody in the unit can take today (F2 before proposals, globally unfillable duties counted
-/// separately as F1), employees without an active contract in the period, the dominant blocking reason only
+/// separately as F1), employees without an active contract in the period (counted only; they are evaluated with the
+/// settings defaults and never become the blocking reason by themselves), the dominant blocking reason only
 /// when more than half of the unit's employees share it, the capacity shortfall days of the unit (F7),
 /// the focus subtree and a deterministic order by unit name.
 /// </summary>
@@ -66,26 +67,43 @@ public class GroupingUnitSummaryBuilderTests
     }
 
     [Test]
-    public void UnitWhoseEmployeesAllLackAContract_ReportsEveryDutyAsUncoveredAndTheDominantReason()
+    public void UnitWhoseEmployeesAllLackAContractButFitTheDuties_CountsThemWithoutAGap()
     {
-        Shift(East);
-        Shift(East);
+        var first = Shift(East);
+        var second = Shift(East);
         for (var i = 0; i < 3; i++)
         {
-            _oracle.WithoutContract(Client(East));
+            var client = Client(East);
+            _oracle.WithoutContract(client).Allow(client, first).Allow(client, second);
         }
 
         var unit = Build().ShouldHaveSingleItem();
 
         unit.UnitId.ShouldBe(East);
         unit.DutiesAnalysed.ShouldBe(2);
-        unit.DutiesUncoveredInUnit.ShouldBe(2);
-        unit.DutiesUnfillableGlobally.ShouldBe(0);
+        unit.DutiesUncoveredInUnit.ShouldBe(0);
         unit.EmployeesInScope.ShouldBe(3);
         unit.EmployeesWithoutContract.ShouldBe(3);
-        unit.DominantReason.ShouldBe(GroupingIneligibilityReason.NoActiveContract);
+        unit.DominantReason.ShouldBeNull();
+        unit.HasGaps.ShouldBeFalse();
+    }
+
+    [Test]
+    public void EmployeesWithoutContractWhoFitNoDuty_GetTheirEvaluatedReason_NotNoActiveContract()
+    {
+        var shift = Shift(East);
+        for (var i = 0; i < 3; i++)
+        {
+            var client = Client(East);
+            _oracle.WithoutContract(client).Deny(client, shift, GroupingIneligibilityReason.WeekdayNotAllowed);
+        }
+
+        var unit = Build().ShouldHaveSingleItem();
+
+        unit.EmployeesWithoutContract.ShouldBe(3);
+        unit.DutiesUncoveredInUnit.ShouldBe(1);
+        unit.DominantReason.ShouldBe(GroupingIneligibilityReason.WeekdayNotAllowed);
         unit.DominantReasonEmployees.ShouldBe(3);
-        unit.HasGaps.ShouldBeTrue();
     }
 
     [Test]

@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Guards the static cause the scenario summary names for an open shift slot, checked from the most fundamental
-/// cause to the least.
+/// cause to the least. Employees without an active contract are candidates with their settings-default data.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -31,10 +31,26 @@ public class OpenSlotReasonClassifierTests
     }
 
     [Test]
-    public void NobodyWithAnActiveContract_NamesNoActiveContract()
+    public void EmployeeWithSettingsDefaultsOnATickedWeekday_IsACandidate()
     {
         OpenSlotReasonClassifier.Classify([Contract(active: false)], DayOfWeek.Monday, true)
-            .ShouldBe(ScenarioSummaryReasonCodes.NoActiveContract);
+            .ShouldBe(ScenarioSummaryReasonCodes.CapacityOrRules);
+    }
+
+    [Test]
+    public void SettingsDefaultsAreCheckedLikeAContract()
+    {
+        OpenSlotReasonClassifier.Classify([Contract(active: false, weekend: false)], DayOfWeek.Saturday, true)
+            .ShouldBe(ScenarioSummaryReasonCodes.NoAgentWorksOnWeekday);
+        OpenSlotReasonClassifier.Classify([Contract(active: false, shiftWork: false)], DayOfWeek.Monday, false)
+            .ShouldBe(ScenarioSummaryReasonCodes.NoAgentPerformsShiftWork);
+    }
+
+    [Test]
+    public void ShiftWorkerWithSettingsDefaults_CoversALateShiftNextToANonShiftWorkerWithAContract()
+    {
+        OpenSlotReasonClassifier.Classify([Contract(shiftWork: false), Contract(active: false)], DayOfWeek.Monday, false)
+            .ShouldBe(ScenarioSummaryReasonCodes.CapacityOrRules);
     }
 
     [Test]

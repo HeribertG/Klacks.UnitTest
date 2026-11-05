@@ -2,10 +2,11 @@
 
 /// <summary>
 /// Proves that the optimised StaticEligibilityEvaluator (per-client contract index, weekday masks,
-/// O(1) verdict for clients without any active contract day) returns exactly the verdicts, reasons,
-/// eligibility bits and weekday sets of the original per-day scan (NaiveEligibilityReference) on
+/// O(1) verdict for clients without any contract data) returns exactly the verdicts, reasons,
+/// eligibility bits, weekday sets and active-contract flags of the per-day scan (NaiveEligibilityReference) on
 /// seeded random inputs with contract changes in the middle of the period, clients without any
-/// contract, shift work varying by day, shifts without run days, qualifications, blacklist entries
+/// contract data, clients with only settings-default data (HasActiveContract false), membership windows that start,
+/// end or lie entirely outside the period (and clients without a window), shift work varying by day, shifts without run days, qualifications, blacklist entries
 /// and hourly unavailability. Contract data covers only a window inside the period (as when contracts
 /// start or end inside it), each client's contract starts and ends at random days inside that window, and
 /// run days also fall outside the window, so the day-offset bounds of the contract index are exercised.
@@ -58,11 +59,14 @@ public class StaticEligibilityEvaluatorEquivalenceTests
                 optimised.EligibleWeekdays(clientId, shiftId)
                     .ShouldBe(naive.EligibleWeekdays(clientId, shiftId), ignoreOrder: true, $"Weekdays {clientId} {shiftId}");
             }
+
+            optimised.HasActiveContractInPeriod(clientId)
+                .ShouldBe(naive.HasActiveContractInPeriod(clientId), $"HasActiveContractInPeriod {clientId}");
         }
     }
 
     [Test]
-    public void ClientWithoutAnyContract_OnShiftWithoutRunDays_ReportsNoActiveContract()
+    public void ClientWithoutAnyContractData_OnShiftWithoutRunDays_ReportsNoActiveContract()
     {
         var clientId = Guid.NewGuid();
         var shiftId = Guid.NewGuid();
@@ -74,7 +78,8 @@ public class StaticEligibilityEvaluatorEquivalenceTests
             new Dictionary<Guid, IReadOnlyList<ClientQualification>>(),
             new HashSet<GroupingEntityPair>(),
             new Dictionary<(Guid ClientId, DateOnly Day), IReadOnlyList<ClientAvailability>>(),
-            ExpiredMandatoryBlocks: false);
+            ExpiredMandatoryBlocks: false,
+            new Dictionary<Guid, MembershipWindow>());
 
         var evaluator = new StaticEligibilityEvaluator(context);
 
@@ -173,6 +178,11 @@ public class StaticEligibilityEvaluatorEquivalenceTests
             .GroupBy(entry => (entry.ClientId, entry.Date))
             .ToDictionary(group => (group.Key.ClientId, group.Key.Date), group => (IReadOnlyList<ClientAvailability>)group.ToList());
 
+        var membershipWindows = clientIds
+            .Select(clientId => (clientId, Window: RandomWindow(random)))
+            .Where(entry => entry.Window is not null)
+            .ToDictionary(entry => entry.clientId, entry => entry.Window!);
+
         return new GroupingEligibilityContext(
             shifts,
             runDays,
@@ -181,7 +191,21 @@ public class StaticEligibilityEvaluatorEquivalenceTests
             qualifications,
             blacklist,
             availability,
-            expiredBlocks);
+            expiredBlocks,
+            membershipWindows);
+    }
+
+    private static MembershipWindow? RandomWindow(Random random)
+    {
+        var entry = PeriodStart.AddDays(random.Next(-MaxWindowMargin, PeriodDays));
+        return random.Next(5) switch
+        {
+            0 => null,
+            1 => new MembershipWindow(PeriodStart.AddDays(-PeriodDays), null),
+            2 => new MembershipWindow(entry, null),
+            3 => new MembershipWindow(PeriodStart.AddDays(-PeriodDays), entry),
+            _ => new MembershipWindow(entry, entry.AddDays(random.Next(PeriodDays))),
+        };
     }
 
     private static Guid NextGuid(Random random)

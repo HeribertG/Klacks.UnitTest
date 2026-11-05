@@ -3,8 +3,8 @@
 /// <summary>
 /// Table-driven eligibility for plan and capacity tests: listed pairs are eligible on the listed
 /// weekdays (all weekdays when none are given), every other pair is ineligible with the default reason
-/// or a per-pair override. A client marked WithoutContract has no active contract day in the period and is
-/// ineligible with NoActiveContract for every pair that is not explicitly allowed.
+/// or a per-pair override. A client marked WithoutContract has no active contract day in the period; like the
+/// real evaluator this is informational only and does not change any verdict.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Grouping;
@@ -49,9 +49,7 @@ public sealed class FakeEligibilityOracle : IGroupingEligibilityOracle
             return EligibilityVerdict.Eligible;
         }
 
-        return EligibilityVerdict.Ineligible(_withoutContract.Contains(clientId)
-            ? GroupingIneligibilityReason.NoActiveContract
-            : _reasons.GetValueOrDefault(key, DefaultReason));
+        return EligibilityVerdict.Ineligible(_reasons.GetValueOrDefault(key, DefaultReason));
     }
 
     public bool HasActiveContractInPeriod(Guid clientId) => !_withoutContract.Contains(clientId);
