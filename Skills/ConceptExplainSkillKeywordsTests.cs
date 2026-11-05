@@ -79,6 +79,43 @@ public class ConceptExplainSkillKeywordsTests
         Assert.That(result, Does.Contain("cut_shift"));
     }
 
+    [TestCase("Wie bringe ich Bestellungen aus unserem ERP in Klacks?")]
+    [TestCase("Wie kommen Aufträge aus SAP in Klacks?")]
+    [TestCase("Wie landen die Aufträge aus Abacus bei uns?")]
+    [TestCase("Gibt es eine ERP-Schnittstelle?")]
+    [TestCase("How do I get orders from our ERP into Klacks?")]
+    [TestCase("Comment les commandes de SAP arrivent-elles dans Klacks ?")]
+    [TestCase("Esiste un'interfaccia ERP?")]
+    [TestCase("erp")]
+    [TestCase("Unser ERP?")]
+    public void ErpAcronymAsAWholeWord_ResolvesTheHandoverSkillsPastTheKeywordCap(string message)
+    {
+        var result = ConceptExplainSkillKeywords.ResolveSkillNames(message);
+
+        Assert.That(result, Does.Contain(SkillNames.GetErpDropPointSettings));
+        Assert.That(result, Does.Contain(SkillNames.ExplainPageSettingsErpDropPoints));
+    }
+
+    [TestCase("Das ist verpflichtend für alle Mitarbeiter")]
+    [TestCase("Er verpflichtet sich zu einer Pause")]
+    [TestCase("Das war eine rapide Entwicklung, kein Sapperlot, nur ein Saphir.")]
+    [TestCase("Wie lege ich einen Dienst an?")]
+    public void ErpAcronymInsideAnotherWord_ResolvesNothing(string message)
+    {
+        var result = ConceptExplainSkillKeywords.ResolveSkillNames(message);
+
+        Assert.That(result, Does.Not.Contain(SkillNames.GetErpDropPointSettings));
+        Assert.That(result, Does.Not.Contain(SkillNames.ExplainPageSettingsErpDropPoints));
+    }
+
+    [Test]
+    public void ErpAcronymNextToANonLatinCharacter_StillCountsAsAWord()
+    {
+        var result = ConceptExplainSkillKeywords.ResolveSkillNames("ERPシステムから注文を取り込む方法");
+
+        Assert.That(result, Does.Contain(SkillNames.GetErpDropPointSettings));
+    }
+
     [Test]
     public void MultipleKeywordsForSameSkill_ResolveDistinct()
     {

@@ -297,6 +297,59 @@ public class ErpOrderImportRunnerTests
     }
 
     [Test]
+    public async Task RunAsync_EnabledDropPoint_RecordsThePollTimeFromTheTimeProvider()
+    {
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _dropPointRepository.Received(1).MarkPolledAsync(DropPoint.Id, Now, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_DisabledDropPoint_IsNotMarkedAsPolled()
+    {
+        // Arrange
+        var disabled = new ErpDropPoint { Id = Guid.NewGuid(), Name = "Disabled", SourceSystemId = "erp-2", BucketPrefix = "customer-2", IsEnabled = false };
+        _dropPointRepository.List().Returns([disabled]);
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _dropPointRepository.DidNotReceive().MarkPolledAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_RunNotDue_DoesNotMarkTheDropPointAsPolled()
+    {
+        // Arrange
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
+            .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddHours(1).ToString("O") });
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _dropPointRepository.DidNotReceive().MarkPolledAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_PollTimeCannotBeRecorded_StillImportsTheReceivedFiles()
+    {
+        // Arrange
+        var file = GivenReceivedFile(NewOrder("ORD-1"));
+        _dropPointRepository.MarkPolledAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("database hiccup"));
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        _finishes.ShouldHaveSingleItem().FileId.ShouldBe(file.Id);
+    }
+
+    [Test]
     public async Task RunAsync_ReceivedFiles_AreClaimedInListedOrderWithTheirAttemptNumber()
     {
         // Arrange

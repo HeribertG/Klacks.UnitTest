@@ -45,7 +45,7 @@ public class ErpDropFolderResolverTests
         var folder = CreateResolver(InstallationKind.Docker, HostHint, storage).Resolve("erp/orders");
 
         storage.Received(1).ResolvePath("erp/orders/");
-        folder.FolderPath.ShouldBe(ContainerFolder);
+        folder.FolderPath.ShouldBe(ContainerFolder.TrimEnd('/'));
         folder.HostFolderPath.ShouldBe(HostFolder);
         folder.Guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnHostFolder);
         folder.Guidance.Advice.ShouldContain(HostFolder);
@@ -58,6 +58,30 @@ public class ErpDropFolderResolverTests
 
         folder.HostFolderPath.ShouldBeNull();
         folder.Guidance.FolderDropRequirement.ShouldBe(ErpFolderDropRequirements.MountHostFolder);
+    }
+
+    [Test]
+    public void Resolve_WindowsFolderWithTrailingBackslash_IsShownWithoutIt()
+    {
+        const string resolved = @"C:\ProgramData\Klacks\ErpImport\erp\orders\";
+        var storage = Substitute.For<IObjectStorageService>();
+        storage.ResolvePath("erp/orders/").Returns(resolved);
+
+        var folder = CreateResolver(InstallationKind.Native, string.Empty, storage).Resolve("erp/orders");
+
+        folder.FolderPath.ShouldBe(@"C:\ProgramData\Klacks\ErpImport\erp\orders");
+        folder.Guidance.Advice.ShouldContain(@"'C:\ProgramData\Klacks\ErpImport\erp\orders'");
+        folder.Guidance.Advice.ShouldNotContain(@"orders\'");
+    }
+
+    [Test]
+    public void Resolve_DoesNotChangeTheKeyHandedToTheStorage()
+    {
+        var storage = Storage();
+
+        CreateResolver(InstallationKind.Docker, HostHint, storage).Resolve("erp/orders");
+
+        storage.Received(1).ResolvePath("erp/orders/");
     }
 
     [Test]

@@ -41,6 +41,46 @@ public class ErpHandoverAdvisorTests
     }
 
     [Test]
+    public void Advise_NativeWindows_CallsTheInstallationAWindowsOfficePcAndNeverNative()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(InstallationKind.Native, WindowsRuntime), WindowsFolder);
+
+        guidance.InstallationLabel.ShouldBe("Windows office PC");
+        guidance.Advice.ShouldStartWith("Windows office PC installation");
+        System.Text.RegularExpressions.Regex.IsMatch(guidance.Advice, @"\bnative(ly)?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase).ShouldBeFalse();
+    }
+
+    [Test]
+    public void Advise_NativeNonWindows_CallsTheInstallationAnOfficePc()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(InstallationKind.Native, MacRuntime), "/var/klacks/erp/orders");
+
+        guidance.InstallationLabel.ShouldBe("office PC");
+    }
+
+    [Test]
+    public void Advise_Docker_CallsTheInstallationADockerServer()
+    {
+        var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(InstallationKind.Docker, LinuxRuntime), DockerFolder, HostFolder);
+
+        guidance.InstallationLabel.ShouldBe("Docker server");
+        guidance.Advice.ShouldStartWith("Docker server installation");
+    }
+
+    [Test]
+    public void AnswerGuide_AsksForThreeWaysTheInstallationRecommendationTheWritePermissionAndTheNavigationOffer()
+    {
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("three ways");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("folder drop");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("HTTPS push");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("upload");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("THIS installation");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("write permission");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("offer to open Settings > Import");
+        ErpHandoverAdvisor.AnswerGuide.ShouldContain("InstallationLabel");
+    }
+
+    [Test]
     public void Advise_NativeNonWindows_DoesNotClaimWindowsRights()
     {
         var guidance = ErpHandoverAdvisor.Advise(new InstallationIdentity(InstallationKind.Native, MacRuntime), "/var/klacks/erp/orders/");
