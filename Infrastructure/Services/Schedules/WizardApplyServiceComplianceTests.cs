@@ -307,6 +307,23 @@ public class WizardApplyServiceComplianceTests
     }
 
     [Test]
+    public async Task ApplyAsync_FailingWishCount_AfterTheCommit_KeepsTheApplyAndDoesNotRestoreTheCache()
+    {
+        var jobId = Guid.NewGuid();
+        _keywordWishCounter
+            .CountAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<KeywordWishesDto>>(_ => throw new InvalidOperationException("read failed"));
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)] }, null);
+        SetPartitionPassThrough();
+
+        var outcome = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        outcome.CreatedWorkIds.ShouldBe(_createdIds);
+        outcome.KeywordWishes.ShouldBeNull();
+        _cache.TryGet(jobId, out _, out _, out _, out _, out _).ShouldBeFalse("a written plan must not be offered for a second apply");
+    }
+
+    [Test]
     public async Task ApplyAsync_ForwardsOverrideBlock_AndSurfacesOverrideApplied()
     {
         var jobId = Guid.NewGuid();
