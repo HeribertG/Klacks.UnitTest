@@ -91,6 +91,16 @@ public class KlacksOntologyServiceTests
     }
 
     [Test]
+    public void Work_ReversedMove_IsDeclaredAsNotCovered_WithTheAcceptanceKept()
+    {
+        Service().GetConstraints("Work")
+            .ShouldContain(c => c.Contains("MovedFromClientId")
+                && c.Contains("latest move")
+                && c.Contains("NOT covered")
+                && c.Contains("history"));
+    }
+
+    [Test]
     public void Shift_StatusLifecycle_ForbidsOriginalShiftNextToItsSplits()
     {
         Service().GetConstraints("Shift")
