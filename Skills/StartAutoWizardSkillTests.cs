@@ -22,6 +22,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.ScheduleOptimizer.Models;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -235,7 +236,7 @@ public class StartAutoWizardSkillTests
 
         result.Success.ShouldBeTrue(result.Message);
         await _runner.Received(1).StartAsync(
-            Arg.Is<StartAutoWizardRequest>(r => r.GroupId == groupId),
+            Arg.Is<StartAutoWizardRequest>(r => r.GroupId == groupId && r.SoftKeywordRetry && r.KeywordMode == KeywordMode.Hard),
             Arg.Any<CancellationToken>());
     }
 

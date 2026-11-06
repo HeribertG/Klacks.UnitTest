@@ -88,6 +88,24 @@ public sealed class AutoWizardSoftKeywordRetryPlannerTests
     }
 
     [Test]
+    public void BuildAlternative_DoesNotBlameTheSoftPlanForAWishTheStrictPlanMissesAsWell()
+    {
+        var day = new DateOnly(2026, 11, 4);
+        var shared = new KeywordWishItemDto(Known, day, "NotFree", "Unfulfilled");
+        var softOnly = new KeywordWishItemDto(Known, day, "Free", "BrokenFree");
+        var stage = new AutoWizardStageScenario("HolisticHarmonizer", Guid.NewGuid(), Guid.NewGuid(), "Soft plan");
+
+        var alternative = AutoWizardSoftKeywordRetryPlanner.BuildAlternative(
+            stage,
+            Summary(10, 7, new KeywordWishesDto(0, 0, 0, 1, [shared])),
+            Summary(10, 9, new KeywordWishesDto(1, 0, 0, 1, [shared, softOnly])),
+            new Dictionary<Guid, string> { [Known] = "Anna Muster" });
+
+        alternative.BrokenWishes.ShouldBe([new AutoWizardBrokenWishDto(Known, "Anna Muster", day, "Free", "BrokenFree")]);
+        alternative.Summary.KeywordWishes.ShouldNotBeNull().Items.Count.ShouldBe(2);
+    }
+
+    [Test]
     public void BuildSoftScenarioNote_NamesTheStrictScenarioAndTheCounts()
     {
         var note = AutoWizardSoftKeywordRetryPlanner.BuildSoftScenarioNote(3, new KeywordWishesDto(2, 1, 0, 4, []), "Plan KW45");

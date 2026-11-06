@@ -27,6 +27,7 @@ using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using AppSettings = Klacks.Api.Application.Constants.Settings;
 using SettingsRow = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.ScheduleOptimizer.Models;
 
 namespace Klacks.UnitTest.Services.Assistant;
 
@@ -367,7 +368,9 @@ public class NextPeriodSchedulingDueDetectorTests
             Arg.Is<StartAutoWizardRequest>(request =>
                 request.GroupId == group.Id
                 && request.PeriodFrom == new DateOnly(2026, 2, 1)
-                && request.PeriodUntil == new DateOnly(2026, 2, 28)),
+                && request.PeriodUntil == new DateOnly(2026, 2, 28)
+                && request.SoftKeywordRetry
+                && request.KeywordMode == KeywordMode.Hard),
             Arg.Any<CancellationToken>());
 
         if (level == AutonomyLevel.FullyAutonomous)
