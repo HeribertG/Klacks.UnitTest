@@ -91,6 +91,7 @@ internal sealed class LLMServiceTurnHarness
 
         var providerFactory = Substitute.For<ILLMProviderFactory>();
         providerFactory.GetProviderForModelAsync(ModelId).Returns(Provider);
+        ProviderFactory = providerFactory;
 
         var agentRepository = Substitute.For<IAgentRepository>();
         AgentRepository = agentRepository;
@@ -182,6 +183,8 @@ internal sealed class LLMServiceTurnHarness
     internal TurnRunState TurnState { get; } = new();
 
     internal ILLMProvider Provider { get; }
+
+    internal ILLMProviderFactory ProviderFactory { get; }
 
     internal ILLMSkillBridge SkillBridge { get; }
 
