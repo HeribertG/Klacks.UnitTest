@@ -153,6 +153,31 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
     }
 
     [Test]
+    public async Task PromotedScenarioWhoseReportsFail_IsRemoved_AndTheStrictOneStaysTheResultWithOutcomeFailed()
+    {
+        StubSummary(_softFinalToken, Demanded, new KeywordWishesDto(0, 0, 0, 0, []));
+        _ruleSetLoader.LoadRuleSetAsync(
+                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<int>(), Arg.Any<PlanningRuleSources>(), Arg.Any<InvalidHardRuleHandling>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<Guid?>(3) == _softFinalToken
+                ? throw new InvalidOperationException("planning rules of the promoted scenario could not be read")
+                : new PlanningRuleSet([], [], [], [], []));
+
+        var (_, state) = await RunChainAsync(SoftRetryRequest());
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        var result = state.Result.ShouldNotBeNull();
+        result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Failed);
+        result.FinalScenarioId.ShouldBe(_holisticScenarioId);
+        result.FinalScenarioToken.ShouldBe(_strictFinalToken);
+        result.SoftAlternative.ShouldBeNull();
+        result.Summary.ShouldNotBeNull().FilledSlots.ShouldBe(StrictFilled);
+        DeletedScenarioIds().ShouldBe(
+            [_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId, _softHolisticScenarioId],
+            ignoreOrder: true);
+    }
+
+    [Test]
     public async Task SoftScenarioFillingNoMoreSlots_IsDiscardedCompletely()
     {
         StubSummary(_softFinalToken, StrictFilled);
