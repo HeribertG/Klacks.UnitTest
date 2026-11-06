@@ -10,12 +10,14 @@
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
+using Klacks.Api.Application.DTOs.Schedules.Summary;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.ScheduleOptimizer.Models;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -136,5 +138,47 @@ public class ListOpenWizardJobsSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["jobId"] = "nope" });
 
         result.Success.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task CompletedJobWithSoftAlternative_NamesTheExtraSlotsAndTheBrokenWishes()
+    {
+        var jobId = Guid.NewGuid();
+        var softId = Guid.NewGuid();
+        var clientId = Guid.NewGuid();
+        var day = new DateOnly(2026, 11, 3);
+        var strictSummary = new ScenarioSummaryDto(Guid.NewGuid(), day, day, 1, 8, 10, 8, [], []);
+        var softSummary = new ScenarioSummaryDto(Guid.NewGuid(), day, day, 1, 10, 10, 10, [], []);
+        await _states.StoreCompletedAsync(jobId, Result(jobId, Guid.NewGuid(), skipped: false, skipReason: null) with
+        {
+            Summary = strictSummary,
+            SoftKeywordRetryOutcome = AutoWizardSoftKeywordRetryOutcomes.Kept,
+            SoftAlternative = new AutoWizardSoftAlternativeDto(
+                softId, Guid.NewGuid(), "Auto soft", KeywordMode.Soft, 2, softSummary,
+                [new AutoWizardBrokenWishDto(clientId, "Anna Muster", day, "Free", "BrokenFree")])
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
+
+        result.Message.ShouldContain("leaves 2 slot(s) open");
+        result.Message.ShouldContain($"'Auto soft' (id {softId})");
+        result.Message.ShouldContain("fills 2 more slot(s)");
+        result.Message.ShouldContain("Anna Muster on 2026-11-03 (Free, BrokenFree)");
+        DataAsJson(result).GetProperty("SoftAlternative").GetProperty("ScenarioId").GetGuid().ShouldBe(softId);
+    }
+
+    [Test]
+    public async Task CompletedJobWhoseSoftRetryWasNoBetter_SaysSo()
+    {
+        var jobId = Guid.NewGuid();
+        await _states.StoreCompletedAsync(jobId, Result(jobId, Guid.NewGuid(), skipped: false, skipReason: null) with
+        {
+            SoftKeywordRetryOutcome = AutoWizardSoftKeywordRetryOutcomes.NotBetter
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
+
+        result.Message.ShouldContain("covered no more slots");
+        DataAsJson(result).GetProperty("SoftAlternative").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 }

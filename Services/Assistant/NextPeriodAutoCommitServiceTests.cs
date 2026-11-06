@@ -9,17 +9,22 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.AnalyseScenarios;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.PeriodClosing;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
+using Klacks.Api.Application.DTOs.Schedules.Summary;
 using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.ScheduleOptimizer.Models;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,6 +51,7 @@ public class NextPeriodAutoCommitServiceTests
     private IAgentTriggerService _triggerService = null!;
     private INextPeriodAutonomyResolver _autonomyResolver = null!;
     private IAutoWizardJobRunner _jobRunner = null!;
+    private IAnalyseScenarioRepository _scenarioRepository = null!;
     private IServiceScopeFactory _scopeFactory = null!;
     private SettableTimeProvider _timeProvider = null!;
     private NextPeriodAutoCommitService _sut = null!;
@@ -60,6 +66,8 @@ public class NextPeriodAutoCommitServiceTests
         _autonomyResolver = Substitute.For<INextPeriodAutonomyResolver>();
         StubAutonomy(AutonomyLevel.FullyAutonomous, NextPeriodAutonomyBlockedBy.None);
         _jobRunner = Substitute.For<IAutoWizardJobRunner>();
+        _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
+        _scenarioRepository.Get(ScenarioId).Returns(new AnalyseScenario { Id = ScenarioId });
         _timeProvider = new SettableTimeProvider(new DateTime(2026, 1, 28, 9, 0, 0, DateTimeKind.Utc));
 
         _ledgerService.UpsertDetectedAsync(
@@ -73,6 +81,7 @@ public class NextPeriodAutoCommitServiceTests
         provider.GetService(typeof(IAgentConditionLedgerService)).Returns(_ledgerService);
         provider.GetService(typeof(IAgentTriggerService)).Returns(_triggerService);
         provider.GetService(typeof(INextPeriodAutonomyResolver)).Returns(_autonomyResolver);
+        provider.GetService(typeof(IAnalyseScenarioRepository)).Returns(_scenarioRepository);
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);
@@ -413,5 +422,72 @@ public class NextPeriodAutoCommitServiceTests
             Arg.Any<Func<object, Exception?, string>>());
         await _triggerService.DidNotReceiveWithAnyArgs().OnEventAsync(
             Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_PersistedSoftScenario_IsNeverAutoAccepted()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        _scenarioRepository.Get(ScenarioId).Returns(new AnalyseScenario { Id = ScenarioId, SoftKeywordPlan = true });
+
+        await CommitAsync();
+
+        var blocked = CapturedBlockedEvent();
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.NotCommittable));
+            Assert.That(blocked.ScenarioId, Is.EqualTo(ScenarioId));
+        });
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WatchAndCommit_ResultPlannedInSoftMode_IsNeverAutoAccepted()
+    {
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, ScenarioId, ScenarioToken, "AutoWizard-Holistic", 1000, [], [], [],
+            KeywordMode: KeywordMode.Soft));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        var blocked = CapturedBlockedEvent();
+        Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.NotCommittable));
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WatchAndCommit_WithASoftAlternative_AcceptsOnlyTheStrictScenario()
+    {
+        var softScenarioId = Guid.NewGuid();
+        var softToken = Guid.NewGuid();
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        _scenarioRepository.Get(softScenarioId).Returns(new AnalyseScenario { Id = softScenarioId, SoftKeywordPlan = true });
+        var softSummary = new ScenarioSummaryDto(softToken, PeriodStart, PeriodEnd, 10, 10, 0, 0, [], []);
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, ScenarioId, ScenarioToken, "AutoWizard-Holistic", 1000, [], [], [],
+            SoftAlternative: new AutoWizardSoftAlternativeDto(
+                softScenarioId, softToken, "AutoWizard-Soft", KeywordMode.Soft, 2, softSummary, []),
+            SoftKeywordRetryOutcome: AutoWizardSoftKeywordRetryOutcomes.Kept));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == ScenarioId), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(
+            Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == softScenarioId), Arg.Any<CancellationToken>());
     }
 }

@@ -127,7 +127,7 @@ public class KlacksOntologyServiceTests
         var constraints = Service().GetConstraints("ClientAvailability");
 
         constraints.ShouldContain(c => c.Contains("POSITIVE") && c.Contains("PER DAY"));
-        constraints.ShouldContain(c => c.Contains("Break > ScheduleCommand keyword > availability"));
+        constraints.ShouldContain(c => c.Contains("a Break overrides availability") && c.Contains("a keyword never lifts it"));
     }
 
     [Test]

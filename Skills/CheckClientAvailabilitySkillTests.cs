@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests for check_client_availability — verifies the layered verdict: booked absence wins,
-/// schedule keyword wins over availability, positive-day availability restricts to marked hours,
+/// a schedule keyword never lifts availability (a FREE day stays free), positive-day availability restricts to marked hours,
 /// open days are deployable, and validation errors are reported without data access side effects.
 /// </summary>
 
@@ -119,22 +119,52 @@ public class CheckClientAvailabilitySkillTests
     }
 
     [Test]
-    public async Task Keyword_WinsOverAvailability()
+    public async Task FreeKeyword_WithinAvailability_KeepsTheDayFree()
     {
         SetAvailability((8, true));
-        _scheduleCommandRepository
-            .GetByClientsAndDateRangeAsync(Arg.Any<IReadOnlyList<Guid>>(), Date, Date, null, Arg.Any<CancellationToken>())
-            .Returns(new List<ScheduleCommand>
-            {
-                new() { ClientId = ClientId, CurrentDate = Date, CommandKeyword = "FREE" }
-            });
+        StubKeyword("FREE");
 
         var result = await _skill.ExecuteAsync(Context(), Parameters(8, 8));
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldContain("FREE");
-        result.Message.ShouldContain("override");
+        result.Message.ShouldContain("not deployable");
+        result.Message.ShouldNotContain("override");
     }
+
+    [Test]
+    public async Task Keyword_DoesNotLiftAvailability()
+    {
+        SetAvailability((8, true), (9, true));
+        StubKeyword("-FREE");
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters(14, 16));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("NOT deployable");
+        result.Message.ShouldContain("do not lift the availability");
+    }
+
+    [Test]
+    public async Task NonFreeKeyword_WithinAvailability_IsDeployable()
+    {
+        SetAvailability((8, true), (9, true));
+        StubKeyword("EARLY");
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters(8, 9));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("is deployable");
+        result.Message.ShouldContain("EARLY");
+    }
+
+    private void StubKeyword(string keyword)
+        => _scheduleCommandRepository
+            .GetByClientsAndDateRangeAsync(Arg.Any<IReadOnlyList<Guid>>(), Date, Date, null, Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleCommand>
+            {
+                new() { ClientId = ClientId, CurrentDate = Date, CommandKeyword = keyword }
+            });
 
     [Test]
     public async Task PositiveDay_WindowInsideMarkedHours_IsDeployable()

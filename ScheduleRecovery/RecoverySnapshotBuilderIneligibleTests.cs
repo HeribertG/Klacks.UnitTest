@@ -10,9 +10,9 @@ using Klacks.UnitTest.TestHelpers;
 namespace Klacks.UnitTest.ScheduleRecovery;
 
 /// <summary>
-/// Unit tests for the precedence logic of <see cref="RecoverySnapshotBuilder"/>: the schedule hierarchy
-/// Break &gt; Keyword &gt; Availability is applied so that an availability veto is dropped on a keyword day
-/// (the keyword governs), while qualification ineligibility is sharp on every day and never suppressed.
+/// Unit tests for the ineligibility merge of <see cref="RecoverySnapshotBuilder"/>: availability stays hard on keyword
+/// days (owner decision 2026-11-05, as in the wizards) and qualification is sharp on every day, so both sources are
+/// kept in full; plus the keyword-day extraction.
 /// </summary>
 [TestFixture]
 public sealed class RecoverySnapshotBuilderIneligibleTests
@@ -29,20 +29,14 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     private static readonly IReadOnlyDictionary<string, Klacks.ScheduleOptimizer.Models.ScheduleCommandKeyword> DefaultKeywordMap =
         ScheduleCommandKeywordMapper.BuildMap(DefaultKeywords);
 
-    private static Dictionary<(Guid AgentId, DateOnly Date), ScheduleCommandKeyword> KeywordDays(
-        params (Guid, DateOnly)[] days)
-        => days.ToDictionary(d => (d.Item1, d.Item2), _ => ScheduleCommandKeyword.NoNight);
-
     [Test]
-    public void AvailabilityVeto_OnKeywordDay_IsSuppressed()
+    public void AvailabilityVeto_OnKeywordDay_IsKept()
     {
         var availability = new[] { new IneligibleKey(AgentA, Shift1, KeywordDay) };
 
-        var result = RecoverySnapshotBuilder.MergeIneligible(
-            [], availability, KeywordDays((AgentA, KeywordDay)));
+        var result = RecoverySnapshotBuilder.MergeIneligible([], availability);
 
-        result.ShouldNotContain(new IneligibleKey(AgentA, Shift1, KeywordDay));
-        result.ShouldBeEmpty();
+        result.ShouldContain(new IneligibleKey(AgentA, Shift1, KeywordDay));
     }
 
     [Test]
@@ -50,46 +44,26 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     {
         var availability = new[] { new IneligibleKey(AgentA, Shift1, OpenDay) };
 
-        var result = RecoverySnapshotBuilder.MergeIneligible(
-            [], availability, KeywordDays((AgentA, KeywordDay)));
+        var result = RecoverySnapshotBuilder.MergeIneligible([], availability);
 
         result.ShouldContain(new IneligibleKey(AgentA, Shift1, OpenDay));
     }
 
     [Test]
-    public void QualificationVeto_OnKeywordDay_StillExcludes()
-    {
-        // The linchpin: qualification is outside the hierarchy and must survive keyword-day suppression.
-        var qualification = new[] { new IneligibleKey(AgentA, Shift1, KeywordDay) };
-
-        var result = RecoverySnapshotBuilder.MergeIneligible(
-            qualification, [], KeywordDays((AgentA, KeywordDay)));
-
-        result.ShouldContain(new IneligibleKey(AgentA, Shift1, KeywordDay));
-    }
-
-    [Test]
-    public void OnKeywordDay_QualificationStays_WhileAvailabilityDrops()
+    public void QualificationAndAvailability_AreBothKept()
     {
         var qualification = new[] { new IneligibleKey(AgentA, Shift1, KeywordDay) };
-        var availability = new[] { new IneligibleKey(AgentA, Shift2, KeywordDay) };
+        var availability = new[] { new IneligibleKey(AgentA, Shift2, KeywordDay), new IneligibleKey(AgentB, Shift1, KeywordDay) };
 
-        var result = RecoverySnapshotBuilder.MergeIneligible(
-            qualification, availability, KeywordDays((AgentA, KeywordDay)));
+        var result = RecoverySnapshotBuilder.MergeIneligible(qualification, availability);
 
-        result.ShouldContain(new IneligibleKey(AgentA, Shift1, KeywordDay));
-        result.ShouldNotContain(new IneligibleKey(AgentA, Shift2, KeywordDay));
-    }
-
-    [Test]
-    public void KeywordDay_OfOneAgent_DoesNotSuppressAnotherAgent()
-    {
-        var availability = new[] { new IneligibleKey(AgentB, Shift1, KeywordDay) };
-
-        var result = RecoverySnapshotBuilder.MergeIneligible(
-            [], availability, KeywordDays((AgentA, KeywordDay)));
-
-        result.ShouldContain(new IneligibleKey(AgentB, Shift1, KeywordDay));
+        result.ShouldBe(
+            [
+                new IneligibleKey(AgentA, Shift1, KeywordDay),
+                new IneligibleKey(AgentA, Shift2, KeywordDay),
+                new IneligibleKey(AgentB, Shift1, KeywordDay),
+            ],
+            ignoreOrder: true);
     }
 
     [Test]

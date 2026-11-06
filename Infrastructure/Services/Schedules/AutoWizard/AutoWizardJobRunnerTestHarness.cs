@@ -155,6 +155,7 @@ public abstract class AutoWizardJobRunnerTestHarness
         services.AddSingleton(_ruleSetLoader);
         services.AddSingleton(TestGroupWriteVisibility.UnrestrictedGroups());
         services.AddSingleton(TestScenarioTokenAccess.AllVisible());
+        AddServices(services);
         _provider = services.BuildServiceProvider();
 
         _stateCache = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
@@ -177,6 +178,11 @@ public abstract class AutoWizardJobRunnerTestHarness
             _stateCache,
             Substitute.For<IHostApplicationLifetime>(),
             NullLogger<AutoWizardJobRunner>.Instance);
+    }
+
+    /// <summary>Hook for a fixture that needs further scoped services in the runner's scopes.</summary>
+    protected virtual void AddServices(ServiceCollection services)
+    {
     }
 
     [TearDown]

@@ -307,6 +307,31 @@ public class WizardApplyServiceComplianceTests
     }
 
     [Test]
+    public async Task ApplyAsync_CountsTheWishesOfEveryPlannedEmployee_AlsoThoseWithoutAShift()
+    {
+        var agentWithShift = Guid.NewGuid();
+        var agentWithoutShift = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var counted = new KeywordWishesDto(0, 0, 0, 1, []);
+        _keywordWishCounter
+            .CountAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(agentWithShift) && ids.Contains(agentWithoutShift)),
+                Day1, Day1, null, Arg.Any<CancellationToken>())
+            .Returns(counted);
+        _cache.Store(jobId, new CoreScenario
+        {
+            Id = "s",
+            Tokens = [MakeToken(agentWithShift, Day1)],
+            PlannedAgentIds = [agentWithShift.ToString(), agentWithoutShift.ToString()],
+        }, null);
+        SetPartitionPassThrough();
+
+        var outcome = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        outcome.KeywordWishes.ShouldBeSameAs(counted);
+    }
+
+    [Test]
     public async Task ApplyAsync_FailingWishCount_AfterTheCommit_KeepsTheApplyAndDoesNotRestoreTheCache()
     {
         var jobId = Guid.NewGuid();
