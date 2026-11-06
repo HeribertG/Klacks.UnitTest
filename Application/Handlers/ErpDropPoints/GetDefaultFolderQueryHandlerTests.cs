@@ -24,7 +24,9 @@ public class GetDefaultFolderQueryHandlerTests
     private const string BucketPrefix = "erp/orders";
     private const string NormalizedPrefix = "erp/orders/";
     private const string NativeFolder = @"C:\ProgramData\Klacks\ErpImport\erp\orders\";
+    private const string NativeDisplayFolder = @"C:\ProgramData\Klacks\ErpImport\erp\orders";
     private const string ContainerFolder = "/app/ErpImport/erp/orders/";
+    private const string ContainerDisplayFolder = "/app/ErpImport/erp/orders";
     private const string HostHint = "/opt/klacks/erp-import";
 
     private static GetDefaultFolderQueryHandler CreateHandler(InstallationKind kind, string resolvedPath, string hostPathHint = "")
@@ -47,7 +49,7 @@ public class GetDefaultFolderQueryHandlerTests
             .Handle(new GetDefaultFolderQuery(), CancellationToken.None);
 
         result.Installation.ShouldBe(ErpHandoverInstallations.Native);
-        result.FolderPath.ShouldBe(NativeFolder);
+        result.FolderPath.ShouldBe(NativeDisplayFolder);
         result.ContainerPath.ShouldBeNull();
         result.IsHostPath.ShouldBeFalse();
     }
@@ -60,7 +62,7 @@ public class GetDefaultFolderQueryHandlerTests
 
         result.Installation.ShouldBe(ErpHandoverInstallations.Docker);
         result.FolderPath.ShouldBe("/opt/klacks/erp-import/erp/orders");
-        result.ContainerPath.ShouldBe(ContainerFolder);
+        result.ContainerPath.ShouldBe(ContainerDisplayFolder);
         result.IsHostPath.ShouldBeTrue();
     }
 
@@ -70,8 +72,8 @@ public class GetDefaultFolderQueryHandlerTests
         var result = await CreateHandler(InstallationKind.Docker, ContainerFolder)
             .Handle(new GetDefaultFolderQuery(), CancellationToken.None);
 
-        result.FolderPath.ShouldBe(ContainerFolder);
-        result.ContainerPath.ShouldBe(ContainerFolder);
+        result.FolderPath.ShouldBe(ContainerDisplayFolder);
+        result.ContainerPath.ShouldBe(ContainerDisplayFolder);
         result.IsHostPath.ShouldBeFalse();
     }
 }

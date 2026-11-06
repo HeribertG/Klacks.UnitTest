@@ -6,6 +6,7 @@
 /// up on the identical model, which is what pins the turn to one model.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -92,5 +93,29 @@ public class LLMProviderOrchestratorCachingTests
 
         secondError.ShouldBeNull();
         recoveredModel.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task ResolveAsync_ProviderMissing_ReturnsTheProviderUnavailableMessageAndCode()
+    {
+        _factory.GetProviderForModelAsync(ModelId).Returns((ILLMProvider?)null);
+
+        var resolution = await _orchestrator.ResolveAsync(ModelId);
+
+        resolution.Model.ShouldBeNull();
+        resolution.Provider.ShouldBeNull();
+        resolution.Error.ShouldBe(AssistantStreamErrorMessages.ProviderUnavailable);
+        resolution.ErrorCode.ShouldBe(AssistantChatErrorCodes.ProviderUnavailable);
+    }
+
+    [Test]
+    public async Task ResolveAsync_ModelNotFound_CarriesNoErrorCode()
+    {
+        _repository.GetModelByIdAsync("missing").Returns((LLMModel?)null);
+
+        var resolution = await _orchestrator.ResolveAsync("missing");
+
+        resolution.Error.ShouldNotBeNull();
+        resolution.ErrorCode.ShouldBeNull();
     }
 }

@@ -32,6 +32,7 @@ namespace Klacks.UnitTest.Skills;
 public class GetErpDropPointSettingsSkillTests
 {
     private const string ResolvedPath = @"C:\erp-import\erp\orders\";
+    private const string DisplayPath = @"C:\erp-import\erp\orders";
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -102,8 +103,8 @@ public class GetErpDropPointSettingsSkillTests
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
         result.Success.ShouldBeTrue();
-        GetProperty(result.Data, "AbsolutePath").ShouldBe(ResolvedPath);
-        result.Message.ShouldContain(ResolvedPath);
+        GetProperty(result.Data, "AbsolutePath").ShouldBe(DisplayPath);
+        result.Message.ShouldContain($"'{DisplayPath}'");
     }
 
     [Test]
@@ -205,10 +206,19 @@ public class GetErpDropPointSettingsSkillTests
         GetProperty(result.Data, "Installation").ShouldBe("native");
         ((IReadOnlyList<string>)GetProperty(result.Data, "RecommendedChannels"))[0].ShouldBe(ErpHandoverChannels.FolderDrop);
         GetProperty(result.Data, "FolderDropRequirement").ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnFolder);
-        result.Message.ShouldContain(ResolvedPath);
+        result.Message.ShouldContain($"'{DisplayPath}'");
         result.Message.ShouldContain("Modify");
         result.Message.ShouldContain("10 seconds");
         result.Message.ShouldContain("trigger_erp_import_run");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_NativeInstallation_ReportsTheLabelAndEndsWithTheAnswerGuide()
+    {
+        var result = await CreateSkill(InstallationKind.Native).ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        GetProperty(result.Data, "InstallationLabel").ShouldBe("Windows office PC");
+        result.Message.ShouldEndWith(ErpHandoverAdvisor.AnswerGuide);
     }
 
     [Test]
@@ -233,7 +243,7 @@ public class GetErpDropPointSettingsSkillTests
 
         result.Success.ShouldBeTrue();
         GetProperty(result.Data, "HostFolderPath").ShouldBe("/opt/klacks/erp-import/erp/orders");
-        GetProperty(result.Data, "AbsolutePath").ShouldBe(ResolvedPath);
+        GetProperty(result.Data, "AbsolutePath").ShouldBe(DisplayPath);
         ((IReadOnlyList<string>)GetProperty(result.Data, "RecommendedChannels"))[0].ShouldBe(ErpHandoverChannels.FolderDrop);
         GetProperty(result.Data, "FolderDropRequirement").ShouldBe(ErpFolderDropRequirements.GrantWriteAccessOnHostFolder);
         result.Message.ShouldContain("server (host) folder '/opt/klacks/erp-import/erp/orders'");
