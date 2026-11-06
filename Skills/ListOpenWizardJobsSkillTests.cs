@@ -10,6 +10,7 @@
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
+using Klacks.Api.Application.DTOs.Schedules.KeywordWishes;
 using Klacks.Api.Application.DTOs.Schedules.Summary;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
@@ -179,6 +180,50 @@ public class ListOpenWizardJobsSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
 
         result.Message.ShouldContain("covered no more slots");
+        DataAsJson(result).GetProperty("SoftAlternative").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Test]
+    public async Task CompletedJobWithSoftAlternative_ReportsBrokenRestrictionsAndUnfulfilledWishesApart()
+    {
+        var jobId = Guid.NewGuid();
+        var day = new DateOnly(2026, 11, 3);
+        var strictSummary = new ScenarioSummaryDto(Guid.NewGuid(), day, day, 1, 8, 10, 8, [], []);
+        var softSummary = new ScenarioSummaryDto(Guid.NewGuid(), day, day, 1, 10, 10, 10, [], [],
+            KeywordWishes: new KeywordWishesDto(1, 0, 0, 2, []));
+        await _states.StoreCompletedAsync(jobId, Result(jobId, Guid.NewGuid(), skipped: false, skipReason: null) with
+        {
+            Summary = strictSummary,
+            SoftKeywordRetryOutcome = AutoWizardSoftKeywordRetryOutcomes.Kept,
+            SoftAlternative = new AutoWizardSoftAlternativeDto(
+                Guid.NewGuid(), Guid.NewGuid(), "Auto soft", KeywordMode.Soft, 2, softSummary, [])
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
+
+        result.Message.ShouldContain("breaks 1 restricting wish(es)");
+        result.Message.ShouldContain("leaves 2 positive wish(es) unfulfilled");
+        var soft = DataAsJson(result).GetProperty("SoftAlternative");
+        soft.GetProperty("BrokenRestrictions").GetInt32().ShouldBe(1);
+        soft.GetProperty("UnfulfilledPositiveWishes").GetInt32().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task CompletedJobWithPromotedSoftScenario_SaysItReplacedTheFirstPlanWithoutBreakingAWish()
+    {
+        var jobId = Guid.NewGuid();
+        var day = new DateOnly(2026, 11, 3);
+        await _states.StoreCompletedAsync(jobId, Result(jobId, Guid.NewGuid(), skipped: false, skipReason: null) with
+        {
+            Summary = new ScenarioSummaryDto(Guid.NewGuid(), day, day, 1, 10, 10, 10, [], [],
+                KeywordWishes: new KeywordWishesDto(0, 0, 0, 2, [])),
+            SoftKeywordRetryOutcome = AutoWizardSoftKeywordRetryOutcomes.Promoted
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
+
+        result.Message.ShouldContain("found a better plan without breaking any wish");
+        result.Message.ShouldContain("leaves 2 positive wish(es) unfulfilled");
         DataAsJson(result).GetProperty("SoftAlternative").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 }

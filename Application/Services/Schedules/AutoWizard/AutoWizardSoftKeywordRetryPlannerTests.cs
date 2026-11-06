@@ -127,4 +127,60 @@ public sealed class AutoWizardSoftKeywordRetryPlannerTests
         note.ShouldContain("FREE 2");
         note.ShouldContain("unfulfilled 4");
     }
+
+    [Test]
+    public void BreaksNoRestriction_OnlyUnfulfilledPositiveWishes_IsTrue()
+        => AutoWizardSoftKeywordRetryPlanner.BreaksNoRestriction(Summary(10, 10, new KeywordWishesDto(0, 0, 0, 2, [])))
+            .ShouldBeTrue();
+
+    [TestCase(1, 0, 0)]
+    [TestCase(0, 1, 0)]
+    [TestCase(0, 0, 1)]
+    public void BreaksNoRestriction_AnyBrokenRestriction_IsFalse(int brokenFree, int brokenOnly, int brokenNo)
+        => AutoWizardSoftKeywordRetryPlanner.BreaksNoRestriction(
+                Summary(10, 10, new KeywordWishesDto(brokenFree, brokenOnly, brokenNo, 0, [])))
+            .ShouldBeFalse();
+
+    [Test]
+    public void BreaksNoRestriction_WithoutWishCounts_IsFalse()
+    {
+        AutoWizardSoftKeywordRetryPlanner.BreaksNoRestriction(Summary(10, 10)).ShouldBeFalse();
+        AutoWizardSoftKeywordRetryPlanner.BreaksNoRestriction(null).ShouldBeFalse();
+    }
+
+    [Test]
+    public void StrictScenariosToDelete_Promoted_RemovesTheStrictFinalScenarioToo()
+    {
+        var produced = StrictChain();
+
+        AutoWizardSoftKeywordRetryPlanner.StrictScenariosToDelete(produced, promoted: true)
+            .ShouldBe(produced.Select(s => s.ScenarioId).ToList());
+    }
+
+    [Test]
+    public void StrictScenariosToDelete_NotPromoted_KeepsTheStrictFinalScenario()
+    {
+        var produced = StrictChain();
+
+        AutoWizardSoftKeywordRetryPlanner.StrictScenariosToDelete(produced, promoted: false)
+            .ShouldBe(produced.Take(produced.Count - 1).Select(s => s.ScenarioId).ToList());
+    }
+
+    [Test]
+    public void BuildPromotedScenarioNote_NamesTheReplacedPlanAndTheAdditionalSlots()
+    {
+        var note = AutoWizardSoftKeywordRetryPlanner.BuildPromotedScenarioNote(1, "Strict plan");
+
+        note.ShouldContain("1 more slot(s)");
+        note.ShouldContain("'Strict plan'");
+        note.ShouldContain("without breaking any schedule-command wish");
+    }
+
+    private static List<AutoWizardStageScenario> StrictChain()
+        =>
+        [
+            new("Wizard", Guid.NewGuid(), Guid.NewGuid(), "W1"),
+            new("Harmonizer", Guid.NewGuid(), Guid.NewGuid(), "W2"),
+            new("HolisticHarmonizer", Guid.NewGuid(), Guid.NewGuid(), "W3"),
+        ];
 }

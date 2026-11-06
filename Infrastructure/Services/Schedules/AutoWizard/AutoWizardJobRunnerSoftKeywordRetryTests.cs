@@ -4,7 +4,8 @@
 /// The AutoWizard's soft-keyword retry driven through the real AutoWizardJobRunner: the strict (Hard) chain stays the
 /// final scenario; a second chain in Soft mode runs only when it was asked for, the strict scenario leaves slots open and
 /// a restricting schedule command exists; its scenario is kept, marked Soft and offered as SoftAlternative only when it
-/// fills more slots, and every other outcome removes all soft scenarios without touching the strict result.
+/// fills more slots and breaks a restricting wish; a better soft scenario that breaks none is promoted to the final result
+/// and the strict one is removed; every other outcome removes all soft scenarios without touching the strict result.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -122,6 +123,33 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
             Arg.Is<HarmonizerContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>());
         await _holisticRunner.Received(1).StartAsync(
             Arg.Is<HolisticHarmonizerRunInput>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SoftScenarioFillingMoreSlotsWithoutBreakingAnyRestriction_IsPromoted_AndTheStrictOneIsRemoved()
+    {
+        StubSummary(_softFinalToken, Demanded, new KeywordWishesDto(0, 0, 0, 2,
+        [
+            new KeywordWishItemDto(_agentId, PeriodFrom, "OnlyNight", "Unfulfilled", AgentName),
+            new KeywordWishItemDto(_agentId, PeriodUntil, "OnlyNight", "Unfulfilled", AgentName),
+        ]));
+
+        var (_, state) = await RunChainAsync(SoftRetryRequest());
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        var result = state.Result.ShouldNotBeNull();
+        result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Promoted);
+        result.FinalScenarioId.ShouldBe(_softHolisticScenarioId);
+        result.FinalScenarioToken.ShouldBe(_softFinalToken);
+        result.KeywordMode.ShouldBe(KeywordMode.Hard);
+        result.SoftAlternative.ShouldBeNull();
+        result.Summary.ShouldNotBeNull().FilledSlots.ShouldBe(Demanded);
+
+        _scenarios[_softHolisticScenarioId].SoftKeywordPlan.ShouldBeFalse();
+        _scenarios[_softHolisticScenarioId].Description.ShouldNotBeNull().ShouldContain("without breaking any schedule-command wish");
+        DeletedScenarioIds().ShouldBe(
+            [_wizardScenarioId, _harmonizerScenarioId, _holisticScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId],
+            ignoreOrder: true);
     }
 
     [Test]

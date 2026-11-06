@@ -464,6 +464,31 @@ public class NextPeriodAutoCommitServiceTests
     }
 
     [Test]
+    public async Task WatchAndCommit_PromotedSoftScenario_IsAcceptedLikeAStrictOne()
+    {
+        var promotedScenarioId = Guid.NewGuid();
+        var promotedToken = Guid.NewGuid();
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        _scenarioRepository.Get(promotedScenarioId).Returns(new AnalyseScenario { Id = promotedScenarioId, SoftKeywordPlan = false });
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, promotedScenarioId, promotedToken, "AutoWizard-Holistic (2)", 1000, [], [], [],
+            KeywordMode: KeywordMode.Hard,
+            SoftKeywordRetryOutcome: AutoWizardSoftKeywordRetryOutcomes.Promoted));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == promotedScenarioId), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<DeleteAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task WatchAndCommit_WithASoftAlternative_AcceptsOnlyTheStrictScenario()
     {
         var softScenarioId = Guid.NewGuid();

@@ -238,6 +238,24 @@ public class StaticEligibilityEvaluatorTests
     }
 
     [Test]
+    public void Evaluate_NightShiftOntoABlockedNextMorning_ReportsUnavailable()
+    {
+        var blockedMorning = Enumerable.Range(0, 7)
+            .Select(hour => new ClientAvailability { ClientId = ClientId, Date = Monday.AddDays(1), Hour = hour, IsAvailable = false })
+            .ToList();
+
+        Build(start: new TimeOnly(23, 0), end: new TimeOnly(7, 0), availability: blockedMorning)
+            .Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.Unavailable);
+    }
+
+    [Test]
+    public void Evaluate_NightShiftOntoAFreeNextMorning_IsEligible()
+    {
+        Build(start: new TimeOnly(23, 0), end: new TimeOnly(7, 0))
+            .Evaluate(ClientId, ShiftId).IsEligible.ShouldBeTrue();
+    }
+
+    [Test]
     public void Evaluate_FirstDayBlockedSecondDayFine_IsEligible()
     {
         var evaluator = Build(runDays: [Monday, Tuesday], contractFor: _ => Contract(monday: false));

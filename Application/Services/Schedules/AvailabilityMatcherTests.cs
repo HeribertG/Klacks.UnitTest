@@ -5,7 +5,8 @@
 /// work; a date with at least one available hour is positively constrained (only those hours are usable,
 /// so any shift hour not marked available blocks the client); a date carrying only unavailable records
 /// keeps legacy negative semantics. Verifies the exclusive-end hour boundary (08:00-16:00 occupies
-/// 8..15, not 16) and the cross-midnight same-date-only window.
+/// 8..15, not 16) and that a shift crossing midnight is checked on both dates: the hours after midnight against the
+/// next date's records (owner rule 2026-11-06, availability is hard).
 /// </summary>
 
 using Klacks.Api.Application.Services.Schedules;
@@ -119,7 +120,50 @@ public class AvailabilityMatcherTests
     public void NegativeDay_CrossMidnightSameDateHour_IsUnavailable()
         => Match([Unavailable(23)], new TimeOnly(22, 0), new TimeOnly(6, 0)).ShouldBeTrue();
 
+    private static readonly DateOnly NextDay = D.AddDays(1);
+
+    private static ClientAvailability NextDayAvailable(int hour) => new() { Date = NextDay, Hour = hour, IsAvailable = true };
+
+    private static ClientAvailability NextDayUnavailable(int hour) => new() { Date = NextDay, Hour = hour, IsAvailable = false };
+
+    private static ClientAvailability[] NextDayBlocked(int fromHour, int untilHourExclusive)
+        => Enumerable.Range(fromHour, untilHourExclusive - fromHour).Select(NextDayUnavailable).ToArray();
+
     [Test]
-    public void NegativeDay_CrossMidnightNextDayHour_NotUnavailable_DocumentedV1Limitation()
-        => Match([Unavailable(2)], new TimeOnly(22, 0), new TimeOnly(6, 0)).ShouldBeFalse();
+    public void NightShift_NextDayBlockedUntilSeven_IsUnavailable()
+        => Match(NextDayBlocked(0, 7), new TimeOnly(23, 0), new TimeOnly(7, 0)).ShouldBeTrue();
+
+    [Test]
+    public void NightShift_NextDayFree_NotUnavailable()
+        => Match([], new TimeOnly(23, 0), new TimeOnly(7, 0)).ShouldBeFalse();
+
+    [Test]
+    public void NightShift_NextDayRecordsOnlyAfterTheShift_NotUnavailable()
+        => Match([NextDayUnavailable(7), NextDayUnavailable(8)], new TimeOnly(23, 0), new TimeOnly(7, 0)).ShouldBeFalse();
+
+    [Test]
+    public void NightShift_NextDayPositiveFromSeven_IsUnavailable()
+    {
+        var entries = Enumerable.Range(7, 8).Select(NextDayAvailable).ToArray();
+        Match(entries, new TimeOnly(23, 0), new TimeOnly(7, 0)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void NightShift_NextDayPositiveCoveringTheMorning_NotUnavailable()
+    {
+        var entries = Enumerable.Range(0, 7).Select(NextDayAvailable).ToArray();
+        Match(entries, new TimeOnly(23, 0), new TimeOnly(7, 0)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void NegativeDay_CrossMidnightNextDayHour_IsUnavailable()
+        => Match([NextDayUnavailable(2)], new TimeOnly(22, 0), new TimeOnly(6, 0)).ShouldBeTrue();
+
+    [Test]
+    public void ShiftEndingAtMidnight_NextDayFullyBlocked_NotUnavailable()
+        => Match(NextDayBlocked(0, 24), new TimeOnly(16, 0), new TimeOnly(0, 0)).ShouldBeFalse();
+
+    [Test]
+    public void NightShiftEndingWithMinutes_NextDayBlockedInLastHour_IsUnavailable()
+        => Match([NextDayUnavailable(6)], new TimeOnly(22, 0), new TimeOnly(6, 30)).ShouldBeTrue();
 }

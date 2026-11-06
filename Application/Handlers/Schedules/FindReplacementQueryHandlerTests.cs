@@ -672,7 +672,7 @@ public class FindReplacementQueryHandlerTests
     }
 
     [Test]
-    public async Task UnavailableNextDayHour_IsNotExcluded_DocumentedV1Limitation()
+    public async Task UnavailableEarlyHourOfTheShiftDate_IsNotExcluded()
     {
         var a = Guid.NewGuid();
         SetMembers(Member(a, "Anna"));
@@ -682,6 +682,22 @@ public class FindReplacementQueryHandlerTests
 
         result.Eligible.Single().ClientId.ShouldBe(a);
         result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UnavailableNextDayHourInsideTheNightShift_IsExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        var nextMorning = Unavailable(a, 2);
+        nextMorning.Date = Date.AddDays(1);
+        SetAvailability(nextMorning);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().Reason.ShouldBe("unavailable");
+        await _availabilityRepo.Received().GetByDateRange(Date, Date.AddDays(1));
     }
 
     [Test]

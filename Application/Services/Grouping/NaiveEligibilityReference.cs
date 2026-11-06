@@ -162,7 +162,9 @@ public sealed class NaiveEligibilityReference
             return GroupingIneligibilityReason.Blacklisted;
         }
 
-        var availability = _context.AvailabilityByClientAndDay.GetValueOrDefault((clientId, day), NoAvailability);
+        var availability = _context.AvailabilityByClientAndDay.GetValueOrDefault((clientId, day), NoAvailability)
+            .Concat(_context.AvailabilityByClientAndDay.GetValueOrDefault((clientId, day.AddDays(1)), NoAvailability))
+            .ToList();
         if (AvailabilityMatcher.IsUnavailable(availability, day, shift.Start, shift.End))
         {
             return GroupingIneligibilityReason.Unavailable;
