@@ -102,13 +102,33 @@ public class KeywordWishCalculatorTests
     }
 
     [Test]
-    public void Weights_RankFreeAboveOnlyAboveNoAboveUnfulfilled()
+    public void CompareBroken_OneFreeOutweighsAnyNumberOfOnly_AndOneOnlyAnyNumberOfNo()
     {
-        var weights = KeywordWishWeights.Default;
+        var oneFree = new KeywordWishTally(BrokenFree: 1, BrokenOnly: 0, BrokenNo: 0, Unfulfilled: 0);
+        var manyOnly = new KeywordWishTally(BrokenFree: 0, BrokenOnly: 1000, BrokenNo: 1000, Unfulfilled: 1000);
+        var oneOnly = new KeywordWishTally(BrokenFree: 0, BrokenOnly: 1, BrokenNo: 0, Unfulfilled: 0);
+        var manyNo = new KeywordWishTally(BrokenFree: 0, BrokenOnly: 0, BrokenNo: 1000, Unfulfilled: 0);
 
-        weights.Free.ShouldBeGreaterThan(weights.Only);
-        weights.Only.ShouldBeGreaterThan(weights.No);
-        weights.No.ShouldBeGreaterThan(weights.Unfulfilled);
+        oneFree.CompareBrokenTo(manyOnly).ShouldBeGreaterThan(0);
+        oneOnly.CompareBrokenTo(manyNo).ShouldBeGreaterThan(0);
+        manyNo.CompareBrokenTo(oneOnly).ShouldBeLessThan(0);
+    }
+
+    [Test]
+    public void CompareBroken_IgnoresTheUnfulfilledWishes()
+    {
+        new KeywordWishTally(0, 0, 1, Unfulfilled: 5).CompareBrokenTo(new KeywordWishTally(0, 0, 1, Unfulfilled: 0)).ShouldBe(0);
+    }
+
+    [Test]
+    public void RisesInAnyTier_IsTrueAlsoWhenAHigherTierFalls()
+    {
+        var before = new KeywordWishTally(BrokenFree: 1, BrokenOnly: 0, BrokenNo: 0, Unfulfilled: 0);
+        var after = new KeywordWishTally(BrokenFree: 0, BrokenOnly: 1, BrokenNo: 0, Unfulfilled: 0);
+
+        after.RisesInAnyTierAbove(before).ShouldBeTrue();
+        after.CompareBrokenTo(before).ShouldBeLessThan(0, "lexicographically better, still a rise of the OnlyX tier");
+        before.RisesInAnyTierAbove(before).ShouldBeFalse();
     }
 
     [Test]
@@ -131,7 +151,5 @@ public class KeywordWishCalculatorTests
         result.Tally.ShouldBe(new KeywordWishTally(BrokenFree: 1, BrokenOnly: 0, BrokenNo: 1, Unfulfilled: 1));
         result.Items.Count.ShouldBe(3);
         result.Items.ShouldContain(new KeywordWishItem("A", KeywordWishTestData.Monday.AddDays(1), ScheduleCommandKeyword.NotFree, KeywordWishOutcome.Unfulfilled));
-        result.Tally.Penalty(KeywordWishWeights.Default).ShouldBe(
-            KeywordWishWeights.Default.Free + KeywordWishWeights.Default.No + KeywordWishWeights.Default.Unfulfilled);
     }
 }

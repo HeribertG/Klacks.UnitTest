@@ -13,8 +13,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Harmonizer.Conductor;
 
 /// <summary>
 /// Keyword wishes in Wizard 2/3/4: Hard mode keeps the FREE / OnlyX / NoX vetoes; Soft mode drops them; in both modes a
-/// move must not raise a row's keyword-wish penalty, so a -FREE or OnlyX row never loses its wanted shift and a Soft move
-/// never breaks more wishes.
+/// move must not raise any keyword-wish tier of a row, so a -FREE or OnlyX row never loses its wanted shift and a Soft move
+/// never breaks a wish - not even one of a lower tier in exchange for a higher one.
 /// </summary>
 [TestFixture]
 public class DomainAwareReplaceValidatorKeywordWishTests
@@ -154,5 +154,26 @@ public class DomainAwareReplaceValidatorKeywordWishTests
     {
         var start = date.ToDateTime(new TimeOnly(symbol == CellSymbol.Night ? 23 : 15, 0));
         return new Cell(symbol, Guid.NewGuid(), [Guid.NewGuid()], false, start, start.AddHours(8), 8m);
+    }
+
+    [Test]
+    public void SoftMode_SameRowTradeOfABrokenFreeForABrokenOnly_IsRejected()
+    {
+        var freeDay = Day0.AddDays(Day);
+        var onlyNightDay = Day0.AddDays(2);
+        var agents = new List<BitmapAgent> { new("agent-0", "agent-0", 100m, new HashSet<CellSymbol>()) };
+        var bitmap = BitmapBuilder.Build(new BitmapInput(agents, Day0, Day0.AddDays(2), []));
+        bitmap.SetCell(0, Day, CellOn(freeDay, CellSymbol.Late));
+        var availability = new Dictionary<(string AgentId, DateOnly Date), DayAvailability>
+        {
+            [("agent-0", freeDay)] = new(true, true, false, Keywords: KeywordDay.From([ScheduleCommandKeyword.Free])),
+            [("agent-0", onlyNightDay)] = new(true, false, false, Keywords: KeywordDay.From([ScheduleCommandKeyword.OnlyNight])),
+        };
+        var validator = new DomainAwareReplaceValidator(availability, keywordMode: KeywordMode.Soft);
+
+        var issue = validator.DiagnoseKeywordWishes(
+            bitmap, 0, [(Day, Cell.Free()), (2, CellOn(onlyNightDay, CellSymbol.Late))], "row");
+
+        issue.ShouldNotBeNull("one broken FREE fewer, one broken OnlyX more: lexicographically better, still a rising tier");
     }
 }

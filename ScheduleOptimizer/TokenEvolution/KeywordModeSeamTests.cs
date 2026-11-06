@@ -15,7 +15,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution;
 /// <summary>
 /// Wizard 1 seams of the keyword mode. Hard keeps today's vetoes (pinned by the existing Stage-0 / filter / checker
 /// tests); Soft turns every keyword restriction into a wish: no Stage-0 veto, a Stage-1 (round-2) verdict in the auction,
-/// a veto only below the last rung of the coverage escalation, no legality violation and a plannable day for MaxPossible.
+/// a veto on every rung of the coverage escalation below the keyword rung, no legality violation. MaxPossible closes a
+/// keyword day in both modes (a Soft wish breaks only for coverage, never for hours).
 /// </summary>
 [TestFixture]
 public class KeywordModeSeamTests
@@ -62,8 +63,9 @@ public class KeywordModeSeamTests
 
     [TestCase(SlotRelaxation.None, false)]
     [TestCase(SlotRelaxation.RestDaysOnly, false)]
-    [TestCase(SlotRelaxation.All, true)]
-    public void SlotFilter_SoftMode_LiftsTheWishOnlyOnTheLastRung(SlotRelaxation rung, bool valid)
+    [TestCase(SlotRelaxation.All, false)]
+    [TestCase(SlotRelaxation.KeywordWishes, true)]
+    public void SlotFilter_SoftMode_LiftsTheWishOnlyOnTheKeywordRung(SlotRelaxation rung, bool valid)
     {
         var context = FreeOnMonday(KeywordMode.Soft);
 
@@ -77,6 +79,7 @@ public class KeywordModeSeamTests
 
     [TestCase(SlotRelaxation.None)]
     [TestCase(SlotRelaxation.All)]
+    [TestCase(SlotRelaxation.KeywordWishes)]
     public void SlotFilter_HardMode_VetoesOnEveryRung(SlotRelaxation rung)
     {
         SlotConstraintFilter.IsValidAssignment(
@@ -95,10 +98,10 @@ public class KeywordModeSeamTests
             .ShouldBe(expected);
     }
 
-    [TestCase(KeywordMode.Hard, 0d)]
-    [TestCase(KeywordMode.Soft, 8d)]
-    public void MaxPossible_TreatsAKeywordDayAsPlannableOnlyInSoftMode(KeywordMode mode, double expected)
+    [TestCase(KeywordMode.Hard)]
+    [TestCase(KeywordMode.Soft)]
+    public void MaxPossible_ClosesAKeywordDayInBothModes(KeywordMode mode)
     {
-        new MaxPossibleCalculator().ComputeForAll(FreeOnMonday(mode))["A"].ShouldBe(expected);
+        new MaxPossibleCalculator().ComputeForAll(FreeOnMonday(mode))["A"].ShouldBe(0d);
     }
 }
