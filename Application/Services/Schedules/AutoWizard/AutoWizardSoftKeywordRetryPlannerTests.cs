@@ -68,13 +68,13 @@ public sealed class AutoWizardSoftKeywordRetryPlannerTests
         var day = new DateOnly(2026, 11, 3);
         var wishes = new KeywordWishesDto(1, 0, 0, 1,
         [
-            new KeywordWishItemDto(Known, day, "Free", "BrokenFree"),
-            new KeywordWishItemDto(Unknown, day, "NotFree", "Unfulfilled"),
+            new KeywordWishItemDto(Known, day, "Free", "BrokenFree", "Anna Muster"),
+            new KeywordWishItemDto(Unknown, day, "NotFree", "Unfulfilled", Unknown.ToString()),
         ]);
         var stage = new AutoWizardStageScenario("HolisticHarmonizer", Guid.NewGuid(), Guid.NewGuid(), "Soft plan");
 
         var alternative = AutoWizardSoftKeywordRetryPlanner.BuildAlternative(
-            stage, Summary(10, 7), Summary(10, 9, wishes), new Dictionary<Guid, string> { [Known] = "Anna Muster" });
+            stage, Summary(10, 7), Summary(10, 9, wishes));
 
         alternative.ScenarioId.ShouldBe(stage.ScenarioId);
         alternative.ScenarioToken.ShouldBe(stage.Token);
@@ -91,18 +91,30 @@ public sealed class AutoWizardSoftKeywordRetryPlannerTests
     public void BuildAlternative_DoesNotBlameTheSoftPlanForAWishTheStrictPlanMissesAsWell()
     {
         var day = new DateOnly(2026, 11, 4);
-        var shared = new KeywordWishItemDto(Known, day, "NotFree", "Unfulfilled");
-        var softOnly = new KeywordWishItemDto(Known, day, "Free", "BrokenFree");
+        var shared = new KeywordWishItemDto(Known, day, "NotFree", "Unfulfilled", "Anna Muster");
+        var softOnly = new KeywordWishItemDto(Known, day, "Free", "BrokenFree", "Anna Muster");
         var stage = new AutoWizardStageScenario("HolisticHarmonizer", Guid.NewGuid(), Guid.NewGuid(), "Soft plan");
 
         var alternative = AutoWizardSoftKeywordRetryPlanner.BuildAlternative(
             stage,
             Summary(10, 7, new KeywordWishesDto(0, 0, 0, 1, [shared])),
-            Summary(10, 9, new KeywordWishesDto(1, 0, 0, 1, [shared, softOnly])),
-            new Dictionary<Guid, string> { [Known] = "Anna Muster" });
+            Summary(10, 9, new KeywordWishesDto(1, 0, 0, 1, [shared, softOnly])));
 
         alternative.BrokenWishes.ShouldBe([new AutoWizardBrokenWishDto(Known, "Anna Muster", day, "Free", "BrokenFree")]);
         alternative.Summary.KeywordWishes.ShouldNotBeNull().Items.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public void SoftOnlyMisses_MatchesAWishWithoutItsDisplayName()
+    {
+        var day = new DateOnly(2026, 11, 5);
+        var strict = new KeywordWishItemDto(Known, day, "NotFree", "Unfulfilled", Known.ToString());
+        var soft = strict with { ClientName = "Anna Muster" };
+
+        AutoWizardSoftKeywordRetryPlanner.SoftOnlyMisses(
+                Summary(10, 7, new KeywordWishesDto(0, 0, 0, 1, [strict])),
+                Summary(10, 9, new KeywordWishesDto(0, 0, 0, 1, [soft])))
+            .ShouldBeEmpty();
     }
 
     [Test]

@@ -14,7 +14,6 @@ using Klacks.Api.Application.DTOs.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.DTOs.Schedules.KeywordWishes;
 using Klacks.Api.Application.DTOs.Schedules.Summary;
 using Klacks.Api.Application.DTOs.Schedules.Wizard;
-using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
@@ -44,14 +43,12 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
 
     private IScenarioSummaryBuilder _summaryBuilder = null!;
     private IKeywordWishCountService _wishCounter = null!;
-    private IClientRepository _clientRepository = null!;
 
     [SetUp]
     public void SetUpSoftRetry()
     {
         _summaryBuilder = Substitute.For<IScenarioSummaryBuilder>();
         _wishCounter = Substitute.For<IKeywordWishCountService>();
-        _clientRepository = Substitute.For<IClientRepository>();
 
         _wizardRunner.StartAsync(Arg.Is<WizardContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
             .Returns(_softWizardStageJobId);
@@ -83,19 +80,16 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
 
         StubSummary(_strictFinalToken, StrictFilled);
         StubSummary(_softFinalToken, Demanded, new KeywordWishesDto(1, 0, 0, 0,
-            [new KeywordWishItemDto(_agentId, PeriodFrom, "Free", "BrokenFree")]));
+            [new KeywordWishItemDto(_agentId, PeriodFrom, "Free", "BrokenFree", AgentName)]));
         _wishCounter.HasRestrictingWishesAsync(
                 Arg.Any<IReadOnlyCollection<Guid>>(), PeriodFrom, PeriodUntil, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(true);
-        _clientRepository.GetDisplayNamesAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<Guid, string> { [_agentId] = AgentName });
     }
 
     protected override void AddServices(ServiceCollection services)
     {
         services.AddSingleton<IScenarioSummaryBuilder>(_ => _summaryBuilder);
         services.AddSingleton<IKeywordWishCountService>(_ => _wishCounter);
-        services.AddSingleton<IClientRepository>(_ => _clientRepository);
     }
 
     [Test]

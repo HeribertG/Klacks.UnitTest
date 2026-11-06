@@ -25,6 +25,7 @@ public class SoftKeywordPlacementTests
     private const double TargetHours = 40;
 
     private static readonly Guid MondaySlot = Guid.NewGuid();
+    private static readonly Guid MondayLateSlot = Guid.NewGuid();
 
     private static CoreScheduleCommand Command(string agentId, ScheduleCommandKeyword keyword) => new(agentId, Monday, keyword);
 
@@ -110,6 +111,59 @@ public class SoftKeywordPlacementTests
         repaired.Tokens.ShouldHaveSingleItem().AgentId.ShouldBe("D");
         WizardKeywordWishes.For(context).Evaluate(repaired.Tokens, collectItems: false).Tally
             .ShouldBe(new KeywordWishTally(BrokenFree: 0, BrokenOnly: 1, BrokenNo: 0, Unfulfilled: 1), "an early shift on LATE is broken and unfulfilled");
+    }
+
+    [Test]
+    public void Repair_OnTheKeywordRung_MovesTheBlockerAndBreaksTheWishOfTheMover()
+    {
+        var (context, scenario) = MoveContext(KeywordMode.Soft);
+        var escalations = new List<string>();
+
+        var repaired = new TokenRepair(new TokenConstraintChecker())
+            .Apply(new TokenOperatorContext(scenario, null, context, new Random(0)), escalations.Add);
+
+        repaired.Tokens.Count.ShouldBe(2);
+        repaired.Tokens.ShouldContain(t => t.ShiftRefId == MondaySlot && t.AgentId == "X");
+        repaired.Tokens.ShouldContain(t => t.ShiftRefId == MondayLateSlot && t.AgentId == "Y", "Y takes the handed-over late shift");
+        escalations.ShouldHaveSingleItem().ShouldEndWith("relocate", customMessage: "the slot was filled by the move, not directly");
+        WizardKeywordWishes.For(context).Evaluate(repaired.Tokens, collectItems: false).Tally
+            .ShouldBe(new KeywordWishTally(BrokenFree: 0, BrokenOnly: 1, BrokenNo: 0, Unfulfilled: 1), "X works early on LATE");
+    }
+
+    [Test]
+    public void Repair_HardMode_DoesNotMoveABlockerToBreakAWish()
+    {
+        var (context, scenario) = MoveContext(KeywordMode.Hard);
+
+        var repaired = new TokenRepair(new TokenConstraintChecker())
+            .Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
+
+        repaired.Tokens.ShouldHaveSingleItem().AgentId.ShouldBe("X");
+        repaired.Tokens.ShouldNotContain(t => t.ShiftRefId == MondaySlot);
+    }
+
+    /// <summary>
+    /// The early slot is open. X (LATE on Monday) holds the late shift, so the daily hours block the early slot; Y has no
+    /// wish but has blacklisted the early shift (a hard veto) and can only take the late one. No agent takes the slot
+    /// directly on any rung, and the move (X hands the late shift to Y, then takes the early one) is legal only once X's
+    /// wish may be broken.
+    /// </summary>
+    private static (CoreWizardContext Context, CoreScenario Scenario) MoveContext(KeywordMode mode)
+    {
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = Monday,
+            PeriodUntil = Sunday,
+            Agents = [Agent("X"), Agent("Y")],
+            Shifts = [Slot(MondaySlot, Monday, Early), Slot(MondayLateSlot, Monday, Late)],
+            ScheduleCommands = [Command("X", ScheduleCommandKeyword.OnlyLate)],
+            ShiftPreferences = [new CoreShiftPreference("Y", MondaySlot, ShiftPreferenceKind.Blacklist)],
+            KeywordMode = mode,
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            SchedulingMinPauseHours = 11,
+        };
+        return (context, new CoreScenario { Id = "s", Tokens = [Token("X", MondayLateSlot, Monday, Late)] });
     }
 
     [TestCase(KeywordMode.Soft, "D")]

@@ -122,9 +122,9 @@ public class NextPeriodAutoCommitServiceTests
             .Returns(new ScenarioComplianceReport(newIssues.ToList(), new List<PeriodIssueDto>()));
     }
 
-    private Task CommitAsync() =>
+    private Task CommitAsync(Guid? softAlternativeScenarioId = null) =>
         _sut.CommitCompletedChainAsync(
-            ScenarioId, ScenarioToken, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+            ScenarioId, ScenarioToken, GroupId, GroupName, PeriodStart, PeriodEnd, softAlternativeScenarioId, CancellationToken.None);
 
     /// <summary>
     /// The single blocked event that was dispatched, read back from the recorded calls. Arg.Do cannot do
@@ -489,5 +489,91 @@ public class NextPeriodAutoCommitServiceTests
             Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == ScenarioId), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(
             Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == softScenarioId), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WatchAndCommit_WithASoftAlternative_DeletesItAfterTheStrictScenarioIsAccepted()
+    {
+        var softScenarioId = Guid.NewGuid();
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        await UseTerminalStateWithSoftAlternativeAsync(softScenarioId);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            _mediator.Send(Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == ScenarioId), Arg.Any<CancellationToken>());
+            _mediator.Send(Arg.Is<DeleteAnalyseScenarioCommand>(c => c.ScenarioId == softScenarioId), CancellationToken.None);
+        });
+        await _mediator.DidNotReceive().Send(
+            Arg.Is<DeleteAnalyseScenarioCommand>(c => c.ScenarioId == ScenarioId), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_Blocked_KeepsTheSoftAlternative()
+    {
+        var softScenarioId = Guid.NewGuid();
+        StubCompliance(new PeriodIssueDto { ClientId = Guid.NewGuid(), Code = "MIN_REST" });
+
+        await CommitAsync(softScenarioId);
+
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<DeleteAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_AcceptRefused_KeepsTheSoftAlternative()
+    {
+        var softScenarioId = Guid.NewGuid();
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(false));
+
+        await CommitAsync(softScenarioId);
+
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<DeleteAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_FailingSoftDelete_StillReportsTheCommit()
+    {
+        var softScenarioId = Guid.NewGuid();
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+        _mediator.Send(Arg.Any<DeleteAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("delete failed")));
+
+        await Should.NotThrowAsync(() => CommitAsync(softScenarioId));
+
+        await _triggerService.Received(1).OnEventAsync(
+            Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<DeleteAnalyseScenarioCommand>(c => c.ScenarioId == softScenarioId), CancellationToken.None);
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_WithoutSoftAlternative_DeletesNothing()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
+
+        await CommitAsync();
+
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<DeleteAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    private async Task UseTerminalStateWithSoftAlternativeAsync(Guid softScenarioId)
+    {
+        var softToken = Guid.NewGuid();
+        var softSummary = new ScenarioSummaryDto(softToken, PeriodStart, PeriodEnd, 10, 10, 0, 0, [], []);
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, ScenarioId, ScenarioToken, "AutoWizard-Holistic", 1000, [], [], [],
+            SoftAlternative: new AutoWizardSoftAlternativeDto(
+                softScenarioId, softToken, "AutoWizard-Soft", KeywordMode.Soft, 2, softSummary, []),
+            SoftKeywordRetryOutcome: AutoWizardSoftKeywordRetryOutcomes.Kept));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
     }
 }

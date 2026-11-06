@@ -1,13 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Reflection;
-using System.Security.Claims;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Hubs;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Klacks.UnitTest.Infrastructure.Hubs;
 
@@ -22,9 +20,6 @@ namespace Klacks.UnitTest.Infrastructure.Hubs;
 [TestFixture]
 public class WizardJobHubAuthorizationTests
 {
-    private const string UserName = "planner";
-    private const string AuthenticationType = "Test";
-
     public static IEnumerable<TestCaseData> HubsAndStartControllers()
     {
         yield return new TestCaseData(typeof(AutoWizardJobHub), typeof(AutoWizardController));
@@ -50,26 +45,13 @@ public class WizardJobHubAuthorizationTests
     [TestCaseSource(nameof(Hubs))]
     public async Task Hub_RefusesARoleThatMayNotStartTheJob(Type hubType)
     {
-        (await IsAuthorizedAsync(hubType, Roles.Authorised)).ShouldBeFalse();
-        (await IsAuthorizedAsync(hubType)).ShouldBeFalse("a signed-in user without a role is the planner floor");
+        (await HubAuthorizationEvaluator.IsAuthorizedAsync(hubType, Roles.Authorised)).ShouldBeFalse();
+        (await HubAuthorizationEvaluator.IsAuthorizedAsync(hubType)).ShouldBeFalse("a signed-in user without a role is the planner floor");
     }
 
     [TestCaseSource(nameof(Hubs))]
     public async Task Hub_AdmitsTheRoleThatStartsTheJob(Type hubType)
     {
-        (await IsAuthorizedAsync(hubType, Roles.Admin)).ShouldBeTrue();
-    }
-
-    private static async Task<bool> IsAuthorizedAsync(Type hubType, params string[] roles)
-    {
-        var services = new ServiceCollection().AddLogging().AddAuthorizationCore().BuildServiceProvider();
-        var policyProvider = services.GetRequiredService<IAuthorizationPolicyProvider>();
-        var policy = await AuthorizationPolicy.CombineAsync(policyProvider, [hubType.GetCustomAttribute<AuthorizeAttribute>()!]);
-        var claims = new List<Claim> { new(ClaimTypes.Name, UserName) };
-        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, AuthenticationType));
-
-        var result = await services.GetRequiredService<IAuthorizationService>().AuthorizeAsync(principal, null, policy!);
-        return result.Succeeded;
+        (await HubAuthorizationEvaluator.IsAuthorizedAsync(hubType, Roles.Admin)).ShouldBeTrue();
     }
 }

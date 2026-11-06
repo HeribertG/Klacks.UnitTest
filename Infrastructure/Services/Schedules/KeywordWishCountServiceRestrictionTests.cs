@@ -34,7 +34,7 @@ public sealed class KeywordWishCountServiceRestrictionTests
         keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(ScheduleCommandKeywordTestFactory.Default);
         var options = new DbContextOptionsBuilder<DataBaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
-        _sut = new KeywordWishCountService(_context, _commands, keywordProvider);
+        _sut = new KeywordWishCountService(_context, _commands, keywordProvider, Substitute.For<IClientRepository>());
     }
 
     [TearDown]
