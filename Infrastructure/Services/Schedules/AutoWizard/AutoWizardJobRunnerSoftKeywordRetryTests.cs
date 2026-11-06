@@ -200,6 +200,30 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         DeletedScenarioIds().ShouldBe([_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId], ignoreOrder: true);
     }
 
+    [Test]
+    public async Task CancelDuringTheSoftChain_StillCompletesWithTheStrictResult()
+    {
+        var softStarted = new TaskCompletionSource();
+        _wizardRunner.StartAsync(Arg.Is<WizardContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                softStarted.TrySetResult();
+                return BlockUntilCancelledAsync(call.ArgAt<CancellationToken>(1));
+            });
+
+        var jobId = await _runner.StartAsync(SoftRetryRequest(), CancellationToken.None);
+        await softStarted.Task.WaitAsync(ChainTimeout);
+        _runner.TryCancel(jobId).ShouldBeTrue();
+        var (_, state) = await WaitForChainAsync(jobId);
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        var result = state.Result.ShouldNotBeNull();
+        result.FinalScenarioId.ShouldBe(_holisticScenarioId);
+        result.SoftAlternative.ShouldBeNull();
+        result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Failed);
+        DeletedScenarioIds().ShouldBe([_wizardScenarioId, _harmonizerScenarioId], ignoreOrder: true);
+    }
+
     private static StartAutoWizardRequest SoftRetryRequest() => Request(Guid.NewGuid()) with { SoftKeywordRetry = true };
 
     private AnalyseScenarioResource ResourceWithToken(Guid scenarioId, Guid token)
