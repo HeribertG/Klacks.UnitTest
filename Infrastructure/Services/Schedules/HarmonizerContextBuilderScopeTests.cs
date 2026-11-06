@@ -25,7 +25,8 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 
 /// <summary>
 /// Wizard 2 reads the same scope as Wizard 1: a shift preference set on an order reaches the cut pieces that are
-/// actually staffed (K16), and days outside the company membership are closed (M6).
+/// actually staffed (K16), days outside the company membership are closed (M6), and in a run for a group the days outside the
+/// employee's period in that group are closed too.
 /// </summary>
 [TestFixture]
 public class HarmonizerContextBuilderScopeTests
@@ -113,6 +114,56 @@ public class HarmonizerContextBuilderScopeTests
                 date <= lastMemberDay, $"{date:yyyy-MM-dd}: a member works per contract, after the exit the day is closed");
         }
     }
+
+    [Test]
+    public async Task GroupPeriod_ClosesTheDaysOutsideIt_WhenTheRunHasThatGroup()
+    {
+        var agent = Guid.NewGuid();
+        var group = Guid.NewGuid();
+        StubContract(agent);
+        var firstGroupDay = WeekStart.AddDays(2);
+        var lastGroupDay = WeekStart.AddDays(4);
+        SeedGroupItem(agent, group, firstGroupDay, lastGroupDay);
+        SeedGroupItem(agent, Guid.NewGuid(), validFrom: null, validUntil: null);
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(
+            new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null, GroupId: group), CancellationToken.None);
+
+        for (var date = WeekStart; date <= WeekEnd; date = date.AddDays(1))
+        {
+            input.Availability![(agent.ToString(), date)].WorksOnDay.ShouldBe(
+                date >= firstGroupDay && date <= lastGroupDay,
+                $"{date:yyyy-MM-dd}: only the group period of the run's own group counts, an open item in another group does not widen it");
+        }
+    }
+
+    [Test]
+    public async Task GroupPeriod_IsIgnored_WhenTheRunHasNoGroup()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(agent);
+        SeedGroupItem(agent, Guid.NewGuid(), WeekStart.AddDays(2), WeekStart.AddDays(4));
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(
+            new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        for (var date = WeekStart; date <= WeekEnd; date = date.AddDays(1))
+        {
+            input.Availability![(agent.ToString(), date)].WorksOnDay.ShouldBeTrue($"{date:yyyy-MM-dd}: without a group no group period applies");
+        }
+    }
+
+    private void SeedGroupItem(Guid agent, Guid group, DateOnly? validFrom, DateOnly? validUntil)
+        => _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            GroupId = group,
+            ValidFrom = validFrom?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            ValidUntil = validUntil?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+        });
 
     private (Guid Order, Guid Root, Guid Child) SeedCutOrder(TimeOnly rootStart, TimeOnly rootEnd, TimeOnly childStart, TimeOnly childEnd)
     {

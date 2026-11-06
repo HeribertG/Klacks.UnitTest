@@ -27,6 +27,7 @@ public sealed class HolisticHarmonizerRunServiceModeTests
     private static readonly DateOnly PeriodFrom = new(2026, 3, 2);
     private static readonly DateOnly PeriodUntil = new(2026, 3, 22);
 
+    private IHarmonizerContextBuilder _contextBuilder = null!;
     private ISettingsReader _settingsReader = null!;
     private IPlanProposalProvider _provider = null!;
     private HarmonizerResultCache _resultCache = null!;
@@ -36,6 +37,7 @@ public sealed class HolisticHarmonizerRunServiceModeTests
     public void Setup()
     {
         var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();
+        _contextBuilder = contextBuilder;
         contextBuilder
             .BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ => DeterministicSearchFixture.BuildInput(FixtureSeed));
@@ -107,6 +109,26 @@ public sealed class HolisticHarmonizerRunServiceModeTests
         HolisticHarmonizerModes.Parse("claude").ShouldBe(HolisticHarmonizerMode.Deterministic);
         HolisticHarmonizerModes.IsKnown("claude").ShouldBeFalse();
         HolisticHarmonizerModes.IsKnown(null).ShouldBeTrue();
+    }
+
+    [TestCase(HolisticHarmonizerModes.Deterministic)]
+    [TestCase(HolisticHarmonizerModes.Llm)]
+    public async Task RunAsync_HandsTheGroupOfTheRunToTheContextBuilder(string mode)
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        ConfigureMode(mode);
+        _settingsReader.GetSetting(SettingKeys.HOLISTIC_HARMONIZER_LLM_MODEL)
+            .Returns(new SettingsEntity { Type = SettingKeys.HOLISTIC_HARMONIZER_LLM_MODEL, Value = "vision-model" });
+        _provider.CapabilityCheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: false, LatencyMs: 0, Error: "offline", AnsweredButFailedImageCheck: false));
+
+        // Act
+        await _sut.RunAsync(BuildInput() with { GroupId = groupId }, CancellationToken.None);
+
+        // Assert
+        await _contextBuilder.Received().BuildContextAsync(
+            Arg.Is<HarmonizerContextRequest>(r => r.GroupId == groupId), Arg.Any<CancellationToken>());
     }
 
     private void ConfigureMode(string? mode)
