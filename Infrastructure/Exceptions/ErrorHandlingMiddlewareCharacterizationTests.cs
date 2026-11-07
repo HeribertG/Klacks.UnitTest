@@ -258,6 +258,16 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             true);
 
         yield return new MappingCase(
+            "StandInWorksPresentException",
+            () => new StandInWorksPresentException(2),
+            409,
+            JsonContentType,
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The period cannot be closed: 2 service(s) are assigned to stand-ins. Assign them to a person or convert the stand-ins, then close the period.\",\"standInWorkCount\":2,\"errorCode\":\"{StandInWorksPresentException.ErrorCode}\"}}",
+            LogLevel.Warning,
+            "ConflictException caught by middleware: The period cannot be closed: 2 service(s) are assigned to stand-ins. Assign them to a person or convert the stand-ins, then close the period.",
+            true);
+
+        yield return new MappingCase(
             "PayrollExportBlockedException",
             () => new PayrollExportBlockedException(new PayrollCompletenessResult
             {

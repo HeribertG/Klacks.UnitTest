@@ -73,7 +73,7 @@ public class PeriodCloseErrorCountParityTests
 
         var handler = new GetPeriodIssuesQueryHandler(
             readRepository, _loader, _escalation, groups, Substitute.For<IClientVisibilityGuard>(),
-            Substitute.For<ILogger<GetPeriodIssuesQueryHandler>>());
+            Substitute.For<IPeriodSealCompletenessGuard>(), Substitute.For<ILogger<GetPeriodIssuesQueryHandler>>());
 
         return PeriodCloseGates.CountErrors(await handler.Handle(new GetPeriodIssuesQuery(Start, End, GroupId), CancellationToken.None));
     }

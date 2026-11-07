@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Unit tests for PeriodSealCompletenessGuard: a complete period costs one count and no list, an incomplete one is
-/// refused with the full count but a list restricted to the clients the caller may see, and the scope (group or
-/// whole period) travels to the repository unchanged.
+/// refused with the full count but a list restricted to the clients the caller may see, a sealed period with services on
+/// stand-ins is refused with StandInWorksPresentException, and the scope (group or whole period) travels to the
+/// repository unchanged.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.PeriodClosing;
@@ -100,5 +101,42 @@ public class PeriodSealCompletenessGuardTests
         _workRepository.CountUnsealedForCloseAsync(Start, End, GroupId, Arg.Any<CancellationToken>()).Returns(4);
 
         (await guard.CountUnsealedAsync(Start, End, GroupId)).ShouldBe(4);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task EnsureAllSealed_StandInWork_Blocks_EvenWhenEveryServiceIsSealed(bool groupClose)
+    {
+        var guard = Create();
+        Guid? groupId = groupClose ? GroupId : null;
+        _workRepository.CountUnsealedForCloseAsync(Start, End, groupId, Arg.Any<CancellationToken>()).Returns(0);
+        _workRepository.CountStandInWorksForCloseAsync(Start, End, groupId, Arg.Any<CancellationToken>()).Returns(2);
+
+        var refusal = await Should.ThrowAsync<StandInWorksPresentException>(() => guard.EnsureAllSealedAsync(Start, End, groupId));
+
+        refusal.StandInWorkCount.ShouldBe(2);
+        refusal.ConflictCode.ShouldBe(StandInWorksPresentException.ErrorCode);
+        refusal.ConflictDetails![StandInWorksPresentException.StandInWorkCountKey].ShouldBe(2);
+    }
+
+    [Test]
+    public async Task EnsureAllSealed_WithoutStandInWorks_Passes_AfterCountingThem()
+    {
+        var guard = Create();
+        _workRepository.CountUnsealedForCloseAsync(Start, End, GroupId, Arg.Any<CancellationToken>()).Returns(0);
+        _workRepository.CountStandInWorksForCloseAsync(Start, End, GroupId, Arg.Any<CancellationToken>()).Returns(0);
+
+        await guard.EnsureAllSealedAsync(Start, End, GroupId);
+
+        await _workRepository.Received(1).CountStandInWorksForCloseAsync(Start, End, GroupId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CountStandInWorks_PassesTheScopeToTheRepository()
+    {
+        var guard = Create();
+        _workRepository.CountStandInWorksForCloseAsync(Start, End, GroupId, Arg.Any<CancellationToken>()).Returns(5);
+
+        (await guard.CountStandInWorksAsync(Start, End, GroupId)).ShouldBe(5);
     }
 }

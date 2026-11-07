@@ -64,7 +64,7 @@ public class GetPeriodIssuesQueryHandlerVisibilityTests
 
     private GetPeriodIssuesQueryHandler Handler(IGroupVisibilityGuard groupGuard, IClientVisibilityGuard clientGuard)
         => new(_readRepository, _validationLoader, Substitute.For<IComplianceEscalationService>(),
-            groupGuard, clientGuard, NullLogger<GetPeriodIssuesQueryHandler>.Instance);
+            groupGuard, clientGuard, Substitute.For<IPeriodSealCompletenessGuard>(), NullLogger<GetPeriodIssuesQueryHandler>.Instance);
 
     private static IGroupVisibilityGuard RestrictedTo(params Guid[] visibleGroupIds)
     {
