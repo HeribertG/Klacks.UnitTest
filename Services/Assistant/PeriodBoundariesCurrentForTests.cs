@@ -45,14 +45,24 @@ public class PeriodBoundariesCurrentForTests
     }
 
     [Test]
-    public void Biweekly_FollowsTheValidFromAnchor()
+    public void Biweekly_FollowsTheFixedPayPeriodAnchor_NotTheGroupValidFrom()
     {
         var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc));
 
         var (start, end) = PeriodBoundaries.CurrentFor(group, new DateOnly(2026, 1, 20), new DateOnly(2026, 1, 26));
 
-        start.ShouldBe(new DateOnly(2026, 1, 19));
-        end.ShouldBe(new DateOnly(2026, 2, 1));
+        start.ShouldBe(new DateOnly(2026, 1, 12));
+        end.ShouldBe(new DateOnly(2026, 1, 25));
+    }
+
+    [Test]
+    public void Biweekly_OnTheFirstMondayOf2027_IsThePeriodThatStartedOn2026_12_28()
+    {
+        var (start, end) = PeriodBoundaries.CurrentFor(
+            MakeGroup(PaymentInterval.Biweekly), new DateOnly(2027, 1, 4), new DateOnly(2027, 1, 11));
+
+        start.ShouldBe(new DateOnly(2026, 12, 28));
+        end.ShouldBe(new DateOnly(2027, 1, 10));
     }
 
     [TestCase(PaymentInterval.Weekly)]

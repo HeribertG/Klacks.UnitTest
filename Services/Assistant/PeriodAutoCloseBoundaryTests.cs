@@ -4,7 +4,7 @@
 /// Unit tests for the date rules of the autonomous period close: which period is due on a given day
 /// (PeriodCloseDateCalculator.DuePeriodEndBound + PeriodBoundaries.LastEndBefore, shared with
 /// PeriodOverdueDetector), the first allowed day and the window after it. Covers month ends, weekly periods
-/// with the configured week start, biweekly cycles anchored on ValidFrom, and the lag-0 rule that a period is
+/// with the configured week start, biweekly cycles on the fixed pay-period anchor (BiweeklyPayPeriod), and the lag-0 rule that a period is
 /// never closed on its own last day.
 /// </summary>
 
@@ -73,19 +73,28 @@ public class PeriodAutoCloseBoundaryTests
     }
 
     [Test]
-    public void Biweekly_FollowsTheValidFromAnchor()
+    public void Biweekly_FollowsTheFixedPayPeriodAnchor_NotTheGroupValidFrom()
     {
         var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2026, 8, 3, 0, 0, 0, DateTimeKind.Utc));
 
-        var dayAfterFirstCycle = DuePeriodEnd(group, new DateOnly(2026, 8, 17), 0);
-        var lastDayOfSecondCycle = DuePeriodEnd(group, new DateOnly(2026, 8, 30), 0);
+        var firstDayOfACycle = DuePeriodEnd(group, new DateOnly(2026, 8, 24), 0);
+        var lastDayOfThatCycle = DuePeriodEnd(group, new DateOnly(2026, 9, 6), 0);
 
         Assert.Multiple(() =>
         {
-            Assert.That(dayAfterFirstCycle, Is.EqualTo(new DateOnly(2026, 8, 16)));
-            Assert.That(lastDayOfSecondCycle, Is.EqualTo(new DateOnly(2026, 8, 16)));
-            Assert.That(PeriodBoundaries.StartFor(PaymentInterval.Biweekly, dayAfterFirstCycle), Is.EqualTo(new DateOnly(2026, 8, 3)));
+            Assert.That(firstDayOfACycle, Is.EqualTo(new DateOnly(2026, 8, 23)));
+            Assert.That(lastDayOfThatCycle, Is.EqualTo(new DateOnly(2026, 8, 23)));
+            Assert.That(PeriodBoundaries.StartFor(PaymentInterval.Biweekly, firstDayOfACycle), Is.EqualTo(new DateOnly(2026, 8, 10)));
         });
+    }
+
+    [Test]
+    public void Biweekly_OnTheMondayAfterTheIsoYear2026_ThePeriodEndingOn2027_01_10IsDue()
+    {
+        var end = DuePeriodEnd(MakeGroup(PaymentInterval.Biweekly), new DateOnly(2027, 1, 11), 0);
+
+        Assert.That(end, Is.EqualTo(new DateOnly(2027, 1, 10)));
+        Assert.That(PeriodBoundaries.StartFor(PaymentInterval.Biweekly, end), Is.EqualTo(new DateOnly(2026, 12, 28)));
     }
 
     [Test]

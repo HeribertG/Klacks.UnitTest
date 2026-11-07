@@ -144,6 +144,29 @@ public class PeriodCloseDueDetectorTests
         Assert.That(evt.DaysUntilDue, Is.EqualTo(0));
     }
 
+    [TestCase(DayOfWeek.Monday, "2027-01-10", 2)]
+    [TestCase(DayOfWeek.Sunday, "2027-01-09", 1)]
+    public async Task DetectAsync_BiweeklyGroup_PeriodEndFollowsTheFixedPayPeriodNotTheGroupValidFrom(
+        DayOfWeek weekStartDay, string expectedEnd, int expectedDaysUntil)
+    {
+        var group = MakeGroup(PaymentInterval.Biweekly);
+        group.ValidFrom = new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc);
+        StubGroups(new List<Group> { group });
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+        StubWeekStart(weekStartDay);
+        _sut = CreateSut(new DateOnly(2027, 1, 8));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var evt = (PeriodCloseDueTriggerEvent)events[0];
+        Assert.That(evt.PeriodEndDate, Is.EqualTo(DateOnly.ParseExact(
+            expectedEnd, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None)));
+        Assert.That(evt.DaysUntilDue, Is.EqualTo(expectedDaysUntil));
+    }
+
     [Test]
     public async Task DetectAsync_MonthlyTargetHoursGroup_WithinWindow_EmitsSamePeriodEndAsMonthly()
     {

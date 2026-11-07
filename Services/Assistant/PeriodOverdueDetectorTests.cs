@@ -186,9 +186,9 @@ public class PeriodOverdueDetectorTests
     }
 
     [Test]
-    public async Task DetectAsync_BiweeklyGroup_NineDaysOverdue_EmitsEventAnchoredOnGroupValidFrom()
+    public async Task DetectAsync_BiweeklyGroup_NineDaysOverdue_EmitsEventOnTheFixedPayPeriodNotTheGroupValidFrom()
     {
-        var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2025, 12, 1, 0, 0, 0, DateTimeKind.Utc));
+        var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2025, 12, 8, 0, 0, 0, DateTimeKind.Utc));
         StubGroups(new List<Group> { group });
         _sut = CreateSut(new DateOnly(2026, 1, 20));
 

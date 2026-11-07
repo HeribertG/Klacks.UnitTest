@@ -52,15 +52,37 @@ public class NextPeriodBoundariesTests
     }
 
     [Test]
-    public void Biweekly_FollowsTheGroupAnchor()
+    public void Biweekly_FollowsTheFixedPayPeriodAnchor_NotTheGroupValidFrom()
     {
-        var group = MakeGroup(PaymentInterval.Biweekly);
+        var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc));
 
         var start = NextPeriodBoundaries.ComputeStart(group, new DateOnly(2026, 1, 28), new DateOnly(2026, 2, 2));
         var end = NextPeriodBoundaries.ComputeEnd(group, start);
 
-        Assert.That(start, Is.EqualTo(new DateOnly(2026, 2, 2)));
-        Assert.That(end, Is.EqualTo(new DateOnly(2026, 2, 15)));
+        Assert.That(start, Is.EqualTo(new DateOnly(2026, 2, 9)));
+        Assert.That(end, Is.EqualTo(new DateOnly(2026, 2, 22)));
+    }
+
+    [Test]
+    public void Biweekly_AcrossTheIsoYearWith53Weeks_TheNextPeriodStartsOn2027_01_11()
+    {
+        var group = MakeGroup(PaymentInterval.Biweekly);
+
+        var start = NextPeriodBoundaries.ComputeStart(group, new DateOnly(2027, 1, 4), new DateOnly(2027, 1, 11));
+
+        Assert.That(start, Is.EqualTo(new DateOnly(2027, 1, 11)));
+        Assert.That(NextPeriodBoundaries.ComputeEnd(group, start), Is.EqualTo(new DateOnly(2027, 1, 24)));
+    }
+
+    [Test]
+    public void Biweekly_WithSundayWeekStart_FollowsTheAnchorMovedToSunday()
+    {
+        var group = MakeGroup(PaymentInterval.Biweekly);
+
+        var start = NextPeriodBoundaries.ComputeStart(group, new DateOnly(2027, 1, 4), new DateOnly(2027, 1, 10));
+
+        Assert.That(start, Is.EqualTo(new DateOnly(2027, 1, 10)));
+        Assert.That(NextPeriodBoundaries.ComputeEnd(group, start), Is.EqualTo(new DateOnly(2027, 1, 23)));
     }
 
     [Test]

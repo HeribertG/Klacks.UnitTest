@@ -85,19 +85,74 @@ public class PeriodHoursServicePeriodBoundariesTests
     }
 
     [Test]
-    public async Task GetPeriodBoundariesAsync_BiweeklyWithSundayStart_StartDayMatchesConfiguredWeekStart()
+    public async Task GetPeriodBoundariesAsync_BiweeklyWithSundayStart_FollowsTheFixedAnchorMovedToSunday()
     {
-        // Documents a known limitation: the biweekly odd/even alternation still derives from the
-        // Monday-anchored ISO week number, so a Sunday week start is honored for the boundary's
-        // weekday but the 14-day window may not align with a Sunday-first payroll calendar.
         await SeedPaymentIntervalAsync(PaymentInterval.Biweekly);
         var service = CreateService(weekStartDay: DayOfWeek.Sunday);
 
-        var (start, end) = await service.GetPeriodBoundariesAsync(new DateOnly(2026, 7, 8));
+        var (start, end) = await service.GetPeriodBoundariesAsync(new DateOnly(2027, 1, 4));
 
-        (end.DayNumber - start.DayNumber).ShouldBe(13);
-        start.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
+        start.ShouldBe(new DateOnly(2026, 12, 27));
+        end.ShouldBe(new DateOnly(2027, 1, 9));
     }
+
+    [TestCase("2026-12-21", "2026-12-14", "2026-12-27")]
+    [TestCase("2026-12-28", "2026-12-28", "2027-01-10")]
+    [TestCase("2027-01-04", "2026-12-28", "2027-01-10")]
+    [TestCase("2027-01-11", "2027-01-11", "2027-01-24")]
+    public async Task GetPeriodBoundariesAsync_BiweeklyAcrossTheIsoYear2026With53Weeks_DoesNotOverlap(
+        string date, string expectedStart, string expectedEnd)
+    {
+        await SeedPaymentIntervalAsync(PaymentInterval.Biweekly);
+        var service = CreateService(weekStartDay: null);
+
+        var (start, end) = await service.GetPeriodBoundariesAsync(IsoDate(date));
+
+        start.ShouldBe(IsoDate(expectedStart));
+        end.ShouldBe(IsoDate(expectedEnd));
+    }
+
+    [Test]
+    public async Task GetPeriodsInRangeAsync_BiweeklyFromDecember2026ToFebruary2027_ReturnsContiguousPeriods()
+    {
+        await SeedPaymentIntervalAsync(PaymentInterval.Biweekly);
+        var service = CreateService(weekStartDay: null);
+
+        var periods = await service.GetPeriodsInRangeAsync(new DateOnly(2026, 12, 1), new DateOnly(2027, 2, 28));
+
+        periods.ShouldBe(new[]
+        {
+            (new DateOnly(2026, 11, 30), new DateOnly(2026, 12, 13)),
+            (new DateOnly(2026, 12, 14), new DateOnly(2026, 12, 27)),
+            (new DateOnly(2026, 12, 28), new DateOnly(2027, 1, 10)),
+            (new DateOnly(2027, 1, 11), new DateOnly(2027, 1, 24)),
+            (new DateOnly(2027, 1, 25), new DateOnly(2027, 2, 7)),
+            (new DateOnly(2027, 2, 8), new DateOnly(2027, 2, 21)),
+            (new DateOnly(2027, 2, 22), new DateOnly(2027, 3, 7)),
+        });
+    }
+
+    [Test]
+    public async Task GetPeriodsInRangeAsync_BiweeklyWithSundayStart_ReturnsContiguousPeriods()
+    {
+        await SeedPaymentIntervalAsync(PaymentInterval.Biweekly);
+        var service = CreateService(weekStartDay: DayOfWeek.Sunday);
+
+        var periods = await service.GetPeriodsInRangeAsync(new DateOnly(2026, 12, 1), new DateOnly(2027, 2, 28));
+
+        periods[0].StartDate.ShouldBe(new DateOnly(2026, 11, 29));
+        for (var index = 1; index < periods.Count; index++)
+        {
+            periods[index].StartDate.ShouldBe(periods[index - 1].EndDate.AddDays(1));
+            periods[index].StartDate.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
+        }
+
+        periods[^1].EndDate.ShouldBeGreaterThanOrEqualTo(new DateOnly(2027, 2, 28));
+    }
+
+    private static DateOnly IsoDate(string value) =>
+        DateOnly.ParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None);
 
     [Test]
     public async Task GetPeriodBoundariesAsync_GlobalIntervalIndividual_FallsBackToCalendarMonth()
