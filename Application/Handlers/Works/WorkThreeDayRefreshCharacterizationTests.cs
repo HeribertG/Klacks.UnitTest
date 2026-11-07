@@ -4,7 +4,8 @@
 /// Characterization of the three-day refresh window the Work handlers (create, update, delete, restore, reassign)
 /// answer with: the schedule entries are requested for the day before to the day after the Work, with the caller's
 /// visible group list and the Work's scenario token passed through unchanged, and only the rows of the Work's client
-/// (for reassign: target client rows and source client rows separately) reach the response, in stub order.
+/// (for reassign: target client rows and source client rows separately) reach the response, in stub order. The handlers
+/// never push PeriodHoursUpdated themselves; the completion service already sends it once.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -107,6 +108,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         var result = await NewPostHandler().Handle(new PostCommand<WorkResource>(resource), CancellationToken.None);
 
         ThenThreeDayWindowWasRequested();
+        ThenTheHandlerSentNoSecondPeriodHoursPush();
         result!.ScheduleEntries.Select(e => e.Id).ShouldBe(rows.Own);
     }
 
@@ -123,6 +125,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         var result = await NewPutHandler().Handle(new PutCommand<WorkResource>(resource), CancellationToken.None);
 
         ThenThreeDayWindowWasRequested();
+        ThenTheHandlerSentNoSecondPeriodHoursPush();
         result!.ScheduleEntries.Select(e => e.Id).ShouldBe(rows.Own);
     }
 
@@ -135,6 +138,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         var result = await NewDeleteHandler().Handle(new DeleteWorkCommand(_workId, Day, Day), CancellationToken.None);
 
         ThenThreeDayWindowWasRequested();
+        ThenTheHandlerSentNoSecondPeriodHoursPush();
         result!.ScheduleEntries.Select(e => e.Id).ShouldBe(rows.Own);
     }
 
@@ -151,6 +155,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         var result = await NewRestoreHandler().Handle(new RestoreWorkCommand(_workId), CancellationToken.None);
 
         ThenThreeDayWindowWasRequested();
+        ThenTheHandlerSentNoSecondPeriodHoursPush();
         result!.ScheduleEntries.Select(e => e.Id).ShouldBe(rows.Own);
     }
 
@@ -174,6 +179,7 @@ public class WorkThreeDayRefreshCharacterizationTests
             new ReassignWorkClientCommand(_workId, _clientId), CancellationToken.None);
 
         ThenThreeDayWindowWasRequested(_clientId, _sourceClientId);
+        ThenTheHandlerSentNoSecondPeriodHoursPush();
         result!.Work!.ScheduleEntries.Select(e => e.Id).ShouldBe(targetRows);
         result.SourceScheduleEntries.Select(e => e.Id).ShouldBe(sourceRows);
     }
@@ -210,6 +216,10 @@ public class WorkThreeDayRefreshCharacterizationTests
                 && !c.OrderByStartTime),
             Arg.Any<CancellationToken>());
     }
+
+    private void ThenTheHandlerSentNoSecondPeriodHoursPush()
+        => _notificationFacade.DidNotReceiveWithAnyArgs().NotifyPeriodHoursUpdatedAsync(
+            default, default, default, default!, default!, default);
 
     private static ScheduleCell Cell(Guid clientId, Guid id)
         => new() { Id = id, ClientId = clientId, EntryId = Guid.NewGuid() };

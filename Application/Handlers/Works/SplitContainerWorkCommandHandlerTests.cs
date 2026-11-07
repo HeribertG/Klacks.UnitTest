@@ -37,6 +37,7 @@ public class SplitContainerWorkCommandHandlerTests
     private IScheduleCompletionService _completion = null!;
     private IHttpContextAccessor _http = null!;
     private IClientPlanningPeriodGuard _planningGuard = null!;
+    private IWorkNotificationFacade _notificationFacade = null!;
     private Work _container = null!;
     private Work _early = null!;
     private Work _late = null!;
@@ -89,6 +90,7 @@ public class SplitContainerWorkCommandHandlerTests
         _http = Substitute.For<IHttpContextAccessor>();
         _http.HttpContext.Returns(new DefaultHttpContext());
         _planningGuard = Substitute.For<IClientPlanningPeriodGuard>();
+        _notificationFacade = Substitute.For<IWorkNotificationFacade>();
 
         _handler = CreateHandler(TestGroupWriteVisibility.AllClientsVisible());
     }
@@ -99,7 +101,7 @@ public class SplitContainerWorkCommandHandlerTests
             _lockRepository, Substitute.For<IUserService>(), _cascadeService, _childrenReadRepository, new ParentWorkLockGuard(new WorkLockLevelService()),
             _http, Substitute.For<IDayLockService>(), _planningGuard, Substitute.For<IWorkWriteGuard>(),
             _splitWriter, _childrenManager, _unitOfWork, Substitute.For<IOvertimeCascadeService>(), _periodHours, _completion,
-            Substitute.For<IWorkNotificationFacade>(), new ScheduleMapper(),
+            _notificationFacade, new ScheduleMapper(),
             Substitute.For<ILogger<SplitContainerWorkCommandHandler>>());
 
     private Task<SplitContainerWorkResponse> Split(int hour) =>
@@ -116,6 +118,18 @@ public class SplitContainerWorkCommandHandlerTests
             Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<(Work, Work)>>>());
         response.SecondPart.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task ASplitWithinOnePeriod_RecalculatesOnlyThroughTheMove_AndTheHandlerSendsNoSecondPeriodHoursPush()
+    {
+        await Split(12);
+
+        await _completion.Received(1).SaveAndTrackMoveAsync(
+            _target, Day, Day, Day, _container.ClientId, Day, Arg.Any<Guid?>());
+        await _completion.DidNotReceiveWithAnyArgs().SaveAndTrackAsync(default, default, default, default, default);
+        await _notificationFacade.DidNotReceiveWithAnyArgs().NotifyPeriodHoursUpdatedAsync(
+            default, default, default, default!, default!, default);
     }
 
     [Test]

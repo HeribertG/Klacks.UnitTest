@@ -255,16 +255,12 @@ public class ReassignWorkClientCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_NotifiesPeriodHoursUpdated_ForBothSourceAndTargetClient()
+    public async Task Handle_LeavesThePeriodHoursPushToTheCompletionService()
     {
         await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
 
-        await _notificationFacade.Received(1).NotifyPeriodHoursUpdatedAsync(
-            _targetClientId, _periodStart, _periodEnd,
-            Arg.Is<PeriodHoursResource>(p => p.Hours == 8), "connection-1", null);
-        await _notificationFacade.Received(1).NotifyPeriodHoursUpdatedAsync(
-            _sourceClientId, _periodStart, _periodEnd,
-            Arg.Is<PeriodHoursResource>(p => p.Hours == 3), "connection-1", null);
+        await _notificationFacade.DidNotReceiveWithAnyArgs().NotifyPeriodHoursUpdatedAsync(
+            default, default, default, default!, default!, default);
     }
 
     [Test]

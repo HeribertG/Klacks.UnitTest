@@ -293,8 +293,8 @@ public class RestoreWorkCommandHandlerTests
 
         await _notificationFacade.Received(1).NotifyWorkCreatedAsync(_work, ConnectionId, _periodStart, _periodEnd);
         await _notificationFacade.DidNotReceiveWithAnyArgs().NotifyWorkDeletedAsync(default!, default!, default, default);
-        await _notificationFacade.Received(1).NotifyPeriodHoursUpdatedAsync(
-            _clientId, _periodStart, _periodEnd, Arg.Any<PeriodHoursResource>(), ConnectionId, null);
+        await _notificationFacade.DidNotReceiveWithAnyArgs().NotifyPeriodHoursUpdatedAsync(
+            default, default, default, default!, default!, default);
         await _notificationFacade.Received(1).NotifyShiftStatsAsync(
             _shiftId, _date, ConnectionId, null, Arg.Any<CancellationToken>());
     }

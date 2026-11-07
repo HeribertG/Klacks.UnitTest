@@ -4,8 +4,11 @@
 /// Unit tests for ScheduleCompletionService.SaveAndTrackMoveAsync: verifies that moving a
 /// schedule entry to another client recalculates ClientPeriodHours for BOTH the old and the
 /// new client, not just the new one (regression for the stale-sum-on-old-client drag-drop bug).
+/// SaveAndTrackAsync commits, tracks, queues and then recalculates through the notifying path with the caller's
+/// SignalR connection id, which is the single PeriodHoursUpdated push of the Work handlers.
 /// </summary>
 
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
@@ -93,5 +96,24 @@ public class ScheduleCompletionServiceTests
 
         periodHours.Hours.ShouldBe(8);
         previousPeriodHours.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SaveAndTrackAsync_CommitsTracksQueuesThenRecalculatesAndNotifies_WithTheCallersConnectionId()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HttpHeaderNames.SignalRConnectionId] = "connection-1";
+        _httpContextAccessor.HttpContext.Returns(context);
+
+        var periodHours = await _service.SaveAndTrackAsync(_targetClientId, _date, _periodStart, _periodEnd, null);
+
+        periodHours.Hours.ShouldBe(8);
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _scheduleChangeTracker.TrackChangeAsync(_targetClientId, _date, null);
+            _timelineService.QueueCheck(_targetClientId, _date, null);
+            _periodHoursService.RecalculateAndNotifyAsync(_targetClientId, _periodStart, _periodEnd, null, "connection-1");
+        });
     }
 }
