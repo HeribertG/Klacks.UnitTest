@@ -433,6 +433,47 @@ public class ThoroughRecalculationBackgroundServiceTests
         _sut.PendingRequestCount.ShouldBe(2);
     }
 
+    [Test]
+    public async Task ProcessRequest_TheAdminOverride_TravelsToTheBulkPeriodHoursRecalculation()
+    {
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, includeFrozen: true);
+        await RunUntilCompletionNotificationAsync();
+
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(_startDate, _endDate, null, null, true);
+        await _periodHoursService.DidNotReceive().RecalculateAllClientsAsync(_startDate, _endDate, null, null, false);
+    }
+
+    [Test]
+    public async Task ProcessRequest_TheAdminOverride_TravelsToTheClientScopedPeriodHoursRecalculation()
+    {
+        var clientId = Guid.NewGuid();
+
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, [clientId], includeFrozen: true);
+        await RunUntilCompletionNotificationAsync();
+
+        await _periodHoursService.Received(1).RecalculatePeriodHoursAsync(clientId, _startDate, _endDate, null, true);
+    }
+
+    [Test]
+    public async Task ProcessRequest_WithoutTheOverride_TheGuardStaysOn()
+    {
+        _sut.QueueRecalculation(_startDate, _endDate, null, null);
+        await RunUntilCompletionNotificationAsync();
+
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(_startDate, _endDate, null, null, false);
+        await _periodHoursService.DidNotReceive().RecalculateAllClientsAsync(_startDate, _endDate, null, null, true);
+    }
+
+    [Test]
+    public void QueueRecalculation_AnOverrideRequest_DoesNotCoalesceIntoAPendingRequestWithoutIt()
+    {
+        _sut.QueueRecalculation(_startDate, _endDate, null, null).ShouldBeTrue();
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, includeFrozen: true).ShouldBeTrue();
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, includeFrozen: true).ShouldBeTrue();
+
+        _sut.PendingRequestCount.ShouldBe(2);
+    }
+
     private void StubPayPeriods(
         DateOnly windowStart, DateOnly windowEnd, params (DateOnly Start, DateOnly End)[] payPeriods)
     {

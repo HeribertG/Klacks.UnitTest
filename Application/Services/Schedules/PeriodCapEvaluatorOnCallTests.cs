@@ -57,7 +57,8 @@ public class PeriodCapEvaluatorOnCallTests
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             contracts,
-            Substitute.For<IWeekConfiguration>());
+            Substitute.For<IWeekConfiguration>(),
+            new FrozenPeriodPolicy(_context));
 
         var rules = Substitute.For<IPeriodCapRuleRepository>();
         rules.GetAllActiveAsync().Returns(new List<PeriodCapRule>

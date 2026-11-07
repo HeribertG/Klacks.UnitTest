@@ -74,7 +74,8 @@ public class PeriodHoursMembershipProrationTests
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             contractDataProvider,
-            Substitute.For<IWeekConfiguration>());
+            Substitute.For<IWeekConfiguration>(),
+            new FrozenPeriodPolicy(_context));
 
         _workRepository = new WorkRepository(
             _context,

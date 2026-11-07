@@ -79,7 +79,8 @@ public class PeriodHoursPaymentIntervalStampTests
             Substitute.For<IWorkNotificationService>(),
             groupFilter,
             contractData,
-            Substitute.For<IWeekConfiguration>());
+            Substitute.For<IWeekConfiguration>(),
+            new FrozenPeriodPolicy(_context));
     }
 
     [TearDown]

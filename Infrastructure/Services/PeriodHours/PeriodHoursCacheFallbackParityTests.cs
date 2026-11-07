@@ -287,7 +287,8 @@ public class PeriodHoursCacheFallbackParityTests
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             contractDataProvider,
-            Substitute.For<IWeekConfiguration>());
+            Substitute.For<IWeekConfiguration>(),
+            new FrozenPeriodPolicy(_context));
 
         var workRepository = new WorkRepository(
             _context,

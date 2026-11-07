@@ -77,7 +77,8 @@ public class PeriodHoursReplacementAttributionTests
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             contractDataProvider,
-            Substitute.For<IWeekConfiguration>());
+            Substitute.For<IWeekConfiguration>(),
+            new FrozenPeriodPolicy(_context));
 
         _repository = new WorkRepository(
             _context,

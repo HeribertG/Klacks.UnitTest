@@ -176,6 +176,7 @@ public class PeriodHoursServicePeriodsInRangeTests
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             Substitute.For<IClientContractDataProvider>(),
-            weekConfiguration);
+            weekConfiguration,
+            new FrozenPeriodPolicy(_context));
     }
 }

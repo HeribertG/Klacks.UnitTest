@@ -211,7 +211,8 @@ public class PeriodHoursOnCallBreakTests
         Substitute.For<IWorkNotificationService>(),
         Substitute.For<IClientGroupFilterService>(),
         NoContracts(),
-        Substitute.For<IWeekConfiguration>());
+        Substitute.For<IWeekConfiguration>(),
+        new FrozenPeriodPolicy(_context));
 
     private WorkRepository CreateWorkRepository() => new(
         _context,

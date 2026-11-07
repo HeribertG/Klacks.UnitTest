@@ -346,6 +346,7 @@ public class PeriodHoursServicePeriodBoundariesTests
             notificationService,
             clientGroupFilterService,
             contractDataProvider,
-            weekConfiguration);
+            weekConfiguration,
+            new FrozenPeriodPolicy(_context));
     }
 }
