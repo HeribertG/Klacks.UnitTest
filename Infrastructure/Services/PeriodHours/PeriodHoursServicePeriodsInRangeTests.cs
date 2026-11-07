@@ -3,7 +3,8 @@
 /// <summary>
 /// Tests for PeriodHoursService.GetPeriodsInRangeAsync: a date range is split into the real pay periods it touches
 /// (the boundaries GetPeriodBoundariesAsync resolves for the configured payment interval), in date order, the first
-/// period possibly starting before the range and the last possibly ending after it; an inverted range yields none.
+/// period possibly starting before the range and the last possibly ending after it; an inverted range yields none, and a
+/// range over more than PayPeriodLimits.MaxPeriodsInRange periods is refused.
 /// </summary>
 
 namespace Klacks.UnitTest.Infrastructure.Services.PeriodHours;
@@ -11,6 +12,7 @@ namespace Klacks.UnitTest.Infrastructure.Services.PeriodHours;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -124,6 +126,28 @@ public class PeriodHoursServicePeriodsInRangeTests
         var periods = await CreateService().GetPeriodsInRangeAsync(new DateOnly(2026, 7, 20), new DateOnly(2026, 7, 8));
 
         periods.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task Monthly_RangeOfExactlyTheLimit_IsAccepted()
+    {
+        await SeedPaymentIntervalAsync(PaymentInterval.Monthly);
+        var from = new DateOnly(2026, 1, 1);
+
+        var periods = await CreateService().GetPeriodsInRangeAsync(
+            from, from.AddMonths(PayPeriodLimits.MaxPeriodsInRange).AddDays(-1));
+
+        periods.Count.ShouldBe(PayPeriodLimits.MaxPeriodsInRange);
+    }
+
+    [Test]
+    public async Task Monthly_RangeBeyondTheLimit_IsRefused()
+    {
+        await SeedPaymentIntervalAsync(PaymentInterval.Monthly);
+        var from = new DateOnly(2026, 1, 1);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => CreateService().GetPeriodsInRangeAsync(
+            from, from.AddMonths(PayPeriodLimits.MaxPeriodsInRange)));
     }
 
     private async Task SeedPaymentIntervalAsync(PaymentInterval interval)

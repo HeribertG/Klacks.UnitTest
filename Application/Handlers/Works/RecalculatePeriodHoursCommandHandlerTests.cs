@@ -3,11 +3,12 @@
 /// <summary>
 /// RecalculatePeriodHoursCommandHandler stores the period hours of all clients once per real pay period its window
 /// touches, never over the requested window itself, while the breaks are reprocessed and the reload is announced over
-/// the requested window.
+/// the requested window. A window the pay-period split refuses is refused before anything is written.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Handlers.Works;
+using Klacks.Api.Domain.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Handlers.Works;
@@ -51,6 +52,19 @@ public class RecalculatePeriodHoursCommandHandlerTests
             _notificationService.NotifyPeriodHoursRecalculated(WindowStart, WindowEnd, null);
         });
         await _periodHoursService.DidNotReceive().RecalculateAllClientsAsync(WindowStart, WindowEnd, groupId);
+    }
+
+    [Test]
+    public async Task ARefusedWindow_IsRefusedBeforeTheBreaksAreReprocessed_AndNothingIsWritten()
+    {
+        _periodHoursService.GetPeriodsInRangeAsync(WindowStart, WindowEnd)
+            .Returns<IReadOnlyList<(DateOnly StartDate, DateOnly EndDate)>>(_ => throw new InvalidRequestException("too many periods"));
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewHandler().Handle(
+            new RecalculatePeriodHoursCommand(WindowStart, WindowEnd, null), CancellationToken.None));
+
+        await _breakMacroService.DidNotReceiveWithAnyArgs().ReprocessAllBreaksAsync(default, default);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculateAllClientsAsync(default, default);
     }
 
     private RecalculatePeriodHoursCommandHandler NewHandler() => new(
