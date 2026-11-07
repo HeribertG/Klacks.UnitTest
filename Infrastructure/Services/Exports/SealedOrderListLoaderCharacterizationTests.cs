@@ -3,11 +3,13 @@
 /// <summary>
 /// Characterization tests for SealedOrderListLoader against an in-memory EF Core database: the SealedOrder and
 /// deleted guards, the date and customer filters, the ordering, the customer mapping and the Work counters
-/// summed over the resolved descendant shifts. The search branch relies on Npgsql ILike and is not covered here.
+/// summed over the resolved descendant shifts, and the shift group restriction. The search branch relies on Npgsql ILike
+/// and is not covered here.
 /// </summary>
 using Shouldly;
 using Klacks.Api.Application.Interfaces.Exports;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
@@ -72,7 +74,7 @@ public class SealedOrderListLoaderCharacterizationTests
     {
         AddShift(Guid.NewGuid(), "Plain", new DateOnly(2026, 1, 1), null, ShiftStatus.OriginalShift);
 
-        var result = await _loader.LoadAsync(null, null, null, null);
+        var result = await _loader.LoadAsync(null, null, null, null, null);
 
         result.ShouldBeEmpty();
         await _descendantResolver.DidNotReceiveWithAnyArgs()
@@ -93,7 +95,7 @@ public class SealedOrderListLoaderCharacterizationTests
         AddShift(Guid.NewGuid(), "NotAnOrder", new DateOnly(2026, 2, 1), null, ShiftStatus.OriginalShift);
         AddShift(Guid.NewGuid(), "Deleted", new DateOnly(2026, 2, 1), null, isDeleted: true);
 
-        var result = await _loader.LoadAsync(new DateOnly(2026, 1, 1), new DateOnly(2026, 4, 30), null, null);
+        var result = await _loader.LoadAsync(new DateOnly(2026, 1, 1), new DateOnly(2026, 4, 30), null, null, null);
 
         result.Select(r => r.Id).ShouldBe([gamma, alpha, beta]);
     }
@@ -106,7 +108,7 @@ public class SealedOrderListLoaderCharacterizationTests
         AddShift(Guid.NewGuid(), "Other", new DateOnly(2026, 1, 1), null, clientId: _employeeId);
         AddShift(Guid.NewGuid(), "NoClient", new DateOnly(2026, 1, 1), null, withoutClient: true);
 
-        var result = await _loader.LoadAsync(null, null, _customerId, null);
+        var result = await _loader.LoadAsync(null, null, _customerId, null, null);
 
         result.Select(r => r.Id).ShouldBe([ofCustomer]);
     }
@@ -119,7 +121,7 @@ public class SealedOrderListLoaderCharacterizationTests
         AddShift(Guid.NewGuid(), "A-Employee", new DateOnly(2026, 1, 1), null, clientId: _employeeId);
         AddShift(Guid.NewGuid(), "C-None", new DateOnly(2026, 1, 1), null, withoutClient: true);
 
-        var result = await _loader.LoadAsync(null, null, null, null);
+        var result = await _loader.LoadAsync(null, null, null, null, null);
 
         var order = result.ShouldHaveSingleItem();
         order.Id.ShouldBe(customerOrder);
@@ -142,7 +144,7 @@ public class SealedOrderListLoaderCharacterizationTests
         AddWork(child, new DateOnly(2026, 1, 15), WorkLockLevel.Closed, isDeleted: true);
         AddWork(Guid.NewGuid(), new DateOnly(2026, 1, 15), WorkLockLevel.Closed);
 
-        var result = await _loader.LoadAsync(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, null);
+        var result = await _loader.LoadAsync(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, null, null);
 
         var item = result.ShouldHaveSingleItem();
         item.TotalWorks.ShouldBe(3);
@@ -164,7 +166,7 @@ public class SealedOrderListLoaderCharacterizationTests
         AddWork(child, new DateOnly(2026, 2, 1), WorkLockLevel.None);
         AddWork(child, new DateOnly(2026, 1, 15), WorkLockLevel.Closed, isDeleted: true);
 
-        var result = await _loader.LoadAsync(null, null, null, null);
+        var result = await _loader.LoadAsync(null, null, null, null, null);
 
         var item = result.ShouldHaveSingleItem();
         item.TotalWorks.ShouldBe(2);
@@ -178,11 +180,47 @@ public class SealedOrderListLoaderCharacterizationTests
         AddShift(order, "Order", new DateOnly(2026, 1, 1), null);
         StubDescendants(order, Guid.NewGuid());
 
-        var result = await _loader.LoadAsync(null, null, null, null);
+        var result = await _loader.LoadAsync(null, null, null, null, null);
 
         var item = result.ShouldHaveSingleItem();
         item.TotalWorks.ShouldBe(0);
         item.ClosedWorks.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task LoadAsync_GroupRestriction_KeepsGroupLessAndVisibleGroupOrdersOnly()
+    {
+        var visibleGroup = Guid.NewGuid();
+        var hiddenGroup = Guid.NewGuid();
+        var inVisibleGroup = Guid.NewGuid();
+        var inHiddenGroup = Guid.NewGuid();
+        var groupLess = Guid.NewGuid();
+        var hiddenLinkDeleted = Guid.NewGuid();
+        AddShift(inVisibleGroup, "A-Visible", new DateOnly(2026, 1, 1), null);
+        AddShift(inHiddenGroup, "B-Hidden", new DateOnly(2026, 1, 1), null);
+        AddShift(groupLess, "C-GroupLess", new DateOnly(2026, 1, 1), null);
+        AddShift(hiddenLinkDeleted, "D-HiddenLinkDeleted", new DateOnly(2026, 1, 1), null);
+        AddGroupItem(inVisibleGroup, visibleGroup);
+        AddGroupItem(inHiddenGroup, hiddenGroup);
+        AddGroupItem(hiddenLinkDeleted, hiddenGroup, isDeleted: true);
+
+        var restricted = await _loader.LoadAsync(null, null, null, null, [visibleGroup]);
+        var unrestricted = await _loader.LoadAsync(null, null, null, null, null);
+
+        restricted.Select(r => r.Id).ShouldBe([inVisibleGroup, groupLess, hiddenLinkDeleted]);
+        unrestricted.Select(r => r.Id).ShouldBe([inVisibleGroup, inHiddenGroup, groupLess, hiddenLinkDeleted]);
+    }
+
+    private void AddGroupItem(Guid shiftId, Guid groupId, bool isDeleted = false)
+    {
+        _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shiftId,
+            GroupId = groupId,
+            IsDeleted = isDeleted,
+        });
+        _context.SaveChanges();
     }
 
     private void StubDescendants(Guid order, Guid child)

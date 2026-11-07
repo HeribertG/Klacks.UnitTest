@@ -63,6 +63,9 @@ public class SkillRiskClassifierTests
     [TestCase("update_imap_settings")]
     [TestCase("create_llm_provider")]
     [TestCase("update_llm_model")]
+    [TestCase("create_agent_skill")]
+    [TestCase("update_agent_skill")]
+    [TestCase("delete_agent_skill")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -107,7 +110,6 @@ public class SkillRiskClassifierTests
     [TestCase("create_calendar_selection")]
     [TestCase("update_work")]
     [TestCase("delete_ai_memory")]
-    [TestCase("delete_agent_skill")]
     [TestCase("delete_transcription_dictionary_entry")]
     public void Classify_ListedWriters_ReturnsIrreversible(string name)
     {

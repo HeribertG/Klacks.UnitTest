@@ -31,9 +31,6 @@ public class DestructiveSkillRiskDecisionGuardTests
     private static readonly IReadOnlyDictionary<string, string> AcceptedIrreversibleDeletes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["delete_agent_skill"] =
-                "Disables a user-created skill only (system skills are refused by the implementation) and " +
-                "keeps the row; no business data is touched and update_agent_skill can enable it again.",
             ["delete_ai_memory"] =
                 "Deletes a single assistant memory row addressed by id; assistant-internal bookkeeping " +
                 "without business, personal or payroll data, no cascade, and the memory can be re-added " +

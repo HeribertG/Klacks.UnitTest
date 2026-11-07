@@ -724,7 +724,6 @@ public class AutonomyGateServiceTests
     [TestCase("delete_work")]
     [TestCase("delete_break")]
     [TestCase("delete_ai_memory")]
-    [TestCase("delete_agent_skill")]
     [TestCase("delete_transcription_dictionary_entry")]
     public async Task Check_DeleteSkillsWithoutDataLoss_RealClassifier_NotHeldAtDefaultLevel(string skillName)
     {

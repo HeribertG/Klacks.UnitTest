@@ -168,6 +168,7 @@ public class PlaygroundBlockedSkillExecutorTests
     [TestCase("update_my_account")]
     [TestCase("create_personal_access_token")]
     [TestCase("create_plan")]
+    [TestCase("send_message")]
     [TestCase("update_speech_settings")]
     public void NamedSkill_IsOnTheBlockList(string skillName) => PlaygroundBlockedSkills.IsBlocked(skillName).ShouldBeTrue();
 
