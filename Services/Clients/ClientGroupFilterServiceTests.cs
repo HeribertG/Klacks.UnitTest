@@ -327,8 +327,8 @@ public class ClientGroupFilterServiceTests
     [Test]
     public async Task FilterClientsByGroupId_WithoutAUser_ReturnsAllClients()
     {
-        // Arrange: background services (PeriodHoursBackgroundService,
-        // ThoroughRecalculationBackgroundService) run in their own scope without an HTTP user.
+        // Arrange: background services (ThoroughRecalculationBackgroundService) run in their own
+        // scope without an HTTP user.
         // There is nobody whose visibility could apply, so the nightly recalculation must still
         // see every client - otherwise it silently skips everyone who is in a group.
         var someGroupId = Guid.NewGuid();

@@ -375,6 +375,7 @@ public class WorkShiftVisibilityTests
             Substitute.For<IOvertimeCascadeService>(), _shiftGuard, TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IReplacementWriteGuard>(),
             Substitute.For<IContainerWorkChangeGuard>(),
             Substitute.For<IContainerChildrenWriteGuard>(),
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager, childrenReadRepository);
     }

@@ -222,6 +222,7 @@ public class UpdateContainerWorkChildrenSealTests
             Substitute.For<IUnitOfWork>(), Substitute.For<IWorkNotificationFacade>(), lockRepository,
             Substitute.For<IUserService>(), _childrenManager, Substitute.For<IOvertimeCascadeService>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<IWorkWriteGuard>(), Substitute.For<IReplacementWriteGuard>(), Substitute.For<IContainerWorkChangeGuard>(), childrenGuard,
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
     }
 }

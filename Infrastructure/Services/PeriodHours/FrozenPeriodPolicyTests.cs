@@ -117,6 +117,23 @@ public class FrozenPeriodPolicyTests
     }
 
     [Test]
+    public async Task ASoftDeletedExport_DoesNotCountAsExportRange()
+    {
+        var clientId = Guid.NewGuid();
+        FreezeJanuary(_context, clientId);
+        await _context.SaveChangesAsync();
+        var marchExport = _context.ExportLogItem.Local.Single(item => item.StartDate == March.StartDate);
+        marchExport.IsDeleted = true;
+        marchExport.DeletedTime = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var frozen = await _policy.GetFrozenClientIdsAsync([clientId], January.StartDate, January.EndDate, null);
+
+        frozen.ShouldBeEmpty();
+        (await _context.ExportLogItem.IgnoreQueryFilters().CountAsync(item => item.IsDeleted)).ShouldBe(1);
+    }
+
+    [Test]
     public async Task AScenario_IsNeverFrozen()
     {
         var clientId = Guid.NewGuid();

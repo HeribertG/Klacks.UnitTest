@@ -405,6 +405,7 @@ public class UpdateContainerWorkChildrenReplacementGuardTests
             new ReplacementWriteGuard(_clientRepository, _conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IContainerWorkChangeGuard>()),
             Substitute.For<IContainerWorkChangeGuard>(),
             Substitute.For<IContainerChildrenWriteGuard>(),
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
     }
 

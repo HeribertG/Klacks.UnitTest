@@ -106,7 +106,7 @@ public class AbsenceTypeCrudSkillTests
         var type = Type("Ferien", "FE");
         _absenceRepository.List().Returns(new List<Absence> { type });
         _absenceRepository.GetNoTracking(type.Id).Returns(type);
-        var skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork);
+        var skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IOnCallSwitchPeriodHoursRefresher>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -124,7 +124,7 @@ public class AbsenceTypeCrudSkillTests
     public async Task Update_ReturnsError_WhenNameUnknown()
     {
         _absenceRepository.List().Returns(new List<Absence> { Type("Ferien") });
-        var skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork);
+        var skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IOnCallSwitchPeriodHoursRefresher>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

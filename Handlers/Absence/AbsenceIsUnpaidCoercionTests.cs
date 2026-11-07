@@ -147,6 +147,7 @@ public class AbsencePutHandlerCoercionTests
             _repository,
             _translationService,
             _unitOfWork,
+            Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IOnCallSwitchPeriodHoursRefresher>(),
             logger);
     }
 

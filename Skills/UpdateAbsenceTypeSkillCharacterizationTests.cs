@@ -36,7 +36,7 @@ public class UpdateAbsenceTypeSkillCharacterizationTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
-        _skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork);
+        _skill = new UpdateAbsenceTypeSkill(_absenceRepository, _unitOfWork, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IOnCallSwitchPeriodHoursRefresher>());
     }
 
     private static Absence Type()
@@ -142,7 +142,9 @@ public class UpdateAbsenceTypeSkillCharacterizationTests
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldBe(
             "Absence type 'Urlaub' updated (name, abbreviation, color, defaultLength, defaultValue, withSunday, isOnCall, hideInGantt) "
-            + "and confirmed in the database (verified). The change affects future bookings; existing bookings keep their values.");
+            + "and confirmed in the database (verified). The change affects future bookings; existing bookings keep their values. "
+            + "The on-call switch also recalculated the stored period hours over the existing absences of this type, "
+            + "except frozen (sealed and exported) periods.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"AbsenceTypeId\":\"" + TypeId + "\","
             + "\"ChangedFields\":[\"name\",\"abbreviation\",\"color\",\"defaultLength\",\"defaultValue\",\"withSunday\",\"isOnCall\",\"hideInGantt\"],"

@@ -409,6 +409,29 @@ public class ThoroughRecalculationBackgroundServiceTests
     }
 
     [Test]
+    public async Task ProcessAllUnsealed_ACachedRealPlanRowOutsideTheUnsealedSpan_ExtendsTheSpan_AScenarioRowDoesNot()
+    {
+        var clientId = Guid.NewGuid();
+        _context.Client.Add(new Client { Id = clientId, Name = "Cached", FirstName = "Row" });
+        AddWork(clientId, new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        AddWork(clientId, new DateOnly(2026, 3, 10), WorkLockLevel.Closed);
+        AddCachedRow(clientId, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), null);
+        AddCachedRow(clientId, new DateOnly(2025, 1, 1), new DateOnly(2025, 1, 31), Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculationOfAllUnsealed();
+        await RunUntilCompletionNotificationAsync();
+
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(
+            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), null, null);
+        await _periodHoursService.DidNotReceive().RecalculateAllClientsAsync(
+            new DateOnly(2025, 1, 1), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>());
+        await _notificationService.Received(1).NotifyThoroughRecalculationCompleted(
+            Arg.Is<ThoroughRecalculationCompletedDto>(dto =>
+                dto.StartDate == new DateOnly(2026, 3, 1) && dto.EndDate == new DateOnly(2026, 6, 10)));
+    }
+
+    [Test]
     public async Task ProcessAllUnsealed_NothingUnsealed_SendsOneCompletionAndProcessesNothing()
     {
         AddWork(Guid.NewGuid(), new DateOnly(2026, 6, 10), WorkLockLevel.Closed);
@@ -511,6 +534,18 @@ public class ThoroughRecalculationBackgroundServiceTests
         };
         _context.Break.Add(breakEntry);
         return breakEntry;
+    }
+
+    private void AddCachedRow(Guid clientId, DateOnly startDate, DateOnly endDate, Guid? analyseToken)
+    {
+        _context.ClientPeriodHours.Add(new ClientPeriodHours
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            StartDate = startDate,
+            EndDate = endDate,
+            AnalyseToken = analyseToken,
+        });
     }
 
     private WorkChange AddWorkChange(Work work)

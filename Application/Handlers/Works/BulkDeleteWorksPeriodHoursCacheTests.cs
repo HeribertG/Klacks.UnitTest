@@ -3,7 +3,8 @@
 /// <summary>
 /// The bulk delete recalculates and persists the period hours after the overtime cascade, once per deleted Work's
 /// client, scenario token and pay period, the state a single delete leaves, and drops no cached row: readers prefer a
-/// cached row over the live sum and the payroll export reads only the cached rows. The persisted effect is covered by
+/// cached row over the live sum and the payroll export reads only the cached rows. When a deleted Work's day plus a week
+/// passes its period end, the cascade reached the next pay period, which is recalculated as well. The persisted effect is covered by
 /// WorkBulkDeletePeriodHoursPostgresTests (Klacks.IntegrationTest).
 /// </summary>
 
@@ -28,6 +29,8 @@ public class BulkDeleteWorksPeriodHoursCacheTests
     private static readonly DateOnly NextPeriodDay = new(2027, 5, 3);
     private static readonly DateOnly NextPeriodStart = new(2027, 5, 1);
     private static readonly DateOnly NextPeriodEnd = new(2027, 5, 31);
+    private static readonly DateOnly LastDayWithoutLookAhead = new(2027, 4, 23);
+    private static readonly DateOnly LastDayWithLookAhead = new(2027, 4, 24);
 
     private IWorkRepository _workRepository = null!;
     private IOvertimeCascadeService _overtimeCascadeService = null!;
@@ -86,6 +89,37 @@ public class BulkDeleteWorksPeriodHoursCacheTests
             _periodHoursService.RecalculatePeriodHoursAsync(_clientId, NextPeriodStart, NextPeriodEnd, null);
         });
         RecalculationCount().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task AWorkWhoseWeekReachesTheNextPayPeriod_AlsoRecalculatesTheNextPeriod_AfterItsOwnOne()
+    {
+        _periodHoursService.GetPeriodBoundariesAsync(LastDayWithLookAhead).Returns((PeriodStart, PeriodEnd));
+        _periodHoursService.GetPeriodBoundariesAsync(NextPeriodStart).Returns((NextPeriodStart, NextPeriodEnd));
+        var works = GivenWorks(NewWork(_clientId, null, LastDayWithLookAhead));
+
+        await DeleteAsync(works);
+
+        Received.InOrder(() =>
+        {
+            _overtimeCascadeService.ReprocessSuccessorsAsync(Arg.Any<IReadOnlyCollection<Work>>());
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientId, PeriodStart, PeriodEnd, null);
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientId, NextPeriodStart, NextPeriodEnd, null);
+        });
+        RecalculationCount().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task AWorkWhoseWeekStaysInItsPayPeriod_DoesNotTouchTheNextPeriod()
+    {
+        _periodHoursService.GetPeriodBoundariesAsync(LastDayWithoutLookAhead).Returns((PeriodStart, PeriodEnd));
+        var works = GivenWorks(NewWork(_clientId, null, LastDayWithoutLookAhead));
+
+        await DeleteAsync(works);
+
+        await _periodHoursService.Received(1).RecalculatePeriodHoursAsync(_clientId, PeriodStart, PeriodEnd, null);
+        RecalculationCount().ShouldBe(1);
+        await _periodHoursService.DidNotReceive().GetPeriodBoundariesAsync(NextPeriodStart);
     }
 
     private List<Work> GivenWorks(params Work[] works)

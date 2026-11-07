@@ -3,7 +3,8 @@
 /// <summary>
 /// ScheduleCompletionService.CompleteWorkWriteAsync completes a single-Work write the caller has already committed. On
 /// success it queues the timeline check, reprocesses the overtime successors, tracks the change and recalculates and
-/// pushes the period hours, without touching the repair path. When the cascade or the recalculation throws, the write
+/// pushes the period hours, without touching the repair path; without a push it also stores the period a move left and
+/// the following period a week past the day reaches (since 2026-11-07). When the cascade or the recalculation throws, the write
 /// does not fail: the tracked changes are discarded, the pay period is queued for a thorough recalculation (the following
 /// period first when the Work's day plus a week passes the period end), the cached rows of the affected days are dropped
 /// and the live period hours are returned; no repair step lets its own failure escape.
@@ -302,6 +303,97 @@ public class ScheduleCompletionServiceWorkWriteTests
             .Count(call => call.GetMethodInfo().Name == nameof(IPeriodHoursService.RecalculateAndNotifyAsync))
             .ShouldBe(1);
     }
+
+    [Test]
+    public async Task MoveBackFromTheFollowingPayPeriod_AlsoStoresThePeriodItLeft_WithoutAPush()
+    {
+        var previous = NewWork(_clientId, FollowingStart);
+        var work = NewWork(_clientId, Day);
+        _periodHours.GetPeriodBoundariesAsync(FollowingStart).Returns((FollowingStart, FollowingEnd));
+
+        var completion = await _service.CompleteWorkWriteAsync(work, previous, PeriodStart, PeriodEnd);
+
+        completion.PeriodHours.ShouldNotBeNull().Hours.ShouldBe(RecalculatedHours);
+        completion.PreviousPeriodHours.ShouldBeNull();
+        Received.InOrder(() =>
+        {
+            _periodHours.RecalculateAndNotifyAsync(_clientId, PeriodStart, PeriodEnd, _analyseToken, ConnectionId);
+            _periodHours.RecalculatePeriodHoursAsync(_clientId, FollowingStart, FollowingEnd, _analyseToken);
+        });
+        await _periodHours.DidNotReceive().RecalculateAndNotifyAsync(
+            _clientId, FollowingStart, FollowingEnd, Arg.Any<Guid?>(), Arg.Any<string?>());
+        ThenNothingWasRepaired();
+    }
+
+    [Test]
+    public async Task MoveToAnotherClientAndPayPeriod_StoresThePreviousClientInThePeriodItLeft()
+    {
+        var previous = NewWork(_previousClientId, FollowingStart);
+        var work = NewWork(_clientId, Day);
+        _periodHours.GetPeriodBoundariesAsync(FollowingStart).Returns((FollowingStart, FollowingEnd));
+
+        await _service.CompleteWorkWriteAsync(work, previous, PeriodStart, PeriodEnd);
+
+        await _periodHours.Received(1).RecalculatePeriodHoursAsync(
+            _previousClientId, FollowingStart, FollowingEnd, _analyseToken);
+        StoredRowCount().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Success_OnTheFirstDayWhoseWeekReachesTheNextPeriod_AlsoStoresTheFollowingPeriod_WithoutAPush()
+    {
+        var work = NewWork(_clientId, FirstDayWithLookAhead);
+
+        await _service.CompleteWorkWriteAsync(work, null, PeriodStart, PeriodEnd);
+
+        Received.InOrder(() =>
+        {
+            _periodHours.RecalculateAndNotifyAsync(_clientId, PeriodStart, PeriodEnd, _analyseToken, ConnectionId);
+            _periodHours.GetPeriodBoundariesAsync(FollowingStart);
+            _periodHours.RecalculatePeriodHoursAsync(_clientId, FollowingStart, FollowingEnd, _analyseToken);
+        });
+        StoredRowCount().ShouldBe(1);
+        ThenNothingWasRepaired();
+    }
+
+    [Test]
+    public async Task Success_OnTheLastDayWhoseWeekStaysInThePeriod_StoresNoOtherPeriod()
+    {
+        var work = NewWork(_clientId, LastDayWithoutLookAhead);
+
+        await _service.CompleteWorkWriteAsync(work, null, PeriodStart, PeriodEnd);
+
+        await _periodHours.DidNotReceiveWithAnyArgs().GetPeriodBoundariesAsync(default);
+        StoredRowCount().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task MoveIntoTheFollowingPeriod_StoresTheLeftPeriod_AndDoesNotStoreTheNewPeriodTwice()
+    {
+        var previous = NewWork(_clientId, FirstDayWithLookAhead);
+        var work = NewWork(_clientId, FollowingStart.AddDays(1));
+        _periodHours.GetPeriodBoundariesAsync(FirstDayWithLookAhead).Returns((PeriodStart, PeriodEnd));
+
+        await _service.CompleteWorkWriteAsync(work, previous, FollowingStart, FollowingEnd);
+
+        await _periodHours.Received(1).RecalculatePeriodHoursAsync(_clientId, PeriodStart, PeriodEnd, _analyseToken);
+        StoredRowCount().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task MoveWithinThePayPeriod_DoesNotResolveAnotherPeriod()
+    {
+        var previous = NewWork(_previousClientId, Day.AddDays(-1));
+        var work = NewWork(_clientId, Day);
+
+        await _service.CompleteWorkWriteAsync(work, previous, PeriodStart, PeriodEnd);
+
+        await _periodHours.DidNotReceiveWithAnyArgs().GetPeriodBoundariesAsync(default);
+    }
+
+    private int StoredRowCount()
+        => _periodHours.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IPeriodHoursService.RecalculatePeriodHoursAsync));
 
     private Work NewWork(Guid clientId, DateOnly date) => new()
     {

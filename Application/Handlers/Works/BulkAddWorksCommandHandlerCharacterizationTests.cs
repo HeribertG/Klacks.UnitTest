@@ -231,6 +231,42 @@ public class BulkAddWorksCommandHandlerCharacterizationTests
     }
 
     [Test]
+    public async Task AWorkWhoseWeekReachesTheNextPayPeriod_StoresThatPeriod_WithoutAPush_AfterThePushedOne()
+    {
+        var lateAprilDay = new DateOnly(2027, 4, 28);
+        _periodHoursService.GetPeriodBoundariesAsync(lateAprilDay).Returns((AprilStart, AprilEnd));
+        _periodHoursService.GetPeriodBoundariesAsync(MayStart).Returns((MayStart, MayEnd));
+
+        await NewHandler().Handle(
+            new BulkAddWorksCommand(NewRequest(NewItem(_clientA, _shift1, lateAprilDay, null))), CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId);
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientA, MayStart, MayEnd, null);
+        });
+        await _periodHoursService.DidNotReceive().RecalculateAndNotifyAsync(
+            _clientA, MayStart, MayEnd, Arg.Any<Guid?>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task AFollowingPeriodThatAlreadyHoldsNewWorks_IsNotStoredASecondTime()
+    {
+        var lateAprilDay = new DateOnly(2027, 4, 28);
+        _periodHoursService.GetPeriodBoundariesAsync(lateAprilDay).Returns((AprilStart, AprilEnd));
+        _periodHoursService.GetPeriodBoundariesAsync(MayStart).Returns((MayStart, MayEnd));
+
+        await NewHandler().Handle(
+            new BulkAddWorksCommand(NewRequest(
+                NewItem(_clientA, _shift1, lateAprilDay, null),
+                NewItem(_clientA, _shift2, MayDay, null))),
+            CancellationToken.None);
+
+        await _periodHoursService.Received(1).RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculatePeriodHoursAsync(default, default, default, default);
+    }
+
+    [Test]
     public async Task WorksOfOneClientInTwoPayPeriods_AnswerThePeriodWithMostWorks_PushedLast()
     {
         var aprilHours = new PeriodHoursResource { Hours = 3m };
