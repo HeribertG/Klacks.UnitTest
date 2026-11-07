@@ -29,6 +29,7 @@ public class PatAuthenticationHandlerTests
     private const string TestLastName = "Doe";
     private const string TestTokenName = "ci-token";
     private const string AdminRole = "Admin";
+    private const string PlannerRoleName = "Planner";
 
     private IPersonalAccessTokenRepository _repository = null!;
     private UserManager<AppUser> _userManager = null!;
@@ -246,6 +247,30 @@ public class PatAuthenticationHandlerTests
         await _repository.Received(1).UpdateLastUsedAsync(token.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task AuthenticateAsync_OwnerWithoutTokenPermission_Fails()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        SetupUser(PlannerRoleName);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeFalse();
+        result.Failure!.Message.ShouldBe(InvalidTokenMessage);
+        await _repository.DidNotReceive().UpdateLastUsedAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_SupervisorOwner_Succeeds()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        SetupUser(Roles.Authorised);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
     private async Task<AuthenticateResult> AuthenticateAsync(string? authorizationHeader)
     {
         var optionsMonitor = Substitute.For<IOptionsMonitor<AuthenticationSchemeOptions>>();
@@ -289,7 +314,7 @@ public class PatAuthenticationHandlerTests
         return (plaintext, token);
     }
 
-    private AppUser SetupUser()
+    private AppUser SetupUser(params string[] roles)
     {
         var user = new AppUser
         {
@@ -301,7 +326,7 @@ public class PatAuthenticationHandlerTests
         };
 
         _userManager.FindByIdAsync(TestUserId).Returns(user);
-        _userManager.GetRolesAsync(user).Returns(new List<string> { AdminRole });
+        _userManager.GetRolesAsync(user).Returns(roles.Length == 0 ? new List<string> { AdminRole } : roles.ToList());
 
         return user;
     }

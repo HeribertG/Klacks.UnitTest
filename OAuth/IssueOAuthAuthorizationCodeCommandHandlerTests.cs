@@ -38,6 +38,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     private DataBaseContext _context = null!;
     private IAdminSetupGateService _adminSetupGateService = null!;
     private IssueOAuthAuthorizationCodeCommandHandler _handler = null!;
+    private IUserManagementService _userManagementService = null!;
 
     [SetUp]
     public void SetUp()
@@ -61,6 +62,9 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         _adminSetupGateService = Substitute.For<IAdminSetupGateService>();
         _adminSetupGateService.IsGateActiveAsync().Returns(true);
 
+        _userManagementService = Substitute.For<IUserManagementService>();
+        _userManagementService.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Authorised });
+
         var options = new DbContextOptionsBuilder<DataBaseContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
@@ -70,13 +74,26 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _codeStore = new OAuthAuthorizationCodeStore(_context, timeProvider);
         _handler = new IssueOAuthAuthorizationCodeCommandHandler(
-            _clientRepository, _authenticationService, _codeStore, _adminSetupGateService);
+            _clientRepository, _authenticationService, _codeStore, _adminSetupGateService, _userManagementService);
     }
 
     [TearDown]
     public void TearDown()
     {
         _context.Dispose();
+    }
+
+    [Test]
+    public async Task Handle_PlannerAccountWithoutRole_RefusesWithAccessDeniedWithoutStoringCode()
+    {
+        _userManagementService.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string>());
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.Code.ShouldBeNull();
+        result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
     }
 
     [Test]
