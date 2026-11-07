@@ -346,6 +346,29 @@ public class NextPeriodSchedulingDueDetectorTests
         await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
     }
 
+    [Test]
+    public async Task DetectAsync_AutofillAgentIds_ExcludeCustomers_KeepPersonsAndStandIns()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubAdmins((AdminId, AutonomyLevel.Autonomous));
+        var employee = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.Employee };
+        var externEmployee = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.ExternEmp };
+        var standIn = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.StandIn };
+        var customer = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.Customer };
+        _clientRepository.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns([employee, customer, externEmployee, standIn]);
+        _autoWizardJobRunner.StartAsync(Arg.Any<StartAutoWizardRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Guid.NewGuid());
+
+        await _sut.DetectAsync();
+
+        await _autoWizardJobRunner.Received(1).StartAsync(
+            Arg.Is<StartAutoWizardRequest>(request =>
+                request.AgentIds.SequenceEqual(new[] { employee.Id, externEmployee.Id, standIn.Id })),
+            Arg.Any<CancellationToken>());
+    }
+
     [TestCase(AutonomyLevel.Autonomous)]
     [TestCase(AutonomyLevel.FullyAutonomous)]
     public async Task DetectAsync_AutonomousOrHigher_StartsAutofillAndEmitsInfoEvent(AutonomyLevel level)

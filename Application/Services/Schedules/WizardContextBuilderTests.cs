@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Shouldly;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
@@ -29,6 +30,7 @@ public class WizardContextBuilderTests
     private IAvailabilityIneligibilityService _availabilityService = null!;
     private IEligibilityMatrixBuilder _eligibilityBuilder = null!;
     private WizardContextBuilder _sut = null!;
+    private IClientRepository _clientRepository = null!;
 
     [SetUp]
     public void Setup()
@@ -81,7 +83,11 @@ public class WizardContextBuilderTests
         restrictedWindowBuilder
             .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<CoreRestrictedTimeWindow>)new List<CoreRestrictedTimeWindow>());
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, _eligibilityBuilder, _availabilityService, warmStartBuilder, restrictedWindowBuilder);
+        _clientRepository = Substitute.For<IClientRepository>();
+        _clientRepository
+            .GetStandInIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, _eligibilityBuilder, _availabilityService, warmStartBuilder, restrictedWindowBuilder, _clientRepository);
     }
 
     [Test]
@@ -382,6 +388,57 @@ public class WizardContextBuilderTests
 
         result.Agents.Select(a => a.Id).ShouldBe(
             new[] { firstId.ToString(), secondId.ToString(), thirdId.ToString() });
+    }
+
+    [Test]
+    public async Task BuildContextAsync_UserDefinedOrder_StandInFirst_EndsLast_RealOrderKept()
+    {
+        var standIn = Guid.NewGuid();
+        var lowHoursPerson = Guid.NewGuid();
+        var highHoursPerson = Guid.NewGuid();
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [standIn] = 0,
+            [lowHoursPerson] = 10,
+            [highHoursPerson] = 40,
+        });
+        var agentIds = new[] { standIn, lowHoursPerson, highHoursPerson };
+        _clientRepository.GetStandInIdsAsync(agentIds, Arg.Any<CancellationToken>()).Returns(new HashSet<Guid> { standIn });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 20), agentIds, null, null, AgentOrderIsUserDefined: true),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(
+            new[] { lowHoursPerson.ToString(), highHoursPerson.ToString(), standIn.ToString() });
+    }
+
+    [Test]
+    public async Task BuildContextAsync_HoursOrder_StandInsAfterEveryPerson_AlsoAfterOneWithoutHours()
+    {
+        var standInWithHours = Guid.NewGuid();
+        var standIn = Guid.NewGuid();
+        var personWithoutHours = Guid.NewGuid();
+        var personWithHours = Guid.NewGuid();
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [standInWithHours] = 50,
+            [standIn] = 0,
+            [personWithoutHours] = 0,
+            [personWithHours] = 20,
+        });
+        var agentIds = new[] { standInWithHours, standIn, personWithoutHours, personWithHours };
+        _clientRepository.GetStandInIdsAsync(agentIds, Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid> { standInWithHours, standIn });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 20), agentIds, null, null),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(new[]
+        {
+            personWithHours.ToString(), personWithoutHours.ToString(), standInWithHours.ToString(), standIn.ToString(),
+        });
     }
 
     private void SetupContractsWithGuaranteedHours(IReadOnlyDictionary<Guid, decimal> guaranteedHoursPerAgent)
