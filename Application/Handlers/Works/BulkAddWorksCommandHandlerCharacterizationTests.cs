@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Characterization of BulkAddWorksCommandHandler.Handle (round 12 split): the order of guards, writes and
-/// notifications, the merged per-client period range, the bulk and per-client scenario tokens, the deduplicated
-/// affected shifts and the response contents, plus the hard-blocking refusal and the empty request.
+/// notifications, the merged range of the tracking call, the period hours stored and pushed once per client and real pay
+/// period (never over the union of a client's periods) with the response carrying the period holding most of the client's
+/// new Works (the earliest on a tie, pushed last), the bulk and per-client scenario tokens, the deduplicated affected
+/// shifts and the response contents, plus the hard-blocking refusal and the empty request.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
@@ -27,6 +29,7 @@ public class BulkAddWorksCommandHandlerCharacterizationTests
 
     private static readonly DateOnly AprilDay = new(2027, 4, 12);
     private static readonly DateOnly MayDay = new(2027, 5, 3);
+    private static readonly DateOnly SecondMayDay = new(2027, 5, 20);
     private static readonly DateOnly AprilStart = new(2027, 4, 1);
     private static readonly DateOnly AprilEnd = new(2027, 4, 30);
     private static readonly DateOnly MayStart = new(2027, 5, 1);
@@ -121,7 +124,8 @@ public class BulkAddWorksCommandHandlerCharacterizationTests
             _notificationFacade.NotifyWorksBulkCreatedAsync(
                 Arg.Any<IReadOnlyList<Work>>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyDictionary<DateOnly, (DateOnly Start, DateOnly End)>>());
-            _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, MayEnd, null, ConnectionId);
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId);
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId);
             _periodHoursService.RecalculateAndNotifyAsync(_clientB, AprilStart, AprilEnd, token, ConnectionId);
             _notificationFacade.NotifyShiftStatsAsync(
                 Arg.Any<HashSet<(Guid ShiftId, DateOnly Date)>>(), Arg.Any<string>(), Arg.Any<Guid?>(),
@@ -213,6 +217,63 @@ public class BulkAddWorksCommandHandlerCharacterizationTests
         added[0].Information.ShouldBe(request.Works[0].Information);
         added[0].ShiftId.ShouldBe(_shift1);
         added[0].CurrentDate.ShouldBe(AprilDay);
+    }
+
+    [Test]
+    public async Task WorksOfOneClientInTwoPayPeriods_StoreAndPushEachPayPeriod_NeverTheUnion()
+    {
+        await NewHandler().Handle(new BulkAddWorksCommand(NewMixedRequest(Guid.NewGuid())), CancellationToken.None);
+
+        await _periodHoursService.Received(1).RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId);
+        await _periodHoursService.Received(1).RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId);
+        await _periodHoursService.DidNotReceive().RecalculateAndNotifyAsync(_clientA, AprilStart, MayEnd, null, ConnectionId);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculatePeriodHoursAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task WorksOfOneClientInTwoPayPeriods_AnswerThePeriodWithMostWorks_PushedLast()
+    {
+        var aprilHours = new PeriodHoursResource { Hours = 3m };
+        var mayHours = new PeriodHoursResource { Hours = 16m };
+        _periodHoursService.GetPeriodBoundariesAsync(SecondMayDay).Returns((MayStart, MayEnd));
+        _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId).Returns(aprilHours);
+        _periodHoursService.RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId).Returns(mayHours);
+        var request = NewRequest(
+            NewItem(_clientA, _shift1, AprilDay, null),
+            NewItem(_clientA, _shift2, MayDay, null),
+            NewItem(_clientA, _shift1, SecondMayDay, null));
+
+        var response = await NewHandler().Handle(new BulkAddWorksCommand(request), CancellationToken.None);
+
+        response.PeriodHours.ShouldNotBeNull();
+        response.PeriodHours[_clientA].ShouldBeSameAs(mayHours);
+        Received.InOrder(() =>
+        {
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId);
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId);
+        });
+    }
+
+    [Test]
+    public async Task WorksOfOneClientEquallySpreadOverTwoPayPeriods_AnswerTheEarlierPeriod_PushedLast()
+    {
+        var aprilHours = new PeriodHoursResource { Hours = 3m };
+        var mayHours = new PeriodHoursResource { Hours = 16m };
+        _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId).Returns(aprilHours);
+        _periodHoursService.RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId).Returns(mayHours);
+        var request = NewRequest(
+            NewItem(_clientA, _shift2, MayDay, null),
+            NewItem(_clientA, _shift1, AprilDay, null));
+
+        var response = await NewHandler().Handle(new BulkAddWorksCommand(request), CancellationToken.None);
+
+        response.PeriodHours.ShouldNotBeNull();
+        response.PeriodHours[_clientA].ShouldBeSameAs(aprilHours);
+        Received.InOrder(() =>
+        {
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, MayStart, MayEnd, null, ConnectionId);
+            _periodHoursService.RecalculateAndNotifyAsync(_clientA, AprilStart, AprilEnd, null, ConnectionId);
+        });
     }
 
     [Test]

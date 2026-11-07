@@ -7,7 +7,9 @@
 /// hours for exactly the scoped clients, explicit client ids combined with a selected group narrow
 /// the scope to their intersection (an empty intersection skips all reprocessing but still sends the
 /// completion notification), and identical pending queue requests (including the same client set in
-/// a different order) are coalesced instead of piling up.
+/// a different order) are coalesced instead of piling up. The period hours are stored once per real pay period the
+/// window touches (per scoped client, or for all clients), never over the window itself, while the macros stay on the
+/// window. The fixture's GetPeriodsInRangeAsync answers the window itself unless a test stubs real pay periods.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
@@ -36,6 +38,8 @@ public class ThoroughRecalculationBackgroundServiceTests
 
     private readonly DateOnly _startDate = new(2026, 6, 1);
     private readonly DateOnly _endDate = new(2026, 6, 30);
+    private static readonly (DateOnly Start, DateOnly End) JunePeriod = (new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+    private static readonly (DateOnly Start, DateOnly End) JulyPeriod = (new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31));
 
     [SetUp]
     public void SetUp()
@@ -52,6 +56,9 @@ public class ThoroughRecalculationBackgroundServiceTests
 
         _breakMacroService = Substitute.For<IBreakMacroService>();
         _periodHoursService = Substitute.For<IPeriodHoursService>();
+        _periodHoursService.GetPeriodsInRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(call => (IReadOnlyList<(DateOnly StartDate, DateOnly EndDate)>)
+                [(call.ArgAt<DateOnly>(0), call.ArgAt<DateOnly>(1))]);
         _notificationService = Substitute.For<IWorkNotificationService>();
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
 
@@ -263,6 +270,50 @@ public class ThoroughRecalculationBackgroundServiceTests
     }
 
     [Test]
+    public async Task ProcessRequest_ClientScopedWindowOverTwoPayPeriods_StoresEachPayPeriod_ButReprocessesOnlyTheWindow()
+    {
+        var clientId = Guid.NewGuid();
+        var windowStart = new DateOnly(2026, 6, 10);
+        var windowEnd = new DateOnly(2026, 7, 5);
+        StubPayPeriods(windowStart, windowEnd, JunePeriod, JulyPeriod);
+        var insideWindow = AddWork(clientId, new DateOnly(2026, 7, 3), WorkLockLevel.None);
+        var afterWindow = AddWork(clientId, new DateOnly(2026, 7, 20), WorkLockLevel.None);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculation(windowStart, windowEnd, null, null, new[] { clientId });
+        await RunUntilCompletionNotificationAsync();
+
+        await _periodHoursService.Received(1).RecalculatePeriodHoursAsync(clientId, JunePeriod.Start, JunePeriod.End, null);
+        await _periodHoursService.Received(1).RecalculatePeriodHoursAsync(clientId, JulyPeriod.Start, JulyPeriod.End, null);
+        await _periodHoursService.DidNotReceive().RecalculatePeriodHoursAsync(clientId, windowStart, windowEnd, null);
+        await _workMacroService.Received(1).ProcessWorkMacroAsync(Arg.Is<Work>(w => w.Id == insideWindow.Id));
+        await _workMacroService.DidNotReceive().ProcessWorkMacroAsync(Arg.Is<Work>(w => w.Id == afterWindow.Id));
+        await _breakMacroService.Received(1).ReprocessAllBreaksAsync(
+            windowStart, windowEnd, Arg.Is<List<Guid>>(ids => ids.Count == 1 && ids.Contains(clientId)));
+    }
+
+    [Test]
+    public async Task ProcessRequest_UnscopedWindowOverTwoPayPeriods_RecalculatesAllClientsPerPayPeriod()
+    {
+        var windowStart = new DateOnly(2026, 6, 10);
+        var windowEnd = new DateOnly(2026, 7, 5);
+        StubPayPeriods(windowStart, windowEnd, JunePeriod, JulyPeriod);
+        AddWork(Guid.NewGuid(), new DateOnly(2026, 6, 12), WorkLockLevel.None);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculation(windowStart, windowEnd, null, null);
+        await RunUntilCompletionNotificationAsync();
+
+        Received.InOrder(() =>
+        {
+            _periodHoursService.RecalculateAllClientsAsync(JunePeriod.Start, JunePeriod.End, null, null);
+            _periodHoursService.RecalculateAllClientsAsync(JulyPeriod.Start, JulyPeriod.End, null, null);
+        });
+        await _periodHoursService.DidNotReceive().RecalculateAllClientsAsync(windowStart, windowEnd, null, null);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculatePeriodHoursAsync(default, default, default, null);
+    }
+
+    [Test]
     public void QueueRecalculation_QueueIsFull_ReturnsFalseInsteadOfDroppingAnOlderRequest()
     {
         var capacity = ThoroughRecalculationBackgroundService.ChannelCapacity;
@@ -380,6 +431,13 @@ public class ThoroughRecalculationBackgroundServiceTests
         _sut.QueueRecalculation(DateOnly.MinValue, DateOnly.MaxValue, null, null).ShouldBeTrue();
 
         _sut.PendingRequestCount.ShouldBe(2);
+    }
+
+    private void StubPayPeriods(
+        DateOnly windowStart, DateOnly windowEnd, params (DateOnly Start, DateOnly End)[] payPeriods)
+    {
+        _periodHoursService.GetPeriodsInRangeAsync(windowStart, windowEnd)
+            .Returns(payPeriods.Select(p => (StartDate: p.Start, EndDate: p.End)).ToList());
     }
 
     private Work AddWork(Guid clientId, DateOnly date, WorkLockLevel lockLevel)
