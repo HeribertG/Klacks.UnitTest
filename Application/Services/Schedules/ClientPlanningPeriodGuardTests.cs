@@ -346,6 +346,16 @@ public class ClientPlanningPeriodGuardTests
     }
 
     [Test]
+    public async Task EnsurePlannablePerson_AcceptsAStandIn()
+    {
+        var standIn = NewClient(ClientId, membership: null);
+        standIn.Type = EntityTypeEnum.StandIn;
+        GivenClients(standIn);
+
+        await _guard.EnsurePlannablePersonsAsync([ClientId], CancellationToken.None);
+    }
+
+    [Test]
     public async Task EnsurePlannablePerson_RefusesACustomer()
     {
         var customer = NewClient(ClientId, membership: null);

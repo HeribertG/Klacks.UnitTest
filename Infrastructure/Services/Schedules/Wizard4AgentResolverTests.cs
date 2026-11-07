@@ -53,6 +53,17 @@ public sealed class Wizard4AgentResolverTests
     }
 
     [Test]
+    public async Task ResolveAsync_ReturnsStandIns()
+    {
+        var employee = await AddMemberAsync(EntityTypeEnum.Employee);
+        var standIn = await AddMemberAsync(EntityTypeEnum.StandIn);
+
+        var result = await _sut.ResolveAsync(GroupId, From, Until, CancellationToken.None);
+
+        result.ShouldBe([employee, standIn], ignoreOrder: true);
+    }
+
+    [Test]
     public async Task ResolveAsync_LeavesCustomersOut()
     {
         var employee = await AddMemberAsync(EntityTypeEnum.Employee);

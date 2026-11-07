@@ -98,16 +98,17 @@ public class ReplacementWriteGuardTests
         exception.Message.ShouldBe(ReplacementWriteMessages.PersonNotFound);
     }
 
-    [Test]
-    public async Task ReplacementWithACustomer_IsRefused()
+    [TestCase(EntityTypeEnum.Customer)]
+    [TestCase(EntityTypeEnum.StandIn)]
+    public async Task ReplacementWithACustomerOrAStandIn_IsRefused(EntityTypeEnum type)
     {
-        var customer = Guid.NewGuid();
-        _clientRepository.GetTypeAndDisplayNameAsync(customer, Arg.Any<CancellationToken>())
-            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Customer, "Customer"));
+        var person = Guid.NewGuid();
+        _clientRepository.GetTypeAndDisplayNameAsync(person, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(type, "Not a person"));
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(
             () => _guard.EnsureAllowedAsync(
-                Change(WorkChangeType.ReplacementWithin, customer), _parentWork, false, null, CancellationToken.None));
+                Change(WorkChangeType.ReplacementWithin, person), _parentWork, false, null, CancellationToken.None));
 
         exception.Message.ShouldBe(ReplacementWriteMessages.PersonNotAnEmployee);
     }
