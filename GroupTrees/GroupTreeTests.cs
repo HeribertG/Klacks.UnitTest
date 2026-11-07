@@ -96,7 +96,7 @@ public class GroupTreeTests
             deleteHandlerLogger);
 
         var getHandlerLogger = Substitute.For<ILogger<GetQueryHandler>>();
-        _getHandler = new GetQueryHandler(_groupRepository, _mapper, getHandlerLogger);
+        _getHandler = new GetQueryHandler(_groupRepository, _mapper, TestGroupWriteVisibility.UnrestrictedGroups(), getHandlerLogger);
 
         _getPathHandler = new GetPathToNodeQueryHandler(_groupRepository, _mapper);
 
