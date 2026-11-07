@@ -272,9 +272,9 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             () => new StandInHasWorksException("Fair 1", 3),
             409,
             JsonContentType,
-            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The stand-in Fair 1 cannot be deleted: 3 service(s) are still assigned to it. Assign them to a person or convert the stand-in, then delete it.\",\"standInName\":\"Fair 1\",\"workCount\":3,\"errorCode\":\"{StandInHasWorksException.ErrorCode}\"}}",
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The stand-in Fair 1 cannot be deleted: 3 service(s) are still assigned to it. Assign them to a person, discard the scenarios that hold them or convert the stand-in, then delete it.\",\"standInName\":\"Fair 1\",\"workCount\":3,\"errorCode\":\"{StandInHasWorksException.ErrorCode}\"}}",
             LogLevel.Warning,
-            "ConflictException caught by middleware: The stand-in Fair 1 cannot be deleted: 3 service(s) are still assigned to it. Assign them to a person or convert the stand-in, then delete it.",
+            "ConflictException caught by middleware: The stand-in Fair 1 cannot be deleted: 3 service(s) are still assigned to it. Assign them to a person, discard the scenarios that hold them or convert the stand-in, then delete it.",
             true);
 
         yield return new MappingCase(

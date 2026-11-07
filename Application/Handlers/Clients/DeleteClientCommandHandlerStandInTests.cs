@@ -41,18 +41,18 @@ public class DeleteClientCommandHandlerStandInTests
             Substitute.For<ILogger<ClientDeleteCommandHandler>>());
     }
 
-    private Client ClientOf(EntityTypeEnum type, int realPlanWorks)
+    private Client ClientOf(EntityTypeEnum type, int plannedWorks)
     {
         var client = new Client { Id = Guid.NewGuid(), Name = "Fair 1", Type = type };
         _clientRepository.Get(client.Id).Returns(client);
-        _workRepository.CountRealPlanWorksOfClientAsync(client.Id, Arg.Any<CancellationToken>()).Returns(realPlanWorks);
+        _workRepository.CountWorksOfClientAsync(client.Id, Arg.Any<CancellationToken>()).Returns(plannedWorks);
         return client;
     }
 
     [Test]
-    public async Task Delete_StandInWithRealPlanWorks_IsRefused_NothingDeleted()
+    public async Task Delete_StandInWithWorks_IsRefused_NothingDeleted()
     {
-        var standIn = ClientOf(EntityTypeEnum.StandIn, realPlanWorks: 3);
+        var standIn = ClientOf(EntityTypeEnum.StandIn, plannedWorks: 3);
 
         var refusal = await Should.ThrowAsync<StandInHasWorksException>(
             () => _handler.Handle(new DeleteCommand<ClientResource>(standIn.Id), CancellationToken.None));
@@ -65,9 +65,9 @@ public class DeleteClientCommandHandlerStandInTests
     }
 
     [Test]
-    public async Task Delete_StandInWithoutRealPlanWorks_IsDeleted()
+    public async Task Delete_StandInWithoutWorks_IsDeleted()
     {
-        var standIn = ClientOf(EntityTypeEnum.StandIn, realPlanWorks: 0);
+        var standIn = ClientOf(EntityTypeEnum.StandIn, plannedWorks: 0);
 
         await _handler.Handle(new DeleteCommand<ClientResource>(standIn.Id), CancellationToken.None);
 
@@ -76,13 +76,13 @@ public class DeleteClientCommandHandlerStandInTests
     }
 
     [Test]
-    public async Task Delete_EmployeeWithRealPlanWorks_IsDeletedAsBefore()
+    public async Task Delete_EmployeeWithWorks_IsDeletedAsBefore()
     {
-        var employee = ClientOf(EntityTypeEnum.Employee, realPlanWorks: 3);
+        var employee = ClientOf(EntityTypeEnum.Employee, plannedWorks: 3);
 
         await _handler.Handle(new DeleteCommand<ClientResource>(employee.Id), CancellationToken.None);
 
         await _clientRepository.Received(1).Delete(employee.Id);
-        await _workRepository.DidNotReceiveWithAnyArgs().CountRealPlanWorksOfClientAsync(default, default);
+        await _workRepository.DidNotReceiveWithAnyArgs().CountWorksOfClientAsync(default, default);
     }
 }
