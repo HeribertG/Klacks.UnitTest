@@ -4,6 +4,7 @@ using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.DTOs.Staffs;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
@@ -33,7 +34,7 @@ public class ClientDeleteReassignEmailTests
 
         var logger = Substitute.For<ILogger<Api.Application.Handlers.Clients.DeleteCommandHandler>>();
         _handler = new Api.Application.Handlers.Clients.DeleteCommandHandler(
-            _clientRepository, _emailAssignmentService, _clientMapper, _unitOfWork, logger);
+            _clientRepository, Substitute.For<IWorkRepository>(), _emailAssignmentService, _clientMapper, _unitOfWork, logger);
     }
 
     [Test]
