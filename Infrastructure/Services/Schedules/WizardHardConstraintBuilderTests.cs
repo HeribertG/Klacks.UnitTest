@@ -228,6 +228,39 @@ public class WizardHardConstraintBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_OnCallBreak_StaysABlocker_ButCarriesNoTargetHours()
+    {
+        var agent = Guid.NewGuid();
+        var onCallDay = new DateOnly(2026, 4, 21);
+        var absenceId = Guid.NewGuid();
+        _context.Absence.Add(new Absence
+        {
+            Id = absenceId,
+            IsOnCall = true,
+            Name = new MultiLanguage { De = "Pikett" },
+        });
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = onCallDay,
+            AbsenceId = absenceId,
+            StartTime = new TimeOnly(0, 0),
+            EndTime = new TimeOnly(0, 0),
+            WorkTime = 8m,
+            AnalyseToken = null,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), analyseToken: null, CancellationToken.None);
+
+        var blocker = result.BreakBlockers.ShouldHaveSingleItem("the on-call day stays occupied for the wizard");
+        blocker.FromInclusive.ShouldBe(onCallDay);
+        blocker.Hours.ShouldBe(0m, "an on-call absence never counts toward the target hours");
+    }
+
+    [Test]
     public async Task BuildAsync_ContainerSubBreak_IsNoBreakBlocker()
     {
         var agent = Guid.NewGuid();

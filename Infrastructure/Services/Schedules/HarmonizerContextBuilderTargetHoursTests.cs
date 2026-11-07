@@ -117,6 +117,46 @@ public class HarmonizerContextBuilderTargetHoursTests
     }
 
     [Test]
+    public async Task BuildContextAsync_OnCallBreakWithACallOut_StaysALockedBreakCell_CountingOnlyTheCallOut()
+    {
+        const decimal absenceHours = 8m;
+        const decimal callOutHours = 4m;
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+        var onCall = new Absence { Id = Guid.NewGuid(), IsOnCall = true, Name = new MultiLanguage { De = "Pikett" } };
+        var vacation = new Absence { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Ferien" } };
+        _context.Absence.AddRange(onCall, vacation);
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(), ClientId = agent, AbsenceId = onCall.Id, CurrentDate = WeekStart, WorkTime = absenceHours,
+        });
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(), ClientId = agent, AbsenceId = vacation.Id, CurrentDate = WeekStart.AddDays(1), WorkTime = absenceHours,
+        });
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = WeekStart,
+            StartTime = new TimeOnly(20, 0),
+            EndTime = new TimeOnly(0, 0),
+            WorkTime = callOutHours,
+        });
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+        var bitmap = BitmapBuilder.Build(input);
+
+        var onCallCell = bitmap.GetCell(0, 0);
+        onCallCell.Symbol.ShouldBe(CellSymbol.Break);
+        onCallCell.IsLocked.ShouldBeTrue("the on-call day stays a fixed cell for the wizards");
+        onCallCell.Hours.ShouldBe(callOutHours, "only the call-out counts toward the target, not the on-call absence");
+        bitmap.GetCell(0, 1).Hours.ShouldBe(absenceHours, "an ordinary absence keeps counting toward the target");
+    }
+
+    [Test]
     public void ComputePeriodTargetHours_ContractChangeInsideRange_UsesEachDaysContract()
     {
         var agent = Guid.NewGuid();
