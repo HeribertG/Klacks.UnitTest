@@ -71,6 +71,41 @@ public class ReportSkillTests
         Assert.That(result.Success, Is.False);
     }
 
+    private static IClientRepository NoStandIns()
+    {
+        var clientRepository = Substitute.For<IClientRepository>();
+        clientRepository.GetStandInIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+        return clientRepository;
+    }
+
+    [Test]
+    public async Task GeneratePeriodSummary_LeavesStandInsOutOfTheEmployeeCount()
+    {
+        var groupId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+        var standInId = Guid.NewGuid();
+        var agentIds = new List<Guid> { employeeId, standInId };
+        var repo = Substitute.For<IGroupPlanningAgentRepository>();
+        repo.GetAgentIdsAsync(
+            groupId, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), Arg.Any<CancellationToken>())
+            .Returns(agentIds);
+        var clientRepository = Substitute.For<IClientRepository>();
+        clientRepository.GetStandInIdsAsync(agentIds, Arg.Any<CancellationToken>()).Returns(new HashSet<Guid> { standInId });
+        var skill = new GeneratePeriodSummarySkill(
+            repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted(), clientRepository);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = groupId.ToString(),
+            ["fromDate"] = "2026-06-01",
+            ["untilDate"] = "2026-06-30"
+        });
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain("1 employee"));
+    }
+
     [Test]
     public async Task GeneratePeriodSummary_ReturnsClientCount()
     {
@@ -79,7 +114,7 @@ public class ReportSkillTests
         repo.GetAgentIdsAsync(
             groupId, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { Guid.NewGuid(), Guid.NewGuid() });
-        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted());
+        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted(), NoStandIns());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -100,7 +135,7 @@ public class ReportSkillTests
         var groupRepository = Substitute.For<IGroupRepository>();
         groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Logistik", Root = groupId });
         var skill = new GeneratePeriodSummarySkill(
-            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"));
+            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"), NoStandIns());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -125,7 +160,7 @@ public class ReportSkillTests
         var groupRepository = Substitute.For<IGroupRepository>();
         groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Verkauf", Root = groupId });
         var skill = new GeneratePeriodSummarySkill(
-            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { groupId }, "Verkauf"));
+            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { groupId }, "Verkauf"), NoStandIns());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -142,7 +177,7 @@ public class ReportSkillTests
     public async Task GeneratePeriodSummary_RejectsInvertedRange()
     {
         var repo = Substitute.For<IGroupPlanningAgentRepository>();
-        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted());
+        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted(), NoStandIns());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

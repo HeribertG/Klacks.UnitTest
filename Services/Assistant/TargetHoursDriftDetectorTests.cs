@@ -9,6 +9,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Services.Clients;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.DTOs.Schedules;
@@ -51,14 +52,14 @@ public class TargetHoursDriftDetectorTests
         Type = type
     };
 
-    // Mirrors the repository's roster contract (not deleted, not a customer); the rule itself runs over the real
-    // ClientRepository in TargetHoursDriftDetectorOverRepositoryTests and against PostgreSQL in the integration tests.
+    // Mirrors the repository's roster contract (not deleted, ClientTypeRules.HeadcountTypes); the rule itself runs over
+    // the real ClientRepository in TargetHoursDriftDetectorOverRepositoryTests and against PostgreSQL in the integration tests.
     private void SetupClients(params Client[] clients)
     {
-        var roster = clients.Where(c => !c.IsDeleted && c.Type != EntityTypeEnum.Customer).ToList();
-        _clientRepository.GetNonCustomerClientNamesAsync(Arg.Any<CancellationToken>())
+        var roster = clients.Where(c => !c.IsDeleted && ClientTypeRules.HeadcountTypes.Contains(c.Type)).ToList();
+        _clientRepository.GetHeadcountClientNamesAsync(Arg.Any<CancellationToken>())
             .Returns(roster.Select(c => new ClientNameParts(c.Id, c.FirstName, c.Name)).ToList());
-        _clientRepository.GetNonCustomerClientIdsAsync(Arg.Any<CancellationToken>())
+        _clientRepository.GetHeadcountClientIdsAsync(Arg.Any<CancellationToken>())
             .Returns(roster.Select(c => c.Id).ToList());
     }
 

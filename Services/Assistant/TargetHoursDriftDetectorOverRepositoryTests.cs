@@ -66,12 +66,13 @@ public class TargetHoursDriftDetectorOverRepositoryTests
     public void TearDown() => _context.Dispose();
 
     [Test]
-    public async Task ScansEmployeesAndExternals_NotCustomersOrDeletedClients()
+    public async Task ScansEmployeesAndExternals_NotCustomersStandInsOrDeletedClients()
     {
         var employee = Seed("Anna", "Muster", EntityTypeEnum.Employee);
         var external = Seed("Beat", "Extern", EntityTypeEnum.ExternEmp);
         var unnamed = Seed(string.Empty, string.Empty, EntityTypeEnum.Employee);
         Seed("Carla", "Kundin", EntityTypeEnum.Customer);
+        Seed(string.Empty, "Fair 1", EntityTypeEnum.StandIn);
         Seed("Dora", "Weg", EntityTypeEnum.Employee, isDeleted: true);
         await _context.SaveChangesAsync();
         _context.ChangeTracker.Clear();
@@ -104,9 +105,10 @@ public class TargetHoursDriftDetectorOverRepositoryTests
     }
 
     [Test]
-    public async Task OnlyCustomersAndDeletedClients_ScanNothing()
+    public async Task OnlyCustomersStandInsAndDeletedClients_ScanNothing()
     {
         Seed("Carla", "Kundin", EntityTypeEnum.Customer);
+        Seed(string.Empty, "Fair 1", EntityTypeEnum.StandIn);
         Seed("Dora", "Weg", EntityTypeEnum.Employee, isDeleted: true);
         await _context.SaveChangesAsync();
         _context.ChangeTracker.Clear();
