@@ -5,7 +5,7 @@
 /// (client-based like a create, plus shift-based because the deleted client has no live work to bind
 /// him to a group), the write guard (sporadic capacity, hard-blocking conflicts), restores the container
 /// children and the softening rows that were cascaded away by the same delete, and replays the
-/// create-side commit sequence (restore, commit, overtime successors, period hours, created-notifications).
+/// create-side commit sequence (restore, commit, completion with overtime successors and period hours, created-notifications).
 /// A foreign delete (non-admin, not the deleting user) is answered exactly like "not found".
 /// </summary>
 
@@ -41,7 +41,6 @@ public class RestoreWorkCommandHandlerTests
     private IWorkWriteGuard _writeGuard = null!;
     private IWorkRestoreAuthorizer _authorizer = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IOvertimeCascadeService _overtimeCascadeService = null!;
     private RestoreWorkCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -69,7 +68,6 @@ public class RestoreWorkCommandHandlerTests
         _authorizer = Substitute.For<IWorkRestoreAuthorizer>();
         _authorizer.Resolve(Arg.Any<Work>()).Returns(WorkRestoreAccess.Owner);
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
 
         _work = new Work
         {
@@ -86,8 +84,8 @@ public class RestoreWorkCommandHandlerTests
         _periodHoursService.GetPeriodBoundariesAsync(_date).Returns((_periodStart, _periodEnd));
         _notificationFacade.GetConnectionId().Returns(ConnectionId);
         _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns((List<Guid>?)null);
-        _completionService.SaveAndTrackAsync(_clientId, _date, _periodStart, _periodEnd, null)
-            .Returns(new PeriodHoursResource { Hours = 8 });
+        _completionService.CompleteWorkWriteAsync(_work, null, _periodStart, _periodEnd)
+            .Returns(new WorkWriteCompletion(new PeriodHoursResource { Hours = 8 }, null));
         ScheduleEntriesStub.Serve(
             _scheduleEntriesService,
             [
@@ -110,7 +108,6 @@ public class RestoreWorkCommandHandlerTests
             _writeGuard,
             _authorizer,
             _unitOfWork,
-            _overtimeCascadeService,
             Substitute.For<ILogger<RestoreWorkCommandHandler>>());
     }
 
@@ -268,7 +265,7 @@ public class RestoreWorkCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_RunsRestoreCommitReprocessAndTrack_InThatOrder()
+    public async Task Handle_RunsRestoreCommitCompletionAndNotifications_InThatOrder()
     {
         await _handler.Handle(new RestoreWorkCommand(_workId), CancellationToken.None);
 
@@ -281,8 +278,8 @@ public class RestoreWorkCommandHandlerTests
             _cascadeService.RestoreChildrenAsync(_workId, _deletedTime, DeletedBy);
             _workRepository.RestoreAsync(_work);
             _unitOfWork.CompleteAsync();
-            _overtimeCascadeService.ReprocessSuccessorsAsync(_work);
-            _completionService.SaveAndTrackAsync(_clientId, _date, _periodStart, _periodEnd, null);
+            _completionService.CompleteWorkWriteAsync(_work, null, _periodStart, _periodEnd);
+            _notificationFacade.NotifyWorkCreatedAsync(_work, ConnectionId, _periodStart, _periodEnd);
         });
     }
 

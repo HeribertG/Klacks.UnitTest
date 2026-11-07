@@ -199,7 +199,7 @@ public class ContainerChildLocksBeforeStagingTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(), _cascade,
             Substitute.For<ISelectedGroupContextResolver>(), Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(),
-            Substitute.For<IOvertimeCascadeService>(), _httpContextAccessor, NewGuard(),
+            _httpContextAccessor, NewGuard(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
     private BulkDeleteWorksCommandHandler NewBulkDeleteHandler()
@@ -215,7 +215,7 @@ public class ContainerChildLocksBeforeStagingTests
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             NewPeriodHours(), Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), _cascade, Substitute.For<ISelectedGroupContextResolver>(),
-            Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(), Substitute.For<IOvertimeCascadeService>(),
+            Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(), 
             TestWorkWriteGuard.Over(NewConflictChecker()), _httpContextAccessor, NewGuard(),
             Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<PutCommandHandler>>());
@@ -225,7 +225,7 @@ public class ContainerChildLocksBeforeStagingTests
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             NewPeriodHours(), Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), _cascade, TestWorkHandOver.Over(_cascade), Substitute.For<ISelectedGroupContextResolver>(),
-            Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(), Substitute.For<IOvertimeCascadeService>(),
+            Substitute.For<IDayLockService>(), Substitute.For<IUnitOfWork>(), 
             TestWorkWriteGuard.Over(NewConflictChecker()), _httpContextAccessor, NewGuard(),
             Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 

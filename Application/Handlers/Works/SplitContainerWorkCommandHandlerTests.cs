@@ -3,11 +3,12 @@
 /// <summary>
 /// The container split is one command in one transaction: every check runs before anything is staged, the split is staged
 /// once, and a failing recalculation rolls it back (the transaction throws) so no half-split container is left behind.
+/// After the transaction the first part is completed against the container before the split and the second part as new,
+/// each in its own pay period (IScheduleCompletionService.CompleteWorkWriteAsync).
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.DTOs.Schedules;
-using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
@@ -83,10 +84,6 @@ public class SplitContainerWorkCommandHandlerTests
         _periodHours = Substitute.For<IPeriodHoursService>();
         _periodHours.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         _completion = Substitute.For<IScheduleCompletionService>();
-        _completion.SaveAndTrackMoveAsync(
-                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
-                Arg.Any<DateOnly?>(), Arg.Any<Guid?>())
-            .Returns((new PeriodHoursResource(), (PeriodHoursResource?)null));
         _http = Substitute.For<IHttpContextAccessor>();
         _http.HttpContext.Returns(new DefaultHttpContext());
         _planningGuard = Substitute.For<IClientPlanningPeriodGuard>();
@@ -100,7 +97,7 @@ public class SplitContainerWorkCommandHandlerTests
             _workRepository, _shiftRepository, TestScheduleRowAccess.Over(clientVisibility),
             _lockRepository, Substitute.For<IUserService>(), _cascadeService, _childrenReadRepository, new ParentWorkLockGuard(new WorkLockLevelService()),
             _http, Substitute.For<IDayLockService>(), _planningGuard, Substitute.For<IWorkWriteGuard>(),
-            _splitWriter, _childrenManager, _unitOfWork, Substitute.For<IOvertimeCascadeService>(), _periodHours, _completion,
+            _splitWriter, _childrenManager, _unitOfWork, _periodHours, _completion,
             _notificationFacade, new ScheduleMapper(),
             Substitute.For<ILogger<SplitContainerWorkCommandHandler>>());
 
@@ -121,13 +118,17 @@ public class SplitContainerWorkCommandHandlerTests
     }
 
     [Test]
-    public async Task ASplitWithinOnePeriod_RecalculatesOnlyThroughTheMove_AndTheHandlerSendsNoSecondPeriodHoursPush()
+    public async Task ASplitWithinOnePeriod_CompletesTheFirstPartAgainstTheContainer_ThenTheSecondPartAsNew_AndTheHandlerSendsNoPeriodHoursPush()
     {
         await Split(12);
 
-        await _completion.Received(1).SaveAndTrackMoveAsync(
-            _target, Day, Day, Day, _container.ClientId, Day, Arg.Any<Guid?>());
-        await _completion.DidNotReceiveWithAnyArgs().SaveAndTrackAsync(default, default, default, default, default);
+        Received.InOrder(() =>
+        {
+            _completion.CompleteWorkWriteAsync(_container, _container, Day, Day);
+            _completion.CompleteWorkWriteAsync(
+                Arg.Is<Work>(w => w.ClientId == _target && w.CurrentDate == Day), Arg.Is<Work?>(previous => previous == null), Day, Day);
+        });
+        _completion.ReceivedCalls().Count().ShouldBe(2);
         await _notificationFacade.DidNotReceiveWithAnyArgs().NotifyPeriodHoursUpdatedAsync(
             default, default, default, default!, default!, default);
     }
@@ -156,7 +157,7 @@ public class SplitContainerWorkCommandHandlerTests
     }
 
     [Test]
-    public async Task ANightSplitIntoANewPeriod_RecalculatesEachPartInItsOwnPeriod_ForTheSamePerson()
+    public async Task ANightSplitIntoANewPeriod_CompletesEachPartInItsOwnPeriod_ForTheSamePerson()
     {
         var nextDay = Day.AddDays(1);
         var firstPeriod = (Day.AddDays(-9), Day);
@@ -171,20 +172,21 @@ public class SplitContainerWorkCommandHandlerTests
         _periodHours.GetPeriodBoundariesAsync(nextDay).Returns(secondPeriod);
         _splitWriter.StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>())
             .Returns(ci => new Work { Id = Guid.NewGuid(), ClientId = _container.ClientId, CurrentDate = nextDay, StartTime = T(0), EndTime = T(4) });
-        _completion.SaveAndTrackAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
-            .Returns(new PeriodHoursResource());
 
         await _handler.Handle(new SplitContainerWorkCommand(_container.Id, T(0), _container.ClientId), CancellationToken.None);
 
-        await _completion.Received(1).SaveAndTrackMoveAsync(
-            _container.ClientId, nextDay, secondPeriod.Item1, secondPeriod.Item2,
-            _container.ClientId, Day, Arg.Any<Guid?>());
-        await _completion.Received(1).SaveAndTrackAsync(
-            _container.ClientId, Day, firstPeriod.Item1, firstPeriod.Item2, Arg.Any<Guid?>());
+        Received.InOrder(() =>
+        {
+            _completion.CompleteWorkWriteAsync(_container, _container, firstPeriod.Item1, firstPeriod.Item2);
+            _completion.CompleteWorkWriteAsync(
+                Arg.Is<Work>(w => w.ClientId == _container.ClientId && w.CurrentDate == nextDay),
+                Arg.Is<Work?>(previous => previous == null), secondPeriod.Item1, secondPeriod.Item2);
+        });
+        _completion.ReceivedCalls().Count().ShouldBe(2);
     }
 
     [Test]
-    public async Task ANightSplitIntoANewPeriod_ForAnotherPerson_RecalculatesEachPersonInItsOwnPeriod()
+    public async Task ANightSplitIntoANewPeriod_ForAnotherPerson_CompletesEachPersonInItsOwnPeriod()
     {
         var nextDay = Day.AddDays(1);
         var firstPeriod = (Day.AddDays(-9), Day);
@@ -199,15 +201,17 @@ public class SplitContainerWorkCommandHandlerTests
         _periodHours.GetPeriodBoundariesAsync(nextDay).Returns(secondPeriod);
         _splitWriter.StageAsync(Arg.Any<ContainerSplitPlan>(), Arg.Any<CancellationToken>())
             .Returns(ci => new Work { Id = Guid.NewGuid(), ClientId = _target, CurrentDate = nextDay, StartTime = T(0), EndTime = T(4) });
-        _completion.SaveAndTrackAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
-            .Returns(new PeriodHoursResource());
 
         await _handler.Handle(new SplitContainerWorkCommand(_container.Id, T(0), _target), CancellationToken.None);
 
-        await _completion.Received(1).SaveAndTrackMoveAsync(
-            _target, nextDay, secondPeriod.Item1, secondPeriod.Item2, _container.ClientId, Day, Arg.Any<Guid?>());
-        await _completion.Received(1).SaveAndTrackAsync(
-            _container.ClientId, Day, firstPeriod.Item1, firstPeriod.Item2, Arg.Any<Guid?>());
+        Received.InOrder(() =>
+        {
+            _completion.CompleteWorkWriteAsync(_container, _container, firstPeriod.Item1, firstPeriod.Item2);
+            _completion.CompleteWorkWriteAsync(
+                Arg.Is<Work>(w => w.ClientId == _target && w.CurrentDate == nextDay),
+                Arg.Is<Work?>(previous => previous == null), secondPeriod.Item1, secondPeriod.Item2);
+        });
+        _completion.ReceivedCalls().Count().ShouldBe(2);
     }
 
     [Test]

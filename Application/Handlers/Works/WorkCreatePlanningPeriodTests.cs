@@ -302,7 +302,7 @@ public class WorkCreatePlanningPeriodTests
             _workRepository, rowAccessGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             _scheduleEntriesService, _completionService, Substitute.For<IWorkNotificationFacade>(),
             Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ISelectedGroupContextResolver>(), _dayLockService,
-            _unitOfWork, Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
+            _unitOfWork, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
             _planningPeriodGuard, ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
     }
@@ -312,7 +312,7 @@ public class WorkCreatePlanningPeriodTests
         _scheduleEntriesService, _completionService, Substitute.For<IWorkNotificationFacade>(),
         Substitute.For<IShiftDefaultExpensesApplier>(), expansion ?? Substitute.For<IContainerWorkExpansionService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), Substitute.For<IWorkWriteGuard>(), _planningPeriodGuard,
+        Substitute.For<IWorkWriteGuard>(), _planningPeriodGuard,
         ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PostCommandHandler>>());
 
     private BulkAddWorksCommandHandler NewBulkHandler() => new(

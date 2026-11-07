@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for ReassignWorkClientCommandHandler: verifies the dedicated cross-client
 /// reassign path (single request, no client-side GET+PUT round trip) mutates ClientId in
-/// place, cascades to children via the new client, recalculates for the new owner, tracks both the old and new position,
+/// place, cascades to children via the new client, recalculates for the new owner, completes the write with the stored Work as the previous position,
 /// and splits the returned schedule entries by client.
 /// </summary>
 
@@ -40,7 +40,6 @@ public class ReassignWorkClientCommandHandlerTests
     private ISelectedGroupContextResolver _groupContextResolver = null!;
     private IDayLockService _dayLockService = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IOvertimeCascadeService _overtimeCascadeService = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
     private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
     private ReassignWorkClientCommandHandler _handler = null!;
@@ -69,7 +68,6 @@ public class ReassignWorkClientCommandHandlerTests
         _groupContextResolver = Substitute.For<ISelectedGroupContextResolver>();
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
         _planningPeriodGuard = Substitute.For<IClientPlanningPeriodGuard>();
         _conflictChecker.CheckAsync(
@@ -87,9 +85,12 @@ public class ReassignWorkClientCommandHandlerTests
         _periodHoursService.GetPeriodBoundariesAsync(_date).Returns((_periodStart, _periodEnd));
         _notificationFacade.GetConnectionId().Returns("connection-1");
         _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns((List<Guid>?)null);
-        _completionService.SaveAndTrackMoveAsync(
-                _targetClientId, _date, _periodStart, _periodEnd, _sourceClientId, _date, null)
-            .Returns((new PeriodHoursResource { Hours = 8 }, (PeriodHoursResource?)new PeriodHoursResource { Hours = 3 }));
+        _completionService.CompleteWorkWriteAsync(
+                Arg.Is<Work>(w => w.Id == _workId && w.ClientId == _targetClientId),
+                Arg.Is<Work?>(w => w != null && w.Id == _workId && w.ClientId == _sourceClientId),
+                _periodStart,
+                _periodEnd)
+            .Returns(new WorkWriteCompletion(new PeriodHoursResource { Hours = 8 }, new PeriodHoursResource { Hours = 3 }));
 
         var cells = new[]
         {
@@ -110,7 +111,6 @@ public class ReassignWorkClientCommandHandlerTests
             _groupContextResolver,
             _dayLockService,
             _unitOfWork,
-            _overtimeCascadeService,
             TestWorkWriteGuard.Over(_conflictChecker, TestWorkWriteGuard.ReaderServing(new ShiftWorld(_keyShiftId, Guid.NewGuid(), IsVariant: true))),
             Substitute.For<IHttpContextAccessor>(),
             new ParentWorkLockGuard(new WorkLockLevelService()),
@@ -246,12 +246,22 @@ public class ReassignWorkClientCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_TracksBothPositions_ViaSaveAndTrackMoveAsync()
+    public async Task Handle_CompletesTheWriteAfterTheCommit_WithTheStoredWorkAsThePreviousPosition()
     {
-        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+        var result = await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
 
-        await _completionService.Received(1).SaveAndTrackMoveAsync(
-            _targetClientId, _date, _periodStart, _periodEnd, _sourceClientId, _date, null);
+        result!.Work!.PeriodHours!.Hours.ShouldBe(8);
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _completionService.CompleteWorkWriteAsync(
+                Arg.Is<Work>(w => w.Id == _workId && w.ClientId == _targetClientId),
+                Arg.Is<Work?>(w => w != null && w.Id == _workId && w.ClientId == _sourceClientId),
+                _periodStart,
+                _periodEnd);
+            _notificationFacade.NotifyWorkUpdatedAsync(
+                Arg.Is<Work>(w => w.Id == _workId), "connection-1", _periodStart, _periodEnd);
+        });
     }
 
     [Test]

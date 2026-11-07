@@ -14,6 +14,7 @@ using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Services.Schedules;
 
@@ -48,7 +49,9 @@ public class ScheduleCompletionServiceTests
             .Returns(new PeriodHoursResource { Hours = 3 });
 
         _service = new ScheduleCompletionService(
-            _unitOfWork, _scheduleChangeTracker, _timelineService, _periodHoursService, _httpContextAccessor);
+            _unitOfWork, _scheduleChangeTracker, _timelineService, _periodHoursService, _httpContextAccessor,
+            Substitute.For<IOvertimeCascadeService>(), Substitute.For<IThoroughRecalculationQueue>(),
+            Substitute.For<ILogger<ScheduleCompletionService>>());
     }
 
     [Test]

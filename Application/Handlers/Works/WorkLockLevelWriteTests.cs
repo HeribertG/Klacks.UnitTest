@@ -279,7 +279,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
+            TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -289,7 +289,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), _httpContextAccessor, NewGuard(),
+            _httpContextAccessor, NewGuard(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
     private ReassignWorkClientCommandHandler NewReassignHandler()
@@ -298,7 +298,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), _cascadeService, TestWorkHandOver.Over(_cascadeService),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker),
+            TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 

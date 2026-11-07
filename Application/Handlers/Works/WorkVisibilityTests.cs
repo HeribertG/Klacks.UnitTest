@@ -129,7 +129,7 @@ public class WorkVisibilityTests
             _scheduleEntriesService, _completionService, _notificationFacade,
             Substitute.For<IShiftDefaultExpensesApplier>(),
             Substitute.For<IContainerWorkExpansionService>(), _groupContextResolver, _dayLockService, _unitOfWork,
-            _overtimeCascadeService, _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
+            _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
@@ -214,7 +214,7 @@ public class WorkVisibilityTests
         var handler = new DeleteCommandHandler(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, 
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
@@ -240,7 +240,7 @@ public class WorkVisibilityTests
         var handler = new DeleteCommandHandler(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, 
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
@@ -258,7 +258,7 @@ public class WorkVisibilityTests
         var handler = new DeleteCommandHandler(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, 
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
@@ -491,7 +491,7 @@ public class WorkVisibilityTests
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             Substitute.For<IWorkSofteningRepository>(), _groupContextResolver, _dayLockService, _writeGuard,
-            authorizer, _unitOfWork, _overtimeCascadeService, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
+            authorizer, _unitOfWork, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new RestoreWorkCommand(hidden.Id), CancellationToken.None));
@@ -514,7 +514,7 @@ public class WorkVisibilityTests
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             Substitute.For<IWorkSofteningRepository>(), _groupContextResolver, _dayLockService, _writeGuard,
-            authorizer, _unitOfWork, _overtimeCascadeService, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
+            authorizer, _unitOfWork, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new RestoreWorkCommand(hidden.Id), CancellationToken.None));
@@ -683,7 +683,7 @@ public class WorkVisibilityTests
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
+            _groupContextResolver, _dayLockService, _unitOfWork, TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<PutCommandHandler>>());
@@ -692,7 +692,7 @@ public class WorkVisibilityTests
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService, TestWorkHandOver.Over(_cascadeService),
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
+            _groupContextResolver, _dayLockService, _unitOfWork, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());

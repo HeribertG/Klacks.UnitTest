@@ -334,7 +334,7 @@ public class WorkShiftVisibilityTests
         _scheduleEntriesService, Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
         Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IContainerWorkExpansionService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), writeGuard ?? _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
+        writeGuard ?? _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler() => new(
@@ -342,7 +342,7 @@ public class WorkShiftVisibilityTests
         Substitute.For<IPeriodHoursService>(), _scheduleEntriesService, Substitute.For<IScheduleCompletionService>(),
         Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IHttpContextAccessor>(),
+        TestWorkWriteGuard.Over(_conflictChecker, _worldReader), Substitute.For<IHttpContextAccessor>(),
         new ParentWorkLockGuard(new WorkLockLevelService()), Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<PutCommandHandler>>());
 

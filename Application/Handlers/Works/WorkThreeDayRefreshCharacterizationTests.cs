@@ -40,7 +40,6 @@ public class WorkThreeDayRefreshCharacterizationTests
     private ISelectedGroupContextResolver _groupContextResolver = null!;
     private IDayLockService _dayLockService = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IOvertimeCascadeService _overtimeCascadeService = null!;
     private IWorkWriteGuard _writeGuard = null!;
     private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
@@ -66,7 +65,6 @@ public class WorkThreeDayRefreshCharacterizationTests
         _groupContextResolver = Substitute.For<ISelectedGroupContextResolver>();
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
         _writeGuard = Substitute.For<IWorkWriteGuard>();
         _planningPeriodGuard = Substitute.For<IClientPlanningPeriodGuard>();
         _clientVisibilityGuard = TestGroupWriteVisibility.AllClientsVisible();
@@ -85,14 +83,8 @@ public class WorkThreeDayRefreshCharacterizationTests
         _periodHoursService.GetPeriodBoundariesAsync(Day).Returns((PeriodStart, PeriodEnd));
         _notificationFacade.GetConnectionId().Returns("connection-1");
         _completionService
-            .SaveAndTrackAsync(
-                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
-            .Returns(new PeriodHoursResource { Hours = 8 });
-        _completionService
-            .SaveAndTrackMoveAsync(
-                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid?>(), Arg.Any<DateOnly?>(), Arg.Any<Guid?>())
-            .Returns((new PeriodHoursResource { Hours = 8 }, (PeriodHoursResource?)new PeriodHoursResource { Hours = 3 }));
+            .CompleteWorkWriteAsync(Arg.Any<Work>(), Arg.Any<Work?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(new WorkWriteCompletion(new PeriodHoursResource { Hours = 8 }, new PeriodHoursResource { Hours = 3 }));
         _workRepository.Put(Arg.Any<Work>()).Returns(call => call.Arg<Work>());
     }
 
@@ -239,14 +231,14 @@ public class WorkThreeDayRefreshCharacterizationTests
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade,
             Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IContainerWorkExpansionService>(),
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
+            _groupContextResolver, _dayLockService, _unitOfWork, _writeGuard,
             _planningPeriodGuard, ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler()
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
+            _groupContextResolver, _dayLockService, _unitOfWork, _writeGuard,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard, ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -254,7 +246,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, 
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
@@ -263,13 +255,13 @@ public class WorkThreeDayRefreshCharacterizationTests
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             Substitute.For<IWorkSofteningRepository>(), _groupContextResolver, _dayLockService, _writeGuard,
-            _authorizer, _unitOfWork, _overtimeCascadeService, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
+            _authorizer, _unitOfWork, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
 
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             _periodHoursService, _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService, TestWorkHandOver.Over(_cascadeService),
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _writeGuard,
+            _groupContextResolver, _dayLockService, _unitOfWork, _writeGuard,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard, Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IMovedWorkReversal>(), Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 }

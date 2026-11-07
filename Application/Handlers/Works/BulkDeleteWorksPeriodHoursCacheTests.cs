@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// The bulk delete drops the cached period-hours rows of every deleted Work's day after the overtime cascade, once per
-/// client, day and scenario token, so readers fall back to the live sum instead of a row that still counts the deleted
-/// Works. The persisted effect is covered by WorkBulkDeletePeriodHoursPostgresTests (Klacks.IntegrationTest).
+/// The bulk delete recalculates and persists the period hours after the overtime cascade, once per deleted Work's
+/// client, scenario token and pay period, the state a single delete leaves, and drops no cached row: readers prefer a
+/// cached row over the live sum and the payroll export reads only the cached rows. The persisted effect is covered by
+/// WorkBulkDeletePeriodHoursPostgresTests (Klacks.IntegrationTest).
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
@@ -22,6 +23,11 @@ namespace Klacks.UnitTest.Application.Handlers.Works;
 public class BulkDeleteWorksPeriodHoursCacheTests
 {
     private static readonly DateOnly Day = new(2027, 4, 12);
+    private static readonly DateOnly PeriodStart = new(2027, 4, 1);
+    private static readonly DateOnly PeriodEnd = new(2027, 4, 30);
+    private static readonly DateOnly NextPeriodDay = new(2027, 5, 3);
+    private static readonly DateOnly NextPeriodStart = new(2027, 5, 1);
+    private static readonly DateOnly NextPeriodEnd = new(2027, 5, 31);
 
     private IWorkRepository _workRepository = null!;
     private IOvertimeCascadeService _overtimeCascadeService = null!;
@@ -29,7 +35,6 @@ public class BulkDeleteWorksPeriodHoursCacheTests
     private Guid _clientId;
     private Guid _scenarioClientId;
     private Guid _scenarioToken;
-    private List<Work> _works = null!;
 
     [SetUp]
     public void SetUp()
@@ -37,43 +42,74 @@ public class BulkDeleteWorksPeriodHoursCacheTests
         _workRepository = Substitute.For<IWorkRepository>();
         _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
         _periodHoursService = Substitute.For<IPeriodHoursService>();
-        _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
+        _periodHoursService.GetPeriodBoundariesAsync(Day).Returns((PeriodStart, PeriodEnd));
+        _periodHoursService.GetPeriodBoundariesAsync(Day.AddDays(1)).Returns((PeriodStart, PeriodEnd));
+        _periodHoursService.GetPeriodBoundariesAsync(NextPeriodDay).Returns((NextPeriodStart, NextPeriodEnd));
 
         _clientId = Guid.NewGuid();
         _scenarioClientId = Guid.NewGuid();
         _scenarioToken = Guid.NewGuid();
-        _works =
-        [
-            NewWork(_clientId, null),
-            NewWork(_clientId, null),
-            NewWork(_scenarioClientId, _scenarioToken)
-        ];
-        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(_works);
     }
 
     [Test]
-    public async Task TheCachedRowsOfEachDeletedDay_AreDroppedAfterTheCascade_OncePerClientDayAndToken()
+    public async Task ThePeriodHours_AreRecalculatedAfterTheCascade_OncePerClientTokenAndPayPeriod_AndNoRowIsDropped()
     {
-        await NewHandler().Handle(
-            new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = _works.Select(w => w.Id).ToList() }),
-            CancellationToken.None);
+        var works = GivenWorks(
+            NewWork(_clientId, null, Day),
+            NewWork(_clientId, null, Day.AddDays(1)),
+            NewWork(_scenarioClientId, _scenarioToken, Day));
+
+        await DeleteAsync(works);
 
         Received.InOrder(() =>
         {
-            _overtimeCascadeService.ReprocessSuccessorsAsync(Arg.Any<IReadOnlyCollection<Work>>());
-            _periodHoursService.InvalidateCacheAsync(_clientId, Day, null);
+            _overtimeCascadeService.ReprocessSuccessorsAsync(
+                Arg.Is<IReadOnlyCollection<Work>>(deleted => deleted.Count == works.Count));
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientId, PeriodStart, PeriodEnd, null);
+            _periodHoursService.RecalculatePeriodHoursAsync(_scenarioClientId, PeriodStart, PeriodEnd, _scenarioToken);
         });
-        await _periodHoursService.Received(1).InvalidateCacheAsync(_clientId, Day, null);
-        await _periodHoursService.Received(1).InvalidateCacheAsync(_scenarioClientId, Day, _scenarioToken);
-        await _periodHoursService.DidNotReceive().InvalidateCacheAsync(_scenarioClientId, Day, null);
+        RecalculationCount().ShouldBe(2);
+        await _periodHoursService.DidNotReceive().RecalculatePeriodHoursAsync(_scenarioClientId, PeriodStart, PeriodEnd, null);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().InvalidateCacheAsync(default, default, default);
     }
 
-    private static Work NewWork(Guid clientId, Guid? analyseToken) => new()
+    [Test]
+    public async Task AClientWithWorksInTwoPayPeriods_IsRecalculatedInEachPeriod_InTheOrderTheWorksWereFound()
+    {
+        var works = GivenWorks(NewWork(_clientId, null, Day), NewWork(_clientId, null, NextPeriodDay));
+
+        await DeleteAsync(works);
+
+        Received.InOrder(() =>
+        {
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientId, PeriodStart, PeriodEnd, null);
+            _periodHoursService.RecalculatePeriodHoursAsync(_clientId, NextPeriodStart, NextPeriodEnd, null);
+        });
+        RecalculationCount().ShouldBe(2);
+    }
+
+    private List<Work> GivenWorks(params Work[] works)
+    {
+        var list = works.ToList();
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(list);
+        return list;
+    }
+
+    private Task<BulkWorksResponse> DeleteAsync(List<Work> works)
+        => NewHandler().Handle(
+            new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = works.Select(w => w.Id).ToList() }),
+            CancellationToken.None);
+
+    private int RecalculationCount()
+        => _periodHoursService.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IPeriodHoursService.RecalculatePeriodHoursAsync));
+
+    private static Work NewWork(Guid clientId, Guid? analyseToken, DateOnly date) => new()
     {
         Id = Guid.NewGuid(),
         ClientId = clientId,
         ShiftId = Guid.NewGuid(),
-        CurrentDate = Day,
+        CurrentDate = date,
         AnalyseToken = analyseToken,
         LockLevel = WorkLockLevel.None
     };
