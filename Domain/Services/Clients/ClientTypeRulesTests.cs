@@ -64,6 +64,23 @@ public class ClientTypeRulesTests
         ClientTypeRules.CanChangeType(EntityTypeEnum.Employee, (EntityTypeEnum)99).ShouldBeFalse();
     }
 
+    [TestCaseSource(nameof(AllTypePairs))]
+    public void CanConvert_OnlyAStandIn_IntoAnEmployeeOrAnExternalEmployee(EntityTypeEnum from, EntityTypeEnum to)
+    {
+        var expected = from == EntityTypeEnum.StandIn && to is EntityTypeEnum.Employee or EntityTypeEnum.ExternEmp;
+
+        ClientTypeRules.CanConvert(from, to).ShouldBe(expected);
+    }
+
+    [Test]
+    public void CanConvert_NeverIntoAStandIn_NeverBack_NeverAnUndefinedType()
+    {
+        ClientTypeRules.CanConvert(EntityTypeEnum.Employee, EntityTypeEnum.StandIn).ShouldBeFalse();
+        ClientTypeRules.CanConvert(EntityTypeEnum.StandIn, EntityTypeEnum.StandIn).ShouldBeFalse();
+        ClientTypeRules.CanConvert(EntityTypeEnum.StandIn, EntityTypeEnum.Customer).ShouldBeFalse();
+        ClientTypeRules.CanConvert(EntityTypeEnum.StandIn, (EntityTypeEnum)99).ShouldBeFalse();
+    }
+
     [TestCase("Employee", EntityTypeEnum.Employee)]
     [TestCase("externemp", EntityTypeEnum.ExternEmp)]
     [TestCase(" Customer ", EntityTypeEnum.Customer)]

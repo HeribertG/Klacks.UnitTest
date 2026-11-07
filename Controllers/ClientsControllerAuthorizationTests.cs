@@ -188,4 +188,62 @@ public class ClientsControllerAuthorizationTests
         await _mediator.DidNotReceive().Send(
             Arg.Any<UpdateClientAnnotationsCommand>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task CreateStandIns_Planner_IsForbidden_AndNothingIsSent()
+    {
+        var result = await ControllerFor().CreateStandIns(new CreateStandInsResource(), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<ForbidResult>();
+        await _mediator.DidNotReceive().Send(Arg.Any<CreateStandInsCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(Roles.Authorised)]
+    [TestCase(Roles.Admin)]
+    public async Task CreateStandIns_SupervisorOrAdmin_SendsTheCommand(string role)
+    {
+        var resource = new CreateStandInsResource { Count = 2, NamePattern = "Fair {n}" };
+        _mediator.Send(Arg.Any<CreateStandInsCommand>(), Arg.Any<CancellationToken>()).Returns(new List<CreatedStandInResource>());
+
+        var result = await ControllerFor(role).CreateStandIns(resource, CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        await _mediator.Received(1).Send(
+            Arg.Is<CreateStandInsCommand>(command => command.Resource == resource), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ConvertStandIn_Planner_IsForbidden_AndNothingIsSent()
+    {
+        var result = await ControllerFor().ConvertStandIn(Guid.NewGuid(), new ConvertStandInResource(), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<ForbidResult>();
+        await _mediator.DidNotReceive().Send(Arg.Any<ConvertStandInCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(Roles.Authorised)]
+    [TestCase(Roles.Admin)]
+    public async Task ConvertStandIn_SupervisorOrAdmin_SendsTheCommandForTheRouteId(string role)
+    {
+        var id = Guid.NewGuid();
+        _mediator.Send(Arg.Any<ConvertStandInCommand>(), Arg.Any<CancellationToken>()).Returns(new ClientResource { Id = id });
+
+        var result = await ControllerFor(role).ConvertStandIn(id, new ConvertStandInResource(), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        await _mediator.Received(1).Send(
+            Arg.Is<ConvertStandInCommand>(command => command.ClientId == id), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(nameof(ClientsController.CreateStandIns))]
+    [TestCase(nameof(ClientsController.ConvertStandIn))]
+    public void StandInActions_PinTheJwtScheme_WithoutARoleList_AndHonourAnIdempotencyKey(string action)
+    {
+        var method = typeof(ClientsController).GetMethod(action, BindingFlags.Public | BindingFlags.Instance)!;
+
+        var authorize = method.GetCustomAttributes<AuthorizeAttribute>(inherit: true).ShouldHaveSingleItem();
+        authorize.AuthenticationSchemes.ShouldBe(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme);
+        authorize.Roles.ShouldBeNull();
+        method.GetCustomAttribute<Klacks.Api.Presentation.Filters.IdempotentRequestAttribute>().ShouldNotBeNull();
+    }
 }
