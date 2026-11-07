@@ -8,7 +8,9 @@
 /// close); an export of an overlapping period raises OverlappingExport; scenario and deleted rows, customers and
 /// persons without entries are ignored; the client filter, the ordering and the 500 cap hold. A replacing person is
 /// checked on the replaced work's day (lock level of the work, day lock of the substitute or of the work's shift
-/// group), and a soft-deleted person's entries are still checked.
+/// group), and a soft-deleted person's entries are still checked. A Work on a stand-in raises StandInAssigned (per stand-in
+/// and day, also when it is closed and sealed and when the period holds nothing else); a restricted check raises it for
+/// a stand-in Work one of the requested persons replaces, and not for an unrelated one.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Exports;
@@ -572,6 +574,84 @@ public class PayrollCompletenessGateTests
         blocker.IdNumber.ShouldBe(148);
         blocker.ClientName.ShouldBe("Gone, Test");
         blocker.Reason.ShouldBe(PayrollExportBlockReason.EntryNotClosed);
+    }
+
+    [Test]
+    public async Task StandInWork_RaisesStandInAssigned_EvenClosedAndSealed_AndAsTheOnlyEntryOfThePeriod()
+    {
+        var standIn = AddStandIn(701, "Fair 1");
+        AddWork(standIn, Day1, _shiftA, WorkLockLevel.Closed);
+        AddWork(standIn, Day1, _shiftB, WorkLockLevel.Closed);
+        AddWork(standIn, Day2, _shiftA, WorkLockLevel.None);
+        SealPeriod(null);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        result.IsComplete.ShouldBeFalse();
+        result.Blockers.Select(b => (b.Reason, b.Date, b.EntryCount)).ToList().ShouldBe(new List<(PayrollExportBlockReason, DateOnly?, int)>
+        {
+            (PayrollExportBlockReason.StandInAssigned, Day1, 2),
+            (PayrollExportBlockReason.StandInAssigned, Day2, 1),
+        });
+        result.Blockers.ShouldAllBe(b => b.ClientId == standIn
+            && b.ClientName == "Fair 1"
+            && b.IdNumber == 701
+            && !b.RequiresGlobalClose
+            && b.GroupId == null);
+    }
+
+    [Test]
+    public async Task StandInWork_InScenarioOrDeleted_IsIgnored_AndACompletePersonStaysComplete()
+    {
+        var person = AddMember(702, _groupA);
+        AddWork(person, Day1, _shiftA, WorkLockLevel.Closed);
+        var standIn = AddStandIn(703, "Fair 2");
+        AddWork(standIn, Day1, _shiftA, WorkLockLevel.Closed, analyseToken: Guid.NewGuid());
+        AddWork(standIn, Day2, _shiftA, WorkLockLevel.Closed, isDeleted: true);
+        SealPeriod(_groupA);
+        await _context.SaveChangesAsync();
+
+        var result = await _gate.CheckAsync(From, Until, null, CancellationToken.None);
+
+        result.IsComplete.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task RestrictedCheck_ReplacementOnStandInWork_RaisesStandInAssigned_AnUnrelatedPersonDoesNot()
+    {
+        var substitute = AddMember(704, _groupA);
+        var unrelated = AddMember(705, _groupA);
+        AddWork(substitute, Day1, _shiftA, WorkLockLevel.Closed);
+        AddWork(unrelated, Day1, _shiftA, WorkLockLevel.Closed);
+        var standIn = AddStandIn(706, "Fair 3");
+        var standInWork = AddWork(standIn, Day2, _shiftA, WorkLockLevel.Closed);
+        AddReplacement(standInWork, substitute);
+        SealPeriod(_groupA);
+        await _context.SaveChangesAsync();
+
+        var forSubstitute = await _gate.CheckAsync(From, Until, new[] { substitute }, CancellationToken.None);
+        var forUnrelated = await _gate.CheckAsync(From, Until, new[] { unrelated }, CancellationToken.None);
+
+        var blocker = forSubstitute.Blockers.ShouldHaveSingleItem();
+        blocker.Reason.ShouldBe(PayrollExportBlockReason.StandInAssigned);
+        blocker.ClientId.ShouldBe(standIn);
+        blocker.Date.ShouldBe(Day2);
+        forUnrelated.IsComplete.ShouldBeTrue();
+    }
+
+    private Guid AddStandIn(int idNumber, string name)
+    {
+        var clientId = Guid.NewGuid();
+        _context.Client.Add(new Client
+        {
+            Id = clientId,
+            Type = EntityTypeEnum.StandIn,
+            IdNumber = idNumber,
+            Name = name,
+            FirstName = string.Empty,
+        });
+        return clientId;
     }
 
     private Guid AddGroup(string name)
