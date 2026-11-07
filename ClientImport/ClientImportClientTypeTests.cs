@@ -15,6 +15,7 @@ using Klacks.Api.Application.Handlers.ClientImport;
 using Klacks.Api.Application.Interfaces.ClientImport;
 using Klacks.Api.Application.Services.ClientImport;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Services.Clients;
 using Klacks.Api.Domain.Interfaces.Email;
 using Microsoft.Extensions.Logging.Abstractions;
 using T = Klacks.Api.Domain.Enums.ClientImportTarget;
@@ -79,11 +80,11 @@ public class ClientImportClientTypeTests
     }
 
     [TestCaseSource(typeof(ClientImportSynonymCatalogTests), nameof(ClientImportSynonymCatalogTests.SupportedLanguages))]
-    public void EveryLanguage_NamesEveryClientType(string language)
+    public void EveryLanguage_NamesEveryImportableClientType(string language)
     {
         var types = _catalog.TypeValues.First(t => string.Equals(t.Key, language, StringComparison.OrdinalIgnoreCase)).Value;
 
-        foreach (var type in Enum.GetValues<EntityTypeEnum>())
+        foreach (var type in ClientTypeRules.ImportableTypes)
         {
             types.ShouldContainKey(type, $"{language}: no words for {type}");
             types[type].ShouldNotBeEmpty();
