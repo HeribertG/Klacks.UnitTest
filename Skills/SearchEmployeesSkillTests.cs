@@ -147,13 +147,27 @@ public class SearchEmployeesSkillTests
             "Anna", "TI", Arg.Any<EntityTypeEnum?>(), null, 10, Arg.Any<CancellationToken>());
     }
 
-    [Test]
-    public async Task IgnoresUnknownEntityType()
+    [TestCase("Alien")]
+    [TestCase("StandIn")]
+    [TestCase("3")]
+    [TestCase("Employee,Customer")]
+    public async Task RefusesAnUnknownEntityType_InsteadOfSearchingEveryType(string entityType)
     {
         WireSearch(1, Item("Anna", "Müller"));
 
         var result = await _skill.ExecuteAsync(
-            Ctx(), new Dictionary<string, object> { ["entityType"] = "Alien" });
+            Ctx(), new Dictionary<string, object> { ["entityType"] = entityType });
+
+        Assert.That(result.Success, Is.False);
+        await _searchRepository.DidNotReceiveWithAnyArgs().SearchAsync(default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task SearchesEveryType_WhenNoEntityTypeIsGiven()
+    {
+        WireSearch(1, Item("Anna", "Müller"));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
         Assert.That(result.Success, Is.True);
         await _searchRepository.Received(1).SearchAsync(

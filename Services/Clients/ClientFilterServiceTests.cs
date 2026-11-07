@@ -88,7 +88,7 @@ namespace Klacks.UnitTest.Services.Clients
             var query = _testClients.AsQueryable();
 
             // Act
-            var result = _service.ApplyEntityTypeFilter(query, true, true, true);
+            var result = _service.ApplyEntityTypeFilter(query, true, true, true, true);
 
             // Assert
             result.Count().ShouldBe(5);
@@ -101,10 +101,31 @@ namespace Klacks.UnitTest.Services.Clients
             var query = _testClients.AsQueryable();
 
             // Act
-            var result = _service.ApplyEntityTypeFilter(query, false, false, false);
+            var result = _service.ApplyEntityTypeFilter(query, false, false, false, false);
 
             // Assert
             result.ShouldBeEmpty();
+        }
+
+        [Test]
+        public void ApplyEntityTypeFilter_StandInFlag_DecidesAlone_WhetherStandInsAreListed()
+        {
+            var employee = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.Employee };
+            var standIn = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.StandIn };
+            var customer = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.Customer };
+            var query = new List<Client> { employee, standIn, customer }.AsQueryable();
+
+            _service.ApplyEntityTypeFilter(query, true, true, true, false).ShouldBe([employee, customer], ignoreOrder: true);
+            _service.ApplyEntityTypeFilter(query, false, false, false, true).ShouldBe([standIn]);
+            _service.ApplyEntityTypeFilter(query, true, true, true, true).ShouldBe([employee, standIn, customer], ignoreOrder: true);
+        }
+
+        [Test]
+        public void CreateClientTypeList_StandInFlag_AddsTheStandInType()
+        {
+            _service.CreateClientTypeList(true, true, true, true)
+                .ShouldBe([(int)EntityTypeEnum.Employee, (int)EntityTypeEnum.Customer, (int)EntityTypeEnum.ExternEmp, (int)EntityTypeEnum.StandIn]);
+            _service.CreateClientTypeList(true, true, true, false).ShouldNotContain((int)EntityTypeEnum.StandIn);
         }
                 
         [Test]
