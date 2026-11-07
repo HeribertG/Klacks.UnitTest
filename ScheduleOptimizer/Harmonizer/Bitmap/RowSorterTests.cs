@@ -91,4 +91,37 @@ public class RowSorterTests
         sorted.GetCell(0, 0).WorkIds.ShouldContain(highWorkId);
         sorted.GetCell(1, 0).WorkIds.ShouldContain(lowWorkId);
     }
+
+    [Test]
+    public void Sort_StandIn_ComesAfterEveryRealPerson_EvenOneWithZeroTargetHours()
+    {
+        var agents = new List<BitmapAgent>
+        {
+            new("standin", "Stand-in", 200m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("zero", "Zero Hours", 0m, new HashSet<CellSymbol>()),
+            new("real", "Real", 100m, new HashSet<CellSymbol>()),
+        };
+        var bitmap = BitmapBuilder.Build(new BitmapInput(agents, Day0, Day0.AddDays(2), []));
+
+        var sorted = RowSorter.Sort(bitmap);
+
+        sorted.Rows.Select(r => r.Id).ShouldBe(["real", "zero", "standin"]);
+    }
+
+    [Test]
+    public void Sort_StandInsAmongThemselves_KeepTheOrderByHoursThenId()
+    {
+        var agents = new List<BitmapAgent>
+        {
+            new("standin-b", "Stand-in B", 0m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("standin-low", "Stand-in Low", 10m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("standin-a", "Stand-in A", 0m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("standin-high", "Stand-in High", 40m, new HashSet<CellSymbol>(), IsStandIn: true),
+        };
+        var bitmap = BitmapBuilder.Build(new BitmapInput(agents, Day0, Day0.AddDays(2), []));
+
+        var sorted = RowSorter.Sort(bitmap);
+
+        sorted.Rows.Select(r => r.Id).ShouldBe(["standin-high", "standin-low", "standin-a", "standin-b"]);
+    }
 }

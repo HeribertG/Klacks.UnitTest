@@ -28,6 +28,7 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 /// Wizard 2 reads the shift-work flag with the same choice as Wizard 1 (PlanningContractBasis): first member day with
 /// an active contract, else first member day with the settings defaults, from the per-day contract data - not from the
 /// first day of the period. The first-day stub always carries the opposite flag so a wrong source fails the test.
+/// The stand-in flag of the agent comes from the client type, so the row sorter can rank stand-ins last.
 /// </summary>
 [TestFixture]
 public class HarmonizerContextBuilderShiftWorkTests
@@ -129,6 +130,21 @@ public class HarmonizerContextBuilderShiftWorkTests
 
         input.Agents.Single().WorkloadPercent.ShouldBe(80m);
         input.Agents.Single().PerformsShiftWork.ShouldBeTrue();
+    }
+
+    [TestCase(EntityTypeEnum.StandIn, true)]
+    [TestCase(EntityTypeEnum.Employee, false)]
+    [TestCase(EntityTypeEnum.ExternEmp, false)]
+    public async Task StandInFlag_ComesFromTheClientType(EntityTypeEnum type, bool expected)
+    {
+        var agent = Guid.NewGuid();
+        Stub(agent, firstDayShiftWork: true, _ => Data(active: true, shiftWork: true));
+        _context.Client.Single(c => c.Id == agent).Type = type;
+        _context.SaveChanges();
+
+        var input = await BuildAsync(agent);
+
+        input.Agents.Single().IsStandIn.ShouldBe(expected);
     }
 
     private static EffectiveContractData Data(bool active, bool shiftWork) => new()
