@@ -6,6 +6,9 @@
 /// the requested window. A window the pay-period split refuses is refused before anything is written. Frozen client
 /// periods are skipped and counted; the admin override needs a reason, includes them and writes one audit row with the
 /// number of distinct frozen clients before anything is recalculated; a reason longer than the audit column is refused first.
+/// An unrestricted caller reprocesses every break of the window; a group-restricted caller (planner) only the breaks of
+/// the clients they may see, and none when they may see nobody (an empty scope would mean every break). Without the admin
+/// role a window over PayPeriodLimits.MaxPeriodsForPlannerRecalculation pay periods is refused before anything is written.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
@@ -30,6 +33,8 @@ public class RecalculatePeriodHoursCommandHandlerTests
     private const string AdminName = "Ada Admin";
     private static readonly Guid FirstFrozenClient = Guid.NewGuid();
     private static readonly Guid SecondFrozenClient = Guid.NewGuid();
+    private static readonly Guid VisibleClient = Guid.NewGuid();
+    private static readonly Guid OtherVisibleClient = Guid.NewGuid();
 
     private IPeriodHoursService _periodHoursService = null!;
     private IWorkNotificationService _notificationService = null!;
@@ -51,6 +56,65 @@ public class RecalculatePeriodHoursCommandHandlerTests
         _userService.GetDisplayName().Returns(AdminName);
         _periodHoursService.GetPeriodsInRangeAsync(WindowStart, WindowEnd)
             .Returns(new List<(DateOnly StartDate, DateOnly EndDate)> { JunePeriod, JulyPeriod });
+        _periodHoursService.GetRestrictedCallerClientIdsAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
+            .Returns((IReadOnlyList<Guid>?)null);
+    }
+
+    [Test]
+    public async Task ARestrictedCaller_ReprocessesOnlyTheBreaksOfTheClientsTheyMaySee()
+    {
+        var groupId = Guid.NewGuid();
+        _periodHoursService.GetRestrictedCallerClientIdsAsync(WindowStart, WindowEnd, groupId)
+            .Returns(new List<Guid> { VisibleClient, OtherVisibleClient });
+
+        var result = await NewHandler().Handle(
+            new RecalculatePeriodHoursCommand(WindowStart, WindowEnd, groupId), CancellationToken.None);
+
+        result.ShouldBe(new PeriodHoursRecalculationResult(true, 0));
+        await _breakMacroService.Received(1).ReprocessAllBreaksAsync(
+            WindowStart, WindowEnd, Arg.Is<List<Guid>>(ids => ids.SequenceEqual(new[] { VisibleClient, OtherVisibleClient })));
+        await _breakMacroService.DidNotReceive().ReprocessAllBreaksAsync(WindowStart, WindowEnd, null);
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(JunePeriod.StartDate, JunePeriod.EndDate, groupId);
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(JulyPeriod.StartDate, JulyPeriod.EndDate, groupId);
+    }
+
+    [Test]
+    public async Task ANonAdmin_WindowOverThePlannerCap_IsRefusedBeforeAnythingIsWritten()
+    {
+        var periods = MonthlyPeriods(PayPeriodLimits.MaxPeriodsForPlannerRecalculation + 1);
+        _periodHoursService.GetPeriodsInRangeAsync(periods[0].StartDate, periods[^1].EndDate).Returns(periods);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewHandler().Handle(
+            new RecalculatePeriodHoursCommand(periods[0].StartDate, periods[^1].EndDate), CancellationToken.None));
+
+        await _breakMacroService.DidNotReceiveWithAnyArgs().ReprocessAllBreaksAsync(default, default, default);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculateAllClientsAsync(default, default);
+    }
+
+    [Test]
+    public async Task AnAdmin_WindowOverThePlannerCap_IsRecalculatedPerPayPeriod()
+    {
+        _userService.IsAdmin().Returns(true);
+        var periods = MonthlyPeriods(PayPeriodLimits.MaxPeriodsForPlannerRecalculation + 1);
+        _periodHoursService.GetPeriodsInRangeAsync(periods[0].StartDate, periods[^1].EndDate).Returns(periods);
+
+        await NewHandler().Handle(
+            new RecalculatePeriodHoursCommand(periods[0].StartDate, periods[^1].EndDate), CancellationToken.None);
+
+        await _periodHoursService.ReceivedWithAnyArgs(periods.Count).RecalculateAllClientsAsync(default, default);
+    }
+
+    [Test]
+    public async Task ARestrictedCallerWhoSeesNobody_ReprocessesNoBreakAtAll()
+    {
+        _periodHoursService.GetRestrictedCallerClientIdsAsync(WindowStart, WindowEnd, null)
+            .Returns(new List<Guid>());
+
+        var result = await NewHandler().Handle(
+            new RecalculatePeriodHoursCommand(WindowStart, WindowEnd), CancellationToken.None);
+
+        result.ShouldBe(new PeriodHoursRecalculationResult(true, 0));
+        await _breakMacroService.DidNotReceiveWithAnyArgs().ReprocessAllBreaksAsync(default, default, default);
     }
 
     [Test]
@@ -212,5 +276,15 @@ public class RecalculatePeriodHoursCommandHandlerTests
         _notificationService,
         _breakMacroService,
         new FrozenPeriodOverrideAudit(_auditLogRepository, _unitOfWork, _userService),
+        _userService,
         Substitute.For<ILogger<RecalculatePeriodHoursCommandHandler>>());
+
+    private static List<(DateOnly StartDate, DateOnly EndDate)> MonthlyPeriods(int count) =>
+        Enumerable.Range(0, count)
+            .Select(offset =>
+            {
+                var start = new DateOnly(2090, 1, 1).AddMonths(offset);
+                return (start, start.AddMonths(1).AddDays(-1));
+            })
+            .ToList();
 }
