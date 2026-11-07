@@ -200,4 +200,21 @@ public class UpdateClientSkillTests
         await visibleRepository.DidNotReceive().Get(Arg.Any<Guid>());
         await _searchRepository.DidNotReceiveWithAnyArgs().SearchAsync(default!, default, default, default, default, default);
     }
+
+    [TestCase("street", "Main 1")]
+    [TestCase("city", "Bern")]
+    [TestCase("email", "a@b.c")]
+    [TestCase("phone", "+41 79 000 00 00")]
+    public async Task StandIn_GetsNoAddressOrContact_AndNothingIsSent(string parameter, string value)
+    {
+        var id = Guid.NewGuid();
+        _clientRepository.Get(id).Returns(new Client { Id = id, Name = "Fair 1", Type = EntityTypeEnum.StandIn });
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), [parameter] = value };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("stand-in has no address");
+        _api.Calls.ShouldBeEmpty();
+    }
 }

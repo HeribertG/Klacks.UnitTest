@@ -430,4 +430,19 @@ public class CreateEmployeeSkillTests
         Assert.That(result.Success, Is.False);
         _api.Calls.ShouldBeEmpty();
     }
+
+    [TestCase("StandIn")]
+    [TestCase("3")]
+    [TestCase("Employee,Customer")]
+    public async Task EntityType_StandIn_OrANumber_IsRefused_AndNothingIsPosted(string entityType)
+    {
+        var parameters = CompleteParameters();
+        parameters["entityType"] = entityType;
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Invalid entityType value");
+        _api.Calls.ShouldBeEmpty();
+    }
 }

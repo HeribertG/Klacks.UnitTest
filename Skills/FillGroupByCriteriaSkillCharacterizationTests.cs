@@ -4,7 +4,8 @@
 /// Characterization tests for FillGroupByCriteriaSkill.ExecuteAsync, written before its long body was split into
 /// contract, qualification and command steps: the exact refusal texts for unknown and ambiguous contracts and
 /// qualifications (with and without existing entries), that a contract refusal stops before qualifications are read,
-/// the entity-type mapping and trimming forwarded to the command, that the canton is resolved before a missing start
+/// the entity-type mapping and trimming forwarded to the command (an unknown entity type is refused, a missing one is
+/// Employee), that the canton is resolved before a missing start
 /// date is refused, the preview, empty and apply texts, and that a verification exception becomes an error.
 /// </summary>
 
@@ -240,9 +241,19 @@ public class FillGroupByCriteriaSkillCharacterizationTests
     }
 
     [Test]
-    public async Task UnknownEntityType_FallsBackToEmployee()
+    public async Task UnknownEntityType_IsRefused_InsteadOfFallingBackToEmployee()
     {
-        await RunAsync(("entityType", "Robot"), ("validFrom", "2026-07-01"));
+        var result = await RunAsync(("entityType", "Robot"), ("validFrom", "2026-07-01"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe("'Robot' is not a valid entityType. Valid values: Employee, ExternEmp, Customer.");
+        await _mediator.DidNotReceive().Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MissingEntityType_DefaultsToEmployee()
+    {
+        await RunAsync(("validFrom", "2026-07-01"));
 
         await _mediator.Received(1).Send(
             Arg.Is<FillGroupByCriteriaCommand>(c => c.EntityType == EntityTypeEnum.Employee && c.Canton == null),

@@ -356,4 +356,18 @@ public class FillGroupByCriteriaSkillTests
             .Select(call => call.GetArguments().FirstOrDefault())
             .OfType<FillGroupByCriteriaCommand>()
             .ToList();
+
+    [TestCase("StandIn")]
+    [TestCase("3")]
+    [TestCase("Employees")]
+    public async Task UnknownOrStandInEntityType_IsRefused_InsteadOfFallingBackToEmployee(string entityType)
+    {
+        var parameters = new Dictionary<string, object> { ["groupName"] = "Bern", ["entityType"] = entityType };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Employee, ExternEmp, Customer");
+        await _mediator.DidNotReceive().Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>());
+    }
 }

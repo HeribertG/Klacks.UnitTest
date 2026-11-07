@@ -275,4 +275,17 @@ public class AnalyzeGroupSemanticsSkillTests
         data.CategorySummaries.Single(s => s.Category == GroupSemanticCategory.Canton).ExampleGroupNames
             .ShouldBe(["Bern"]);
     }
+
+    [TestCase("StandIn")]
+    [TestCase("3")]
+    [TestCase("Employees")]
+    public async Task UnknownOrStandInEntityType_IsRefused_InsteadOfFallingBackToEmployee(string entityType)
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["entityType"] = entityType });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Employee, ExternEmp, Customer");
+        await _clientRepository.DidNotReceiveWithAnyArgs()
+            .GetByTypeWithAddressesAndGroupItemsAsync(default, default);
+    }
 }

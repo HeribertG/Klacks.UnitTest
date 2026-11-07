@@ -811,6 +811,49 @@ public class PutCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [TestCase(EntityTypeEnum.Employee, EntityTypeEnum.StandIn)]
+    [TestCase(EntityTypeEnum.ExternEmp, EntityTypeEnum.StandIn)]
+    [TestCase(EntityTypeEnum.Customer, EntityTypeEnum.StandIn)]
+    [TestCase(EntityTypeEnum.StandIn, EntityTypeEnum.Employee)]
+    [TestCase(EntityTypeEnum.StandIn, EntityTypeEnum.ExternEmp)]
+    public async Task Handle_TypeChangeToOrFromStandIn_IsRefused_AndNothingIsSaved(EntityTypeEnum stored, EntityTypeEnum requested)
+    {
+        var clientId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Fair 1");
+        existingClient.Type = stored;
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        var resource = _mapper.ToResource(CreateTestClient(clientId, "Fair 1"));
+        resource.Type = (int)requested;
+
+        Func<Task> act = async () => await _handler.Handle(new PutCommand<ClientResource>(resource), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<InvalidRequestException>();
+        exception.Message.ShouldContain("stand-in");
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [TestCase(EntityTypeEnum.StandIn, EntityTypeEnum.StandIn)]
+    [TestCase(EntityTypeEnum.Employee, EntityTypeEnum.ExternEmp)]
+    [TestCase(EntityTypeEnum.ExternEmp, EntityTypeEnum.Customer)]
+    public async Task Handle_KeptTypeOrChangeBetweenMasterDataTypes_IsSaved(EntityTypeEnum stored, EntityTypeEnum requested)
+    {
+        var clientId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Muster");
+        existingClient.Type = stored;
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+        var resource = _mapper.ToResource(CreateTestClient(clientId, "Muster"));
+        resource.Type = (int)requested;
+
+        var result = await _handler.Handle(new PutCommand<ClientResource>(resource), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), existingClient);
+    }
+
     private static Client CreateTestClient(Guid clientId, string name)
     {
         return new Client
