@@ -4,6 +4,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
@@ -77,6 +78,7 @@ public class GroupTreeTests
             Substitute.For<IGroupGeocodingQueue>(),
             TestGroupWriteVisibility.UnrestrictedGroups(),
             TestGroupWriteVisibility.AllClientsVisible(),
+            TestGroupWriteVisibility.Caller(Roles.Admin),
             _unitOfWork,
             postHandlerLogger);
 
@@ -85,6 +87,7 @@ public class GroupTreeTests
             _mapper,
             TestGroupWriteVisibility.UnrestrictedGroups(),
             TestGroupWriteVisibility.AllClientsVisible(),
+            TestGroupWriteVisibility.Caller(Roles.Admin),
             _unitOfWork,
             putHandlerLogger);
 

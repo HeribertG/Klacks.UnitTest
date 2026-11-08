@@ -92,7 +92,9 @@ public class PermissionsTests
     /// Owner decision 2026-11-07, roles are work areas (supersedes 2026-09-21, when creating a group was a
     /// Supervisor right): the group structure and the contract templates are settings and Admin-only, so the
     /// Supervisor holds none of Can(Create|Edit|Delete)(Groups|Contracts). Assigning a contract or a group
-    /// membership is employee maintenance and runs under CanEditClients, which the Supervisor keeps.
+    /// membership is employee maintenance and runs under CanEditClients, which the Supervisor keeps. Since the owner
+    /// decision of 2026-11-08 the Supervisor holds CanEditSubgroups: subgroups under visible groups, enforced by the
+    /// Groups Post and Put handlers.
     /// </summary>
     [Test]
     public void ExpandRoles_Authorised_HoldsNoGroupStructureOrContractTemplateRight()
@@ -105,6 +107,7 @@ public class PermissionsTests
         rights.ShouldNotContain(Permissions.CanCreateGroups);
         rights.ShouldNotContain(Permissions.CanEditGroups);
         rights.ShouldNotContain(Permissions.CanDeleteGroups);
+        rights.ShouldContain(Permissions.CanEditSubgroups);
         rights.ShouldNotContain(Permissions.CanCreateContracts);
         rights.ShouldNotContain(Permissions.CanEditContracts);
         rights.ShouldNotContain(Permissions.CanDeleteContracts);
@@ -134,6 +137,7 @@ public class PermissionsTests
         rights.ShouldContain(Permissions.CanCreateGroups);
         rights.ShouldContain(Permissions.CanEditGroups);
         rights.ShouldContain(Permissions.CanDeleteGroups);
+        rights.ShouldContain(Permissions.CanEditSubgroups);
         rights.ShouldContain(Permissions.CanCreateContracts);
         rights.ShouldContain(Permissions.CanEditContracts);
         rights.ShouldContain(Permissions.CanDeleteContracts);
@@ -149,6 +153,7 @@ public class PermissionsTests
         rights.ShouldContain(Permissions.CanViewGroups);
         rights.ShouldNotContain(Permissions.CanCreateGroups);
         rights.ShouldNotContain(Permissions.CanEditGroups);
+        rights.ShouldNotContain(Permissions.CanEditSubgroups);
     }
 
     [Test]

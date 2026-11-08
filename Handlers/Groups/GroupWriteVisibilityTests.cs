@@ -1,10 +1,14 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Group writes must respect the caller's group visibility: a hidden target group, a hidden parent or a
-/// hidden new parent is answered exactly like a missing one, adding a client the caller cannot see is
-/// answered like a missing client, root groups are reserved for unrestricted callers, and no refused write
-/// ever reaches the (self-committing) repository. Removing members of a visible group stays allowed.
+/// Group writes must respect the caller's group visibility: a hidden target group or a hidden node to move is
+/// answered exactly like a missing one, adding a client the caller cannot see is answered like a missing client,
+/// and no refused write ever reaches the (self-committing) repository. Removing members of a visible group stays
+/// allowed. The supervisor's subgroup rule (owner decision 2026-11-08) on Groups Post and Put: a caller without the
+/// Admin role creates only subgroups under a visible parent, which take payment interval and holiday calendar from
+/// that parent, and edits only name, description, validity and members of a visible group with a visible parent;
+/// a root group, a hidden parent, any parent change and any change of payment interval or calendar is forbidden
+/// (403). The Admin keeps root groups, reparenting and the settings.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -15,6 +19,7 @@ using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Associations;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Geo;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,17 +85,21 @@ public class GroupWriteVisibilityTests
         Name = "Incoming",
         Parent = parent,
         ValidFrom = ValidFrom,
+        PaymentInterval = PaymentInterval.Monthly,
         GroupItems = memberClientIds
             .Select(clientId => new GroupItemResource { Id = Guid.NewGuid(), GroupId = id, ClientId = clientId })
             .ToList()
     };
 
-    private GroupPostHandler PostHandler(IGroupVisibilityGuard groupGuard, IClientVisibilityGuard clientGuard) =>
-        new(_groupRepository, _mapper, Substitute.For<IGroupGeocodingQueue>(), groupGuard, clientGuard, _unitOfWork,
-            NullLogger<GroupPostHandler>.Instance);
+    private GroupPostHandler PostHandler(
+        IGroupVisibilityGuard groupGuard, IClientVisibilityGuard clientGuard, string role = Roles.Authorised) =>
+        new(_groupRepository, _mapper, Substitute.For<IGroupGeocodingQueue>(), groupGuard, clientGuard,
+            TestGroupWriteVisibility.Caller(role), _unitOfWork, NullLogger<GroupPostHandler>.Instance);
 
-    private GroupPutHandler PutHandler(IGroupVisibilityGuard groupGuard, IClientVisibilityGuard clientGuard) =>
-        new(_groupRepository, _mapper, groupGuard, clientGuard, _unitOfWork, NullLogger<GroupPutHandler>.Instance);
+    private GroupPutHandler PutHandler(
+        IGroupVisibilityGuard groupGuard, IClientVisibilityGuard clientGuard, string role = Roles.Authorised) =>
+        new(_groupRepository, _mapper, groupGuard, clientGuard, TestGroupWriteVisibility.Caller(role), _unitOfWork,
+            NullLogger<GroupPutHandler>.Instance);
 
     private async Task NoGroupWasWrittenAsync()
     {
@@ -104,32 +113,101 @@ public class GroupWriteVisibilityTests
     }
 
     [Test]
-    public async Task Post_UnderHiddenParent_IsAnsweredLikeAMissingParent()
+    public async Task Post_UnderHiddenParentBySupervisor_IsForbidden()
     {
+        _groupRepository.Get(_hiddenGroup).Returns(StoredGroup(_hiddenGroup, null));
         var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
 
-        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+        await Should.ThrowAsync<ForbiddenException>(
             () => handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, _hiddenGroup)), CancellationToken.None));
 
-        ex.Message.ShouldBe($"Parent group with ID {_hiddenGroup} not found");
         await NoGroupWasWrittenAsync();
     }
 
-    // An empty root makes nobody visible, so creating one is not a visibility write and stays open to a
-    // restricted supervisor (Supervisors may create groups since 2026-09-21).
     [Test]
-    public async Task Post_RootGroupByRestrictedCaller_IsWritten()
+    public async Task Post_RootGroupBySupervisor_IsForbiddenEvenWhenUnrestricted()
     {
+        var handler = PostHandler(TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, null)), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Post_SubgroupWithAShiftAssignmentBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
+        var resource = ResourceOf(Guid.Empty, _visibleGroup, Guid.NewGuid());
+        resource.GroupItems.Add(new GroupItemResource { Id = Guid.NewGuid(), ShiftId = Guid.NewGuid() });
         var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
 
-        await handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, null)), CancellationToken.None);
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PostCommand<GroupResource>(resource), CancellationToken.None));
 
-        await _groupRepository.Received(1).Add(Arg.Any<Group>());
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Post_RootGroupByAdmin_IsWrittenWithTheRequestedSettings()
+    {
+        var calendar = Guid.NewGuid();
+        var resource = ResourceOf(Guid.Empty, null);
+        resource.PaymentInterval = PaymentInterval.Weekly;
+        resource.CalendarSelectionId = calendar;
+        var handler = PostHandler(
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(), Roles.Admin);
+
+        await handler.Handle(new PostCommand<GroupResource>(resource), CancellationToken.None);
+
+        await _groupRepository.Received(1).Add(Arg.Is<Group>(group =>
+            group.Parent == null
+            && group.PaymentInterval == PaymentInterval.Weekly
+            && group.CalendarSelectionId == calendar));
+    }
+
+    [Test]
+    public async Task Post_SubgroupBySupervisor_TakesPaymentIntervalAndCalendarFromTheParent()
+    {
+        var parentCalendar = Guid.NewGuid();
+        var parent = StoredGroup(_visibleGroup, _visibleRoot);
+        parent.PaymentInterval = PaymentInterval.Biweekly;
+        parent.CalendarSelectionId = parentCalendar;
+        _groupRepository.Get(_visibleGroup).Returns(parent);
+        var resource = ResourceOf(Guid.Empty, _visibleGroup);
+        resource.PaymentInterval = PaymentInterval.Weekly;
+        resource.CalendarSelectionId = Guid.NewGuid();
+        var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await handler.Handle(new PostCommand<GroupResource>(resource), CancellationToken.None);
+
+        await _groupRepository.Received(1).Add(Arg.Is<Group>(group =>
+            group.Parent == _visibleGroup
+            && group.PaymentInterval == PaymentInterval.Biweekly
+            && group.CalendarSelectionId == parentCalendar));
+    }
+
+    [Test]
+    public async Task Post_SubgroupByAdmin_KeepsTheRequestedSettings()
+    {
+        var parent = StoredGroup(_visibleGroup, _visibleRoot);
+        parent.PaymentInterval = PaymentInterval.Biweekly;
+        _groupRepository.Get(_visibleGroup).Returns(parent);
+        var resource = ResourceOf(Guid.Empty, _visibleGroup);
+        resource.PaymentInterval = PaymentInterval.Weekly;
+        var handler = PostHandler(
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(), Roles.Admin);
+
+        await handler.Handle(new PostCommand<GroupResource>(resource), CancellationToken.None);
+
+        await _groupRepository.Received(1).Add(Arg.Is<Group>(group => group.PaymentInterval == PaymentInterval.Weekly));
     }
 
     [Test]
     public async Task Post_WithHiddenClientAsMember_IsAnsweredLikeAMissingClient()
     {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
         var hiddenClient = Guid.NewGuid();
         var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.ClientsHidden(hiddenClient));
 
@@ -145,6 +223,7 @@ public class GroupWriteVisibilityTests
     [Test]
     public async Task Post_UnderVisibleParentWithVisibleMembers_IsWritten()
     {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
         var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
 
         var result = await handler.Handle(
@@ -175,28 +254,114 @@ public class GroupWriteVisibilityTests
     }
 
     [Test]
-    public async Task Put_MovingUnderHiddenParent_IsAnsweredLikeAMissingNewParent()
+    public async Task Put_MovingUnderHiddenParentBySupervisor_IsForbidden()
     {
         _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
         var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
 
-        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+        await Should.ThrowAsync<ForbiddenException>(
             () => handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, _hiddenGroup)), CancellationToken.None));
 
-        ex.Message.ShouldBe($"New parent group with ID {_hiddenGroup} not found");
         await NoGroupWasWrittenAsync();
     }
 
     [Test]
-    public async Task Put_DetachingToRootByRestrictedCaller_IsWritten()
+    public async Task Put_DetachingToRootBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
+        var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, null)), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_RootGroupBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleRoot).Returns(StoredGroup(_visibleRoot, null));
+        var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleRoot, null)), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_SubgroupUnderHiddenParentBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _hiddenGroup));
+        var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, _hiddenGroup)), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_ChangingPaymentIntervalBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
+        var resource = ResourceOf(_visibleGroup, _visibleRoot);
+        resource.PaymentInterval = PaymentInterval.Weekly;
+        var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(resource), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_ChangingCalendarBySupervisor_IsForbidden()
+    {
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
+        var resource = ResourceOf(_visibleGroup, _visibleRoot);
+        resource.CalendarSelectionId = Guid.NewGuid();
+        var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(resource), CancellationToken.None));
+
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_RenamingAndEndingASubgroupBySupervisor_IsWritten()
     {
         _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
         _groupRepository.Put(Arg.Any<Group>()).Returns(ci => ci.Arg<Group>());
+        var validUntil = new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+        var resource = ResourceOf(_visibleGroup, _visibleRoot);
+        resource.Name = "Festival 2026";
+        resource.Description = "Placeholders only";
+        resource.ValidUntil = validUntil;
         var handler = PutHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
 
-        await handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, null)), CancellationToken.None);
+        await handler.Handle(new PutCommand<GroupResource>(resource), CancellationToken.None);
 
-        await _groupRepository.Received(1).Put(Arg.Any<Group>());
+        await _groupRepository.Received(1).Put(Arg.Is<Group>(group =>
+            group.Name == "Festival 2026" && group.Description == "Placeholders only" && group.ValidUntil == validUntil));
+    }
+
+    [Test]
+    public async Task Put_ChangingSettingsAndParentByAdmin_IsWritten()
+    {
+        var otherParent = Guid.NewGuid();
+        _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
+        _groupRepository.Put(Arg.Any<Group>()).Returns(ci => ci.Arg<Group>());
+        var resource = ResourceOf(_visibleGroup, otherParent);
+        resource.PaymentInterval = PaymentInterval.Weekly;
+        var handler = PutHandler(
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(), Roles.Admin);
+
+        await handler.Handle(new PutCommand<GroupResource>(resource), CancellationToken.None);
+
+        await _groupRepository.Received(1).Put(Arg.Is<Group>(group =>
+            group.Parent == otherParent && group.PaymentInterval == PaymentInterval.Weekly));
     }
 
     [Test]
@@ -234,17 +399,17 @@ public class GroupWriteVisibilityTests
     }
 
     [Test]
-    public async Task Put_MovingUnderVisibleParent_IsWritten()
+    public async Task Put_MovingUnderVisibleParentBySupervisor_IsForbidden()
     {
         _groupRepository.Get(_visibleGroup).Returns(StoredGroup(_visibleGroup, _visibleRoot));
-        _groupRepository.Put(Arg.Any<Group>()).Returns(ci => ci.Arg<Group>());
         var otherVisible = Guid.NewGuid();
         var handler = PutHandler(
             RestrictedTo(_visibleRoot, _visibleGroup, otherVisible), TestGroupWriteVisibility.AllClientsVisible());
 
-        await handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, otherVisible)), CancellationToken.None);
+        await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PutCommand<GroupResource>(ResourceOf(_visibleGroup, otherVisible)), CancellationToken.None));
 
-        await _groupRepository.Received(1).Put(Arg.Any<Group>());
+        await NoGroupWasWrittenAsync();
     }
 
     [Test]

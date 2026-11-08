@@ -8,7 +8,10 @@
 /// resource), because a second controller on the same resource (AssignedGroupsController next to GroupsController)
 /// would otherwise reopen the write unnoticed. The owner decision of 2026-11-08 (all settings are Admin work) added
 /// the absence types with their extended absences, the monthly target hours, the individual periods, the countries
-/// and the states. The overrides only add [Authorize(Roles = Admin)] to the inherited
+/// and the states. The one exception is the subgroup decision of 2026-11-08: GroupsController.Post and Put keep the
+/// inherited Admin/Authorised gate, because a supervisor creates subgroups and edits name, description and validity
+/// of the groups below his root group; the Groups Post and Put handlers hold that boundary and are pinned in
+/// GroupWriteVisibilityTests. Its Delete stays Admin-only. The overrides only add [Authorize(Roles = Admin)] to the inherited
 /// Admin/Authorised attribute; both are AND-combined (AuthorizeAttributeInheritanceTests), so the roles an endpoint
 /// admits are the intersection of every role-bearing attribute on the action and on its type chain.
 /// </summary>
@@ -72,13 +75,23 @@ public class WorkAreaEndpointAuthorizationTests
         typeof(StatesController)
     ];
 
+    private static readonly (Type Controller, string Action)[] SupervisorSubgroupWrites =
+    [
+        (typeof(GroupsController), PostAction),
+        (typeof(GroupsController), PutAction)
+    ];
+
     private static IEnumerable<TestCaseData> SettingsWrites() =>
-        SettingsControllers().SelectMany(controller => new[]
-        {
-            new TestCaseData(controller, PostAction).SetName($"{controller.Name}_{PostAction}_IsAdminOnly"),
-            new TestCaseData(controller, PutAction).SetName($"{controller.Name}_{PutAction}_IsAdminOnly"),
-            new TestCaseData(controller, DeleteAction).SetName($"{controller.Name}_{DeleteAction}_IsAdminOnly")
-        });
+        SettingsControllers()
+            .SelectMany(controller => new[] { PostAction, PutAction, DeleteAction }
+                .Select(action => (Controller: controller, Action: action)))
+            .Where(write => !SupervisorSubgroupWrites.Contains(write))
+            .Select(write => new TestCaseData(write.Controller, write.Action)
+                .SetName($"{write.Controller.Name}_{write.Action}_IsAdminOnly"));
+
+    private static IEnumerable<TestCaseData> SubgroupWrites() =>
+        SupervisorSubgroupWrites.Select(write => new TestCaseData(write.Controller, write.Action)
+            .SetName($"{write.Controller.Name}_{write.Action}_AdmitsAdminAndSupervisor"));
 
     private static IEnumerable<TestCaseData> SettingsReads() =>
         SettingsReadControllers.Select(controller =>
@@ -108,6 +121,28 @@ public class WorkAreaEndpointAuthorizationTests
             new[] { Roles.Admin },
             ignoreOrder: true,
             $"{controller.Name}.{actionName} writes a setting; under the work-area rule only the Admin may do that.");
+    }
+
+    [TestCaseSource(nameof(SubgroupWrites))]
+    public void SubgroupWrite_AdmitsAdminAndSupervisor_NotThePlanner(Type controller, string actionName)
+    {
+        var admitted = EffectiveRoles(controller, ActionOf(controller, actionName));
+
+        admitted.ShouldNotBeNull($"{controller.Name}.{actionName} carries no role restriction at all.");
+        admitted!.ShouldBe(
+            new[] { Roles.Admin, Roles.Authorised },
+            ignoreOrder: true,
+            $"{controller.Name}.{actionName} lets the supervisor write subgroups (owner decision 2026-11-08); the " +
+            "planner stays out, and the handler limits what a supervisor may change.");
+    }
+
+    [Test]
+    public void SubgroupWrites_AreTheOnlyExceptions_AndBelongToADiscoveredSettingsController()
+    {
+        var discovered = SettingsControllers().ToList();
+
+        SupervisorSubgroupWrites.ShouldAllBe(write => discovered.Contains(write.Controller));
+        SupervisorSubgroupWrites.Select(write => write.Controller).Distinct().ShouldBe(new[] { typeof(GroupsController) });
     }
 
     [TestCaseSource(nameof(SettingsReads))]

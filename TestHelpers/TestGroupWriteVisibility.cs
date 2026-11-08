@@ -3,9 +3,11 @@
 /// <summary>
 /// Substitutes for the visibility guards of group writes. A bare substitute answers "not visible" and an
 /// empty filter result, which would make every existing group-write test look like a hidden-group case, so
-/// tests that are not about visibility use these permissive stand-ins.
+/// tests that are not about visibility use these permissive stand-ins. Caller stands for the user behind a group write,
+/// whose role decides whether the Groups Post and Put handlers apply the supervisor's subgroup rule.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Staffs;
 
 namespace Klacks.UnitTest.TestHelpers;
@@ -20,6 +22,14 @@ internal static class TestGroupWriteVisibility
         guard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         guard.AreAllGroupsVisibleAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>()).Returns(true);
         return guard;
+    }
+
+    /// <param name="roles">Role names of the caller; none is the Planer floor</param>
+    public static IUserService Caller(params string[] roles)
+    {
+        var userService = Substitute.For<IUserService>();
+        userService.GetRights().Returns(Permissions.ExpandRoles(roles));
+        return userService;
     }
 
     public static IClientVisibilityGuard AllClientsVisible()

@@ -2,10 +2,11 @@
 
 /// <summary>
 /// Pins the seeded rights of the group-creating skills to the owner decision of 2026-11-07 (roles are work
-/// areas, superseding 2026-09-21): the group structure is a setting, so only the Admin creates and deletes
-/// groups. The skills ask for the group rights (CanCreateGroups, CanDeleteGroups), which the Authorised role
-/// no longer expands to, so the seed, the REST endpoint (Groups POST and DELETE, Admin-only) and the Angular
-/// button (CanCreateGroups) agree.
+/// areas, superseding 2026-09-21): the group structure is a setting, so only the Admin creates root groups,
+/// regroups clients into new groups and deletes groups. The regrouping skills ask for CanCreateGroups and
+/// delete_group for CanDeleteGroups, which the Authorised role does not expand to. The one exception (owner
+/// decision 2026-11-08): create_group asks for CanEditSubgroups, which the supervisor holds, because the Groups
+/// Post handler behind it only lets a caller without the Admin role create a subgroup under a visible group.
 /// </summary>
 
 using System.Text.Json;
@@ -32,10 +33,9 @@ public class GroupCreationSkillPermissionTests
         "Klacks.Api", "Application", "Skills", "Definitions"
     ];
 
-    /// <summary>The seeded skills whose execution creates group rows.</summary>
+    /// <summary>The seeded skills that regroup clients into new groups; create_group is pinned on its own.</summary>
     private static readonly string[] GroupCreatingSkills =
     [
-        CreateGroupSkill,
         PartitionClientsByAddressSkill,
         PartitionClientsByQualificationSkill
     ];
@@ -72,6 +72,27 @@ public class GroupCreationSkillPermissionTests
         SeededPermissionsOf(skillName).All(floorRights.Contains).ShouldBeFalse(
             $"'{skillName}' would be reachable by every authenticated caller: the Planer floor already " +
             "covers every right it asks for. Creating a group needs a role.");
+    }
+
+    [Test]
+    public void CreateGroupSkill_AsksForTheSubgroupRight_SoTheSupervisorReachesIt()
+    {
+        SeededPermissionsOf(CreateGroupSkill).ShouldBe(
+            new List<string> { Permissions.CanEditSubgroups },
+            $"create_group is gated on CanEditSubgroups (owner decision 2026-11-08). {VersionBumpReminder}");
+
+        Permissions.ExpandRoles(new[] { Roles.Authorised }).ShouldContain(Permissions.CanEditSubgroups);
+        Permissions.ExpandRoles(Array.Empty<string>()).ShouldNotContain(
+            Permissions.CanEditSubgroups,
+            "Creating a subgroup is supervisor work; the Planer floor must not reach create_group.");
+    }
+
+    [Test]
+    public void CreateGroupSkill_IsBoundToTheGroupVisibilityOfAnIdentifiedCaller()
+    {
+        GroupVisibilityBoundSkills.Contains(CreateGroupSkill).ShouldBeTrue(
+            "A supervisor's create_group decides through the group visibility guard, which treats a missing user as " +
+            "unrestricted; the executor must refuse a non-admin call without an identified user.");
     }
 
     [Test]

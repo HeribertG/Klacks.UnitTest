@@ -149,7 +149,8 @@ internal class GoupTests
         var groupGeocodingQueue = Substitute.For<IGroupGeocodingQueue>();
         var handler = new PostCommandHandler(
             groupRepository, _groupMapper, groupGeocodingQueue,
-            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(), unitOfWork, _logger);
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(),
+            TestGroupWriteVisibility.Caller(Klacks.Api.Domain.Constants.Roles.Admin), unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);

@@ -47,7 +47,8 @@ public class CreateGroupSkillCharacterizationTests
         _visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
         _api = new FakeSelfApi();
         _persistedId = Guid.NewGuid();
-        _api.Respond(HttpMethod.Post, GroupsRoute, new GroupResource { Id = _persistedId });
+        _api.Respond(
+            HttpMethod.Post, GroupsRoute, new GroupResource { Id = _persistedId, PaymentInterval = PaymentInterval.Monthly });
         _usersKeepingFullVisibility = 0;
         _apiCallsWhenCounted = null;
         _visibilityPreservation.CountUsersKeepingFullVisibilityAsync(Arg.Any<CancellationToken>())
@@ -195,6 +196,28 @@ public class CreateGroupSkillCharacterizationTests
     }
 
     [Test]
+    public async Task ChildGroup_ReportsTheSettingsTheServerStored_NotTheRequestedOnes()
+    {
+        var parentId = Guid.NewGuid();
+        var parentCalendar = Guid.NewGuid();
+        _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "CH" });
+        _api.Respond(HttpMethod.Post, GroupsRoute, new GroupResource
+        {
+            Id = _persistedId, PaymentInterval = PaymentInterval.Biweekly, CalendarSelectionId = parentCalendar
+        });
+
+        var result = await Skill(TestGroupScopeGuard.Unrestricted()).ExecuteAsync(Ctx(), Params(
+            ("parentId", parentId.ToString()),
+            ("paymentInterval", "weekly")));
+
+        result.Success.ShouldBeTrue(result.Message);
+        var data = Data(result);
+        data.GetProperty("PaymentInterval").GetString().ShouldBe("Biweekly");
+        data.GetProperty("CalendarSelectionId").GetGuid().ShouldBe(parentCalendar);
+        _api.BodyOf<GroupResource>()!.PaymentInterval.ShouldBe(PaymentInterval.Weekly);
+    }
+
+    [Test]
     public async Task RootGroup_SuccessTextAndData_DefaultMonthlyAndToday()
     {
         var result = await Skill(TestGroupScopeGuard.Unrestricted()).ExecuteAsync(Ctx(), Params());
@@ -224,6 +247,10 @@ public class CreateGroupSkillCharacterizationTests
         var calendarId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "CH" });
         _calendarSelectionRepository.Exists(calendarId).Returns(true);
+        _api.Respond(HttpMethod.Post, GroupsRoute, new GroupResource
+        {
+            Id = _persistedId, PaymentInterval = PaymentInterval.Weekly, CalendarSelectionId = calendarId
+        });
 
         var result = await Skill(TestGroupScopeGuard.Unrestricted()).ExecuteAsync(Ctx(), Params(
             ("parentId", parentId.ToString()),

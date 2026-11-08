@@ -3,10 +3,12 @@
 /// <summary>
 /// Pins the seeded rights of the group-editing skills to the same rule the rest of the stack applies:
 /// the group structure is a setting and Admin-only (owner decision 2026-11-07, roles are work areas). The
-/// REST endpoints they write through (Groups PUT, POST Groups/move/{id} and PUT Groups/{id}/location) are
-/// Admin-only, the Angular group forms and tree drag-and-drop ask for CanEditGroups, and the skills ask for
-/// the same right, which the Authorised role no longer expands to. Deliberately not covered: delete_group
-/// (GroupCreationSkillPermissionTests) and list_groups_hierarchical.
+/// REST endpoints move_group and set_group_location write through (POST Groups/move/{id}, PUT
+/// Groups/{id}/location) are Admin-only, the Angular tree drag-and-drop asks for CanEditGroups, and the skills
+/// ask for the same right, which the Authorised role does not expand to. update_group is the exception (owner
+/// decision 2026-11-08): it asks for CanEditSubgroups like the Angular group form, and the Groups Put handler
+/// lets a caller without the Admin role change only name, description, validity and members of a subgroup.
+/// Deliberately not covered: delete_group (GroupCreationSkillPermissionTests) and list_groups_hierarchical.
 /// </summary>
 
 using System.Text.Json;
@@ -32,7 +34,6 @@ public class GroupEditingSkillPermissionTests
         "Klacks.Api", "Application", "Skills", "Definitions"
     ];
 
-    [TestCase(UpdateGroupSkill)]
     [TestCase(MoveGroupSkill)]
     [TestCase(SetGroupLocationSkill)]
     public void GroupEditingSkill_AsksForTheGroupEditingRight_NotForSettings(string skillName)
@@ -50,7 +51,6 @@ public class GroupEditingSkillPermissionTests
             $"read the same right. {VersionBumpReminder}");
     }
 
-    [TestCase(UpdateGroupSkill)]
     [TestCase(MoveGroupSkill)]
     [TestCase(SetGroupLocationSkill)]
     public void GroupEditingSkill_IsNotReachableForASupervisor(string skillName)
@@ -62,7 +62,6 @@ public class GroupEditingSkillPermissionTests
             "(owner decision 2026-11-07).");
     }
 
-    [TestCase(UpdateGroupSkill)]
     [TestCase(MoveGroupSkill)]
     [TestCase(SetGroupLocationSkill)]
     public void GroupEditingSkill_IsNotReachableFromThePlannerFloor(string skillName)
@@ -72,6 +71,19 @@ public class GroupEditingSkillPermissionTests
         SeededPermissionsOf(skillName).All(floorRights.Contains).ShouldBeFalse(
             $"'{skillName}' would be reachable by every authenticated caller: the Planer floor " +
             "already covers every right it asks for. Changing a group needs a role.");
+    }
+
+    [Test]
+    public void UpdateGroupSkill_AsksForTheSubgroupRight_AndIsBoundToAnIdentifiedCaller()
+    {
+        SeededPermissionsOf(UpdateGroupSkill).ShouldBe(
+            new List<string> { Permissions.CanEditSubgroups },
+            $"update_group is gated on CanEditSubgroups (owner decision 2026-11-08). {VersionBumpReminder}");
+
+        Permissions.ExpandRoles(Array.Empty<string>()).ShouldNotContain(Permissions.CanEditSubgroups);
+        GroupVisibilityBoundSkills.Contains(UpdateGroupSkill).ShouldBeTrue(
+            "A supervisor's update_group decides through the group visibility guard, which treats a missing user as " +
+            "unrestricted; the executor must refuse a non-admin call without an identified user.");
     }
 
     private static List<string> SeededPermissionsOf(string skillName)
