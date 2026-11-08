@@ -4,7 +4,8 @@
 /// Guards that the texts around stand-ins (placeholders for people not in the system yet) exist and are non-empty in
 /// all four core catalogues of Klacks.Ui and in every language plugin (owner rule: all 25 languages, no English
 /// fallback): the type name and the schedule filter, the row header tooltip, the payroll blocker, the period issue,
-/// the refused period close and the refused delete. Follows
+/// the refused period close and the refused delete, and the two dialogs "create placeholders" and "convert into
+/// employee" with their labels, refusals and results and the placeholder's master data card. Follows
 /// ContractStandardRatesI18nGateTests: the Klacks.Ui half reports inconclusive when that repository is not checked
 /// out next to Klacks.Api.
 /// </summary>
@@ -28,6 +29,33 @@ public class StandInI18nGateTests
         "periodClosing.payroll.reason.standInAssigned",
         "periodClosing.issues.code.standInWorks",
         "periodClosing.error.standInWorks",
+        "standIn.create.title",
+        "standIn.create.hint",
+        "standIn.create.count",
+        "standIn.create.namePattern",
+        "standIn.create.namePatternExample",
+        "standIn.create.group",
+        "standIn.create.validFrom",
+        "standIn.create.validUntil",
+        "standIn.create.qualifications",
+        "standIn.create.noQualifications",
+        "standIn.create.submit",
+        "standIn.create.success",
+        "standIn.create.failed",
+        "standIn.create.invalid.count",
+        "standIn.create.invalid.pattern",
+        "standIn.create.invalid.group",
+        "standIn.create.invalid.period",
+        "standIn.convert.title",
+        "standIn.convert.hint",
+        "standIn.convert.targetType",
+        "standIn.convert.submit",
+        "standIn.convert.success",
+        "standIn.convert.failed",
+        "standIn.convert.invalid.person",
+        "standIn.convert.invalid.address",
+        "standIn.persona.displayName",
+        "standIn.persona.hint",
     ];
 
     private const string UiCatalogueRelativePath = "Klacks.Ui/src/assets/i18n";
