@@ -3,8 +3,8 @@
 /// <summary>
 /// Unit tests for SettingValueValidator: the ACTIVE_INDUSTRIES rule accepts empty, the custom
 /// marker, a single known slug and a legacy comma-separated list of known slugs (case-insensitive,
-/// trimmed), and rejects unknown slugs, custom combined with other slugs, and garbage strings. Any
-/// other setting key is never validated.
+/// trimmed), and rejects unknown slugs, custom combined with other slugs, and garbage strings. The scheduling caps
+/// accept empty or at least 1 and reject 0; the rest minimums accept 0. Other keys are not validated.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -137,5 +137,33 @@ public class SettingValueValidatorTests
     {
         Should.NotThrow(() => _sut.Validate(SettingKeys.DatevConsultantNumber, null!));
         Should.NotThrow(() => _sut.Validate(SettingKeys.DatevClientNumber, null!));
+    }
+
+    [TestCase(SettingKeys.SchedulingMaxDailyHours, "")]
+    [TestCase(SettingKeys.SchedulingMaxDailyHours, "1")]
+    [TestCase(SettingKeys.SchedulingMaxDailyHours, "10.5")]
+    [TestCase(SettingKeys.SchedulingMaxWeeklyHours, " 50 ")]
+    [TestCase(SettingKeys.SchedulingMaxConsecutiveDays, "6")]
+    public void Validate_SchedulingCapEmptyOrAtLeastOne_DoesNotThrow(string key, string value)
+    {
+        Should.NotThrow(() => _sut.Validate(key, value));
+    }
+
+    [TestCase(SettingKeys.SchedulingMaxDailyHours, "0")]
+    [TestCase(SettingKeys.SchedulingMaxDailyHours, "0.5")]
+    [TestCase(SettingKeys.SchedulingMaxWeeklyHours, "0")]
+    [TestCase(SettingKeys.SchedulingMaxWeeklyHours, "-1")]
+    [TestCase(SettingKeys.SchedulingMaxConsecutiveDays, "0")]
+    [TestCase(SettingKeys.SchedulingMaxConsecutiveDays, "abc")]
+    public void Validate_SchedulingCapZeroBelowOneOrNotANumber_Throws(string key, string value)
+    {
+        Should.Throw<InvalidRequestException>(() => _sut.Validate(key, value));
+    }
+
+    [TestCase(SettingKeys.SchedulingMinPauseHours)]
+    [TestCase(SettingKeys.SchedulingMinRestDays)]
+    public void Validate_RestMinimumZero_DoesNotThrow(string key)
+    {
+        Should.NotThrow(() => _sut.Validate(key, "0"));
     }
 }

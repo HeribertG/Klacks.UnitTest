@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Tests for the SchedulingRule PutCommandHandler: a committed update of surcharge-relevant fields
-/// dispatches a SchedulingRuleChangedEvent; a rename or planning-only change never dispatches.
+/// dispatches a SchedulingRuleChangedEvent; a rename or planning-only change never dispatches; a cap below 1
+/// (daily hours, weekly hours, consecutive days) is rejected, empty caps and zero rest minimums are accepted.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -67,6 +68,52 @@ public class PutCommandHandlerTests
             () => _handler.Handle(new PutCommand<SchedulingRuleResource>(resource), CancellationToken.None));
 
         await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [TestCase(0, null, null)]
+    [TestCase(null, 0, null)]
+    [TestCase(null, null, 0)]
+    [TestCase(0.5, null, null)]
+    public async Task Handle_CapZeroOrBelowOne_IsRejectedWithoutSaving(double? maxDailyHours, double? maxWeeklyHours, int? maxConsecutiveDays)
+    {
+        var resource = new SchedulingRuleResource
+        {
+            Id = Guid.NewGuid(),
+            Name = "Rule",
+            MaxDailyHours = (decimal?)maxDailyHours,
+            MaxWeeklyHours = (decimal?)maxWeeklyHours,
+            MaxConsecutiveDays = maxConsecutiveDays,
+        };
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(new PutCommand<SchedulingRuleResource>(resource), CancellationToken.None));
+
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_EmptyCapsAndZeroRestMinimums_AreAccepted()
+    {
+        var ruleId = Guid.NewGuid();
+        var existing = new SchedulingRule { Id = ruleId, Name = "Rule", MaxDailyHours = 10m, MinPauseHours = 11m };
+        _repository.Get(ruleId).Returns(existing);
+
+        var resource = new SchedulingRuleResource
+        {
+            Id = ruleId,
+            Name = "Rule",
+            MaxDailyHours = null,
+            MaxWeeklyHours = 1m,
+            MaxConsecutiveDays = 1,
+            MinPauseHours = 0m,
+            MinRestDays = 0m,
+        };
+
+        await _handler.Handle(new PutCommand<SchedulingRuleResource>(resource), CancellationToken.None);
+
+        await _unitOfWork.Received(1).CompleteAsync();
+        existing.MaxDailyHours.ShouldBeNull();
+        existing.MinPauseHours.ShouldBe(0m);
     }
 
     [Test]

@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Tests for RestDayRotationEvaluator (K10): free-weekday counting over the trailing window,
-/// cross-midnight spillover, membership clamp, planned-slot projection and block-mode escalation.
+/// cross-midnight spillover, the free block set by MinRestDays (0 = no block), membership clamp, planned-slot
+/// projection and block-mode escalation.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
@@ -27,6 +28,7 @@ public class RestDayRotationEvaluatorTests
     private static readonly DateOnly Sunday2 = new(2026, 6, 28);
     private static readonly DateOnly Sunday3 = new(2026, 7, 5);
     private static readonly DateOnly Sunday4 = new(2026, 7, 12);
+    private const decimal TwoRestDays = 2m;
 
     private DataBaseContext _context = null!;
     private IRestDayRotationRuleRepository _ruleRepository = null!;
@@ -55,7 +57,7 @@ public class RestDayRotationEvaluatorTests
         _contractDataProvider = Substitute.For<IClientContractDataProvider>();
         _contractDataProvider
             .GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new EffectiveContractData());
+            .Returns(new EffectiveContractData { MinRestDays = TwoRestDays });
 
         _sut = new RestDayRotationEvaluator(_ruleRepository, _context, _enforcementResolver, _membershipStartResolver, _contractDataProvider);
     }
@@ -134,6 +136,30 @@ public class RestDayRotationEvaluatorTests
 
         var entry = result.ShouldHaveSingleItem();
         entry.CommentParams["actualFree"].ShouldBe("1");
+    }
+
+    [Test]
+    public async Task EvaluateAsync_SpilloverSundayWithShortFreeBlock_OccupiesTheSundayWhenTwoRestDaysAreRequired()
+    {
+        SeedSpilloverSundayFollowedByTuesdayShift(out var clientId);
+
+        var result = await _sut.EvaluateAsync(clientId, "Anna", Sunday4);
+
+        var entry = result.ShouldHaveSingleItem();
+        entry.CommentParams["actualFree"].ShouldBe("1");
+    }
+
+    [Test]
+    public async Task EvaluateAsync_SpilloverSundayWithShortFreeBlock_StaysFreeWhenZeroRestDaysAreRequired()
+    {
+        SeedSpilloverSundayFollowedByTuesdayShift(out var clientId);
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(clientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { MinRestDays = 0m });
+
+        var result = await _sut.EvaluateAsync(clientId, "Anna", Sunday4);
+
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -240,12 +266,12 @@ public class RestDayRotationEvaluatorTests
 
         _contractDataProvider
             .GetEffectiveContractDataAsync(clientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new EffectiveContractData { SchedulingRuleId = Guid.NewGuid() });
+            .Returns(new EffectiveContractData { SchedulingRuleId = Guid.NewGuid(), MinRestDays = TwoRestDays });
         (await _sut.EvaluateAsync(clientId, "Anna", Sunday4)).ShouldBeEmpty();
 
         _contractDataProvider
             .GetEffectiveContractDataAsync(clientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new EffectiveContractData { SchedulingRuleId = boundRuleId });
+            .Returns(new EffectiveContractData { SchedulingRuleId = boundRuleId, MinRestDays = TwoRestDays });
         (await _sut.EvaluateAsync(clientId, "Anna", Sunday4)).ShouldHaveSingleItem();
     }
 
@@ -262,6 +288,16 @@ public class RestDayRotationEvaluatorTests
                 SchedulingRuleId = schedulingRuleId,
             },
         });
+    }
+
+    private void SeedSpilloverSundayFollowedByTuesdayShift(out Guid clientId)
+    {
+        StubRule(DayOfWeek.Sunday, minFree: 2, windowWeeks: 4);
+        clientId = Guid.NewGuid();
+        SeedWork(clientId, Sunday1, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedWork(clientId, Sunday2, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedWork(clientId, Sunday3.AddDays(-1), new TimeOnly(22, 0), new TimeOnly(7, 0));
+        SeedWork(clientId, Sunday3.AddDays(2), new TimeOnly(6, 0), new TimeOnly(14, 0));
     }
 
     private void SeedWork(Guid clientId, DateOnly date, TimeOnly start, TimeOnly end)
