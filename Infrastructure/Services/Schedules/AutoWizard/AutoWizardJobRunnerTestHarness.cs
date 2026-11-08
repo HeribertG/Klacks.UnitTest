@@ -70,6 +70,7 @@ public abstract class AutoWizardJobRunnerTestHarness
     protected WizardResultCache _wizardResults = null!;
     protected HarmonizerResultCache _harmonizerResults = null!;
     protected AutoWizardJobRunner _runner = null!;
+    protected AutoWizardJobScopes _jobScopes = null!;
 
     [SetUp]
     public void SetUp()
@@ -155,6 +156,8 @@ public abstract class AutoWizardJobRunnerTestHarness
         services.AddSingleton(_ruleSetLoader);
         services.AddSingleton(TestGroupWriteVisibility.UnrestrictedGroups());
         services.AddSingleton(TestScenarioTokenAccess.AllVisible());
+        services.AddSingleton(TestGroupWriteVisibility.AllClientsVisible());
+        services.AddSingleton(ShiftVisibilityGuards.AllowAll());
         AddServices(services);
         _provider = services.BuildServiceProvider();
 
@@ -164,6 +167,7 @@ public abstract class AutoWizardJobRunnerTestHarness
             _provider.GetRequiredService<IServiceScopeFactory>(),
             _hubNotifier,
             new AutoWizardJobRegistry(),
+            _jobScopes = new AutoWizardJobScopes(TimeProvider.System),
             _presenceTracker,
             new AutofillStartGuard(),
             _wizardRunner,

@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using System.Security.Claims;
+using Klacks.Api.Presentation.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,7 +10,7 @@ namespace Klacks.UnitTest.Infrastructure.Hubs;
 
 /// <summary>
 /// Evaluates the policy a hub's class [Authorize] attribute builds against a signed-in principal with the given roles,
-/// through the real ASP.NET Core authorization service.
+/// through the real ASP.NET Core authorization service with the application's named policies (AddKlacksPolicies).
 /// </summary>
 internal static class HubAuthorizationEvaluator
 {
@@ -21,7 +22,10 @@ internal static class HubAuthorizationEvaluator
     /// <param name="roles">Role claims of the principal; none = the planner floor.</param>
     public static async Task<bool> IsAuthorizedAsync(Type hubType, params string[] roles)
     {
-        var services = new ServiceCollection().AddLogging().AddAuthorizationCore().BuildServiceProvider();
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddAuthorizationCore(options => options.AddKlacksPolicies())
+            .BuildServiceProvider();
         var policyProvider = services.GetRequiredService<IAuthorizationPolicyProvider>();
         var policy = await AuthorizationPolicy.CombineAsync(policyProvider, [hubType.GetCustomAttribute<AuthorizeAttribute>()!]);
         var claims = new List<Claim> { new(ClaimTypes.Name, UserName) };

@@ -31,6 +31,7 @@ public class ListOpenWizardJobsSkillTests
     private IHolisticHarmonizerJobRunner _holistic = null!;
     private IAutoWizardJobRunner _autoWizard = null!;
     private JobTerminalStateCache<AutoWizardJobResultDto> _states = null!;
+    private IAutoWizardJobAccessGuard _jobAccess = null!;
     private ListOpenWizardJobsSkill _skill = null!;
 
     [SetUp]
@@ -41,7 +42,43 @@ public class ListOpenWizardJobsSkillTests
         _holistic = Substitute.For<IHolisticHarmonizerJobRunner>();
         _autoWizard = Substitute.For<IAutoWizardJobRunner>();
         _states = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
-        _skill = new ListOpenWizardJobsSkill(_wizard, _harmonizer, _holistic, _autoWizard, _states);
+        _jobAccess = Substitute.For<IAutoWizardJobAccessGuard>();
+        _jobAccess.CanAccessAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        _skill = new ListOpenWizardJobsSkill(_wizard, _harmonizer, _holistic, _autoWizard, _states, _jobAccess);
+    }
+
+    [Test]
+    public async Task RunningDeveloperDropdownJob_IsNotReportedToAPlanner()
+    {
+        var jobId = Guid.NewGuid();
+        _wizard.IsRunning(jobId).Returns(true);
+        var planner = new SkillExecutionContext
+        {
+            UserId = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            UserName = "planner",
+            UserPermissions = new List<string> { "CanEditSchedule" }
+        };
+
+        var result = await _skill.ExecuteAsync(planner, JobParameter(jobId));
+
+        DataAsJson(result).GetProperty("Status").GetString().ShouldBe(WizardJobStatusValues.Unknown);
+    }
+
+    [Test]
+    public async Task JobTheCallerMayNotAddress_IsAnsweredLikeAnUnknownJob()
+    {
+        var jobId = Guid.NewGuid();
+        _autoWizard.IsRunning(jobId).Returns(true);
+        await _states.StoreCompletedAsync(jobId, Result(jobId, Guid.NewGuid(), skipped: false, skipReason: null));
+        _jobAccess.CanAccessAsync(jobId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await _skill.ExecuteAsync(Ctx(), JobParameter(jobId));
+
+        var data = DataAsJson(result);
+        data.GetProperty("Status").GetString().ShouldBe(WizardJobStatusValues.Unknown);
+        data.TryGetProperty("ScenarioId", out _).ShouldBeFalse();
+        result.Message.ShouldNotContain("still running");
     }
 
     private static SkillExecutionContext Ctx() => new()

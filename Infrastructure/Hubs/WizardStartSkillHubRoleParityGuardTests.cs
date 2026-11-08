@@ -13,8 +13,9 @@ namespace Klacks.UnitTest.Infrastructure.Hubs;
 /// [Authorize] policy does. The skill side is evaluated the way the assistant filters skills (the seed loader joins the
 /// list with commas, Permissions.ExpandRoles turns the roles into rights, Permissions.HasAllRequiredPermissions decides);
 /// the hub side through the real authorization service. A skill that may start a job whose hub refuses the caller (the
-/// progress would never arrive), or a hub that admits callers the skill refuses, turns this red. A second test pins the
-/// skills to Admin, so loosening skill and hub together is caught as well.
+/// progress would never arrive), or a hub that admits callers the skill refuses, turns this red. A second test pins each
+/// skill's right, so loosening skill and hub together is caught as well: the developer-dropdown wizards stay Admin, the
+/// normal autofill (start_autowizard) needs the planning right CanEditSchedule (owner rule 2026-11-07).
 /// </summary>
 [TestFixture]
 public class WizardStartSkillHubRoleParityGuardTests
@@ -30,6 +31,14 @@ public class WizardStartSkillHubRoleParityGuardTests
         yield return new TestCaseData("start_wizard1", typeof(WizardJobHub));
         yield return new TestCaseData("start_wizard2", typeof(HarmonizerJobHub));
         yield return new TestCaseData("start_wizard3", typeof(HolisticHarmonizerJobHub));
+    }
+
+    public static IEnumerable<TestCaseData> StartSkillsAndRights()
+    {
+        yield return new TestCaseData("start_autowizard", Permissions.CanEditSchedule);
+        yield return new TestCaseData("start_wizard1", Roles.Admin);
+        yield return new TestCaseData("start_wizard2", Roles.Admin);
+        yield return new TestCaseData("start_wizard3", Roles.Admin);
     }
 
     private static readonly string[][] RoleSets =
@@ -56,12 +65,12 @@ public class WizardStartSkillHubRoleParityGuardTests
         }
     }
 
-    [TestCaseSource(nameof(StartSkillsAndHubs))]
-    public void StartSkill_StaysAdminOnly(string skillName, Type hubType)
+    [TestCaseSource(nameof(StartSkillsAndRights))]
+    public void StartSkill_KeepsItsRight(string skillName, string expectedRight)
     {
         ReadRequiredPermission(skillName).ShouldBe(
-            Roles.Admin,
-            $"{skillName} no longer requires Admin; the parity test alone would stay green if {hubType.Name} and the skill were loosened together");
+            expectedRight,
+            $"{skillName} no longer requires {expectedRight}; the parity test alone would stay green if the hub and the skill were changed together");
     }
 
     private static string? ReadRequiredPermission(string skillName)
