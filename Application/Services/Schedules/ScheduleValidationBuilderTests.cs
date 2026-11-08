@@ -173,6 +173,41 @@ public class ScheduleValidationBuilderTests
     }
 
     [Test]
+    public void AddConsecutiveDays_RunStartedBeforeTheWindow_IsCountedInFullAndDatedOnTheWindowStart()
+    {
+        AddWorkDays(11);
+        var windowStart = Monday.AddDays(4);
+
+        ScheduleValidationBuilder.AddConsecutiveDays(_entries, _timeline, "Test", windowStart, windowStart.AddDays(20), Policy());
+
+        var entry = _entries.ShouldHaveSingleItem();
+        entry.Date.ShouldBe(windowStart);
+        entry.CommentParams!["actualDays"].ShouldBe("11");
+    }
+
+    [Test]
+    public void AddConsecutiveDays_RunEndingTheDayBeforeTheWindow_IsNotReported()
+    {
+        AddWorkDays(8);
+
+        ScheduleValidationBuilder.AddConsecutiveDays(_entries, _timeline, "Test", Monday.AddDays(8), Monday.AddDays(20), Policy());
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddConsecutiveDays_RunReachingPastTheWindowEnd_IsCountedInFull()
+    {
+        AddWorkDays(11);
+
+        ScheduleValidationBuilder.AddConsecutiveDays(_entries, _timeline, "Test", Monday, Monday.AddDays(3), Policy());
+
+        var entry = _entries.ShouldHaveSingleItem();
+        entry.Date.ShouldBe(Monday);
+        entry.CommentParams!["actualDays"].ShouldBe("11");
+    }
+
+    [Test]
     public void IsoWeekOf_AnyDayOfTheWeek_ReturnsSameMondayToSundayRange()
     {
         foreach (var offset in Enumerable.Range(0, 7))
