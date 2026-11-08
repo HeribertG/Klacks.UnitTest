@@ -72,7 +72,8 @@ public class RecalculatePeriodHoursThoroughCommandHandlerTests
             null,
             null,
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { VisibleClient, FrozenClient })),
-            false);
+            false,
+            ownWorkChangesOnly: true);
     }
 
     [Test]
@@ -137,7 +138,7 @@ public class RecalculatePeriodHoursThoroughCommandHandlerTests
             new RecalculatePeriodHoursThoroughCommand(WindowStart, WindowEnd), CancellationToken.None);
 
         result.ShouldBe(new PeriodHoursRecalculationResult(true, 3));
-        _queue.Received(1).QueueRecalculation(WindowStart, WindowEnd, null, null, null, false);
+        _queue.Received(1).QueueRecalculation(WindowStart, WindowEnd, null, null, null, false, ownWorkChangesOnly: false);
         await _auditLogRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }
 

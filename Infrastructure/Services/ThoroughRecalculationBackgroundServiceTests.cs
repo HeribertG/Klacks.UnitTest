@@ -497,6 +497,48 @@ public class ThoroughRecalculationBackgroundServiceTests
         _sut.PendingRequestCount.ShouldBe(2);
     }
 
+    [Test]
+    public async Task ProcessRequest_ScopedWithoutOwnWorkChangesOnly_AlsoReprocessesTheWorkChangeWhereAScopedClientReplaces()
+    {
+        var scopedClient = Guid.NewGuid();
+        var foreignWork = AddWork(Guid.NewGuid(), new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        var replacement = AddWorkChange(foreignWork, replaceClientId: scopedClient);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, new[] { scopedClient });
+        await RunUntilCompletionNotificationAsync();
+
+        await _workMacroService.Received(1).ProcessWorkChangeMacroAsync(Arg.Is<WorkChange>(wc => wc.Id == replacement.Id));
+    }
+
+    [Test]
+    public async Task ProcessRequest_OwnWorkChangesOnly_SkipsTheWorkChangeOnAForeignWork_ButKeepsTheOwnOne()
+    {
+        var scopedClient = Guid.NewGuid();
+        var foreignWork = AddWork(Guid.NewGuid(), new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        var ownWork = AddWork(scopedClient, new DateOnly(2026, 6, 11), WorkLockLevel.None);
+        var foreignReplacement = AddWorkChange(foreignWork, replaceClientId: scopedClient);
+        var ownChange = AddWorkChange(ownWork, replaceClientId: Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, new[] { scopedClient }, ownWorkChangesOnly: true);
+        await RunUntilCompletionNotificationAsync();
+
+        await _workMacroService.DidNotReceive().ProcessWorkChangeMacroAsync(Arg.Is<WorkChange>(wc => wc.Id == foreignReplacement.Id));
+        await _workMacroService.Received(1).ProcessWorkChangeMacroAsync(Arg.Is<WorkChange>(wc => wc.Id == ownChange.Id));
+    }
+
+    [Test]
+    public void QueueRecalculation_AnOwnWorkChangesOnlyRequest_DoesNotCoalesceIntoAPendingRequestWithoutIt()
+    {
+        var clientIds = new[] { Guid.NewGuid() };
+
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, clientIds).ShouldBeTrue();
+        _sut.QueueRecalculation(_startDate, _endDate, null, null, clientIds, ownWorkChangesOnly: true).ShouldBeTrue();
+
+        _sut.PendingRequestCount.ShouldBe(2);
+    }
+
     private void StubPayPeriods(
         DateOnly windowStart, DateOnly windowEnd, params (DateOnly Start, DateOnly End)[] payPeriods)
     {
@@ -548,13 +590,14 @@ public class ThoroughRecalculationBackgroundServiceTests
         });
     }
 
-    private WorkChange AddWorkChange(Work work)
+    private WorkChange AddWorkChange(Work work, Guid? replaceClientId = null)
     {
         var workChange = new WorkChange
         {
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Work = work,
+            ReplaceClientId = replaceClientId,
         };
         _context.WorkChange.Add(workChange);
         return workChange;
