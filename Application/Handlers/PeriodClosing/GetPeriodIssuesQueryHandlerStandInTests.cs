@@ -2,8 +2,9 @@
 
 /// <summary>
 /// GetPeriodIssuesQueryHandler and services on stand-ins: the handler adds one Error entry with the count of
-/// IPeriodSealCompletenessGuard.CountStandInWorksAsync for the same period and group, so the error count the automatic
-/// close and the close advice read (PeriodCloseGates.CountErrors) stops on it; without stand-in services nothing is added.
+/// IPeriodSealCompletenessGuard.CountStandInWorksAsync for the same period and group, so the issues card shows it; the error
+/// count the automatic close and the close advice read (PeriodCloseGates.CountErrors) leaves it out, because both refuse on
+/// stand-ins on their own before the errors and no acknowledgement lifts that; without stand-in services nothing is added.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -60,7 +61,7 @@ public class GetPeriodIssuesQueryHandlerStandInTests
         entry.ClientId.ShouldBe(Guid.Empty);
         entry.Date.ShouldBe(From);
         entry.MessageParams["count"].ShouldBe("3");
-        PeriodCloseGates.CountErrors(issues).ShouldBe(1);
+        PeriodCloseGates.CountErrors(issues).ShouldBe(0);
     }
 
     [Test]

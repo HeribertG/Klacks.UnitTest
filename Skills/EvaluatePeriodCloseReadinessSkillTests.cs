@@ -7,6 +7,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.PeriodClosing;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.PeriodClosing;
 using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Queries.PeriodClosing;
@@ -184,6 +185,23 @@ public class EvaluatePeriodCloseReadinessSkillTests
 
         evaluation.UnsealedWorkCount.ShouldBe(6);
         evaluation.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
+    }
+
+    [Test]
+    public async Task StandInServicesOfTheGroup_AreCountedThroughTheSharedGuard_AndStopTheAdvice_NotAsAnOpenError()
+    {
+        _sealGuard.CountStandInWorksAsync(AugustStart, AugustEnd, _group.Id, Arg.Any<CancellationToken>()).Returns(2);
+        _mediator.Send(Arg.Any<GetPeriodIssuesQuery>(), Arg.Any<CancellationToken>()).Returns(new List<PeriodIssueDto>
+        {
+            new() { Severity = ScheduleValidationType.Error, Code = PeriodIssueLimits.StandInWorksCode }
+        });
+
+        var evaluation = await EvaluateAsync();
+
+        evaluation.StandInWorkCount.ShouldBe(2);
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.AssignStandInWorksFirst);
+        evaluation.ErrorCount.ShouldBe(0);
+        evaluation.Findings.ShouldNotContain(finding => finding.Code == PeriodCloseFindingCode.OpenErrors);
     }
 
     [Test]

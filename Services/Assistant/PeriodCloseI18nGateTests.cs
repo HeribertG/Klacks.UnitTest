@@ -37,7 +37,8 @@ public class PeriodCloseI18nGateTests
         ProactiveMessageI18nKeys.PeriodAutoCloseBlockedAutonomyBelowFull,
         ProactiveMessageI18nKeys.PeriodAutoCloseBlockedAdminAutonomyMissing,
         ProactiveMessageI18nKeys.PeriodAutoCloseBlockedTickLimit,
-        ProactiveMessageI18nKeys.PeriodAutoCloseBlockedUnsealedWorks
+        ProactiveMessageI18nKeys.PeriodAutoCloseBlockedUnsealedWorks,
+        ProactiveMessageI18nKeys.PeriodAutoCloseBlockedStandInWorks
     ];
 
     /// <summary>Every period message key with the parameters its event emits.</summary>
@@ -71,6 +72,8 @@ public class PeriodCloseI18nGateTests
         emitted[ProactiveMessageI18nKeys.PeriodAutoCloseBlockedTickLimit]
             .ShouldBe(new[] { "group", "from", "until", "errors", "limit" }, ignoreOrder: true);
         emitted[ProactiveMessageI18nKeys.PeriodAutoCloseBlockedUnsealedWorks]
+            .ShouldBe(new[] { "group", "from", "until", "errors", "works" }, ignoreOrder: true);
+        emitted[ProactiveMessageI18nKeys.PeriodAutoCloseBlockedStandInWorks]
             .ShouldBe(new[] { "group", "from", "until", "errors", "works" }, ignoreOrder: true);
         emitted[ProactiveMessageI18nKeys.PeriodAutoCloseBlockedAutonomyBelowFull]
             .ShouldBe(new[] { "group", "from", "until", "errors" }, ignoreOrder: true);

@@ -196,6 +196,25 @@ public class PeriodCloseReadinessParityTests
     }
 
     [Test]
+    public async Task StandInServices_BothStop_WithTheSameCount_AndBeforeTheErrors()
+    {
+        StubIssues(ScheduleValidationType.Error);
+        _sealGuard.CountStandInWorksAsync(AugustStart, AugustEnd, _group.Id, Arg.Any<CancellationToken>()).Returns(2);
+
+        var advice = await AdviseAsync();
+        var events = await RunAutoCloseAsync();
+
+        advice.Verdict.ShouldBe(PeriodCloseVerdict.AssignStandInWorksFirst);
+        advice.StandInWorkCount.ShouldBe(2);
+        advice.Findings.First().Code.ShouldBe(PeriodCloseFindingCode.StandInWorks);
+        advice.Findings.First().IsBlocking.ShouldBeTrue();
+        var blocked = events.Single().ShouldBeOfType<PeriodAutoCloseBlockedTriggerEvent>();
+        blocked.Reason.ShouldBe(PeriodAutoCloseBlockReason.StandInWorks);
+        blocked.StandInWorkCount.ShouldBe(advice.StandInWorkCount);
+        await _mediator.DidNotReceive().Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task WarningsOnly_NeitherPathStops()
     {
         StubIssues(ScheduleValidationType.Warning);

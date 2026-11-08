@@ -84,6 +84,55 @@ public class PeriodCloseReadinessAdvisorTests
     }
 
     [Test]
+    public void StandInServices_AreAssignFirst_ABlockingFindingThatNamesTheRemedies_AndOffersNoCloseAnyway()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { StandInWorkCount = 3 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.AssignStandInWorksFirst);
+        evaluation.StandInWorkCount.ShouldBe(3);
+        var finding = evaluation.Findings.Single(f => f.Code == PeriodCloseFindingCode.StandInWorks);
+        finding.IsBlocking.ShouldBeTrue();
+        finding.Statement.ShouldContain("3 service(s)");
+        finding.Statement.ShouldContain("moved to real people");
+        finding.Statement.ShouldContain("converted");
+        finding.Statement.ShouldContain("no acknowledgement lifts that");
+        evaluation.Recommendation.ShouldContain("Do not close yet");
+        evaluation.Recommendation.ShouldContain("3 service(s)");
+        evaluation.Recommendation.ShouldNotContain("seal anyway");
+        evaluation.Recommendation.ShouldNotContain("ready to be closed");
+    }
+
+    [Test]
+    public void UnsealedServices_ComeBeforeStandInServices_AsInTheCloseGuard_AndBothAreNamed()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { UnsealedWorkCount = 2, StandInWorkCount = 3 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.ConfirmServicesFirst);
+        Codes(evaluation).Take(2).ShouldBe(new[] { PeriodCloseFindingCode.UnsealedWorks, PeriodCloseFindingCode.StandInWorks });
+        evaluation.Recommendation.ShouldContain("3 service(s) lie on placeholders");
+    }
+
+    [Test]
+    public void StandInServices_ComeBeforeOpenErrors()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { StandInWorkCount = 1, ErrorCount = 2 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.AssignStandInWorksFirst);
+        Codes(evaluation).First().ShouldBe(PeriodCloseFindingCode.StandInWorks);
+        Codes(evaluation).ShouldContain(PeriodCloseFindingCode.OpenErrors);
+    }
+
+    [Test]
+    public void StandInServices_OfARunningPeriod_StayAWait_ButAreNamed()
+    {
+        var evaluation = PeriodCloseReadinessAdvisor.Evaluate(
+            Facts() with { Today = new DateOnly(2026, 8, 20), StandInWorkCount = 4 });
+
+        evaluation.Verdict.ShouldBe(PeriodCloseVerdict.WaitUntilDue);
+        evaluation.Recommendation.ShouldContain("4 service(s) lie on placeholders");
+    }
+
+    [Test]
     public void Warnings_NeverStopTheClose()
     {
         var evaluation = PeriodCloseReadinessAdvisor.Evaluate(Facts() with { WarningCount = 4 });

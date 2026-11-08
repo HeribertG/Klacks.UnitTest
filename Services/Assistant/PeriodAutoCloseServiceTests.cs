@@ -556,6 +556,58 @@ public class PeriodAutoCloseServiceTests
     }
 
     [Test]
+    public async Task RunAsync_ServicesOfThePeriodLieOnStandIns_NeverClosesAndReportsTheCount()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        _freshSealGuard.CountStandInWorksAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(4);
+
+        var events = await CreateSut().RunAsync();
+
+        var blocked = SingleBlocked(events);
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(PeriodAutoCloseBlockReason.StandInWorks));
+            Assert.That(blocked.StandInWorkCount, Is.EqualTo(4));
+            Assert.That(blocked.UnsealedWorkCount, Is.EqualTo(0));
+            Assert.That(blocked.ErrorCount, Is.EqualTo(0));
+            Assert.That(blocked.SummaryParams["works"], Is.EqualTo("4"));
+            Assert.That(blocked.Summary, Does.EndWith(ProactiveMessageI18nKeys.PeriodAutoCloseBlockedStandInWorks));
+            Assert.That(blocked.DedupKey, Does.EndWith(":auto-close-blocked:StandInWorks"));
+        });
+        await AssertNothingSentToTheCloseHandlerAsync();
+        await _freshMediator.DidNotReceive().Send(Arg.Any<GetPeriodIssuesQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_UnsealedServices_AreReportedBeforeStandInServices()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        _freshSealGuard.CountUnsealedAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(1);
+        _freshSealGuard.CountStandInWorksAsync(AugustStart, AugustEnd, group.Id, Arg.Any<CancellationToken>()).Returns(2);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(SingleBlocked(events).Reason, Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
+    }
+
+    [Test]
+    public async Task RunAsync_HandlerRefusesWithStandInServices_ReportsStandInWorksNotFailed()
+    {
+        StubGroups(MakeGroup());
+        _freshMediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new StandInWorksPresentException(5));
+
+        var events = await CreateSut().RunAsync();
+
+        var blocked = SingleBlocked(events);
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(PeriodAutoCloseBlockReason.StandInWorks));
+            Assert.That(blocked.StandInWorkCount, Is.EqualTo(5));
+        });
+    }
+
+    [Test]
     public async Task RunAsync_HandlerRefusesThePermission_ReportsRefused()
     {
         StubGroups(MakeGroup());
@@ -937,6 +989,20 @@ public class PeriodAutoCloseServiceTests
         Assert.That(events.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
         Assert.That(events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Single().Reason,
             Is.EqualTo(PeriodAutoCloseBlockReason.UnsealedWorks));
+    }
+
+    [Test]
+    public async Task RunAsync_GroupsBlockedByStandInServices_DoNotUseUpTheCap()
+    {
+        var groups = StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 1)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+        _freshSealGuard.CountStandInWorksAsync(AugustStart, AugustEnd, groups[0].Id, Arg.Any<CancellationToken>()).Returns(2);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
+        Assert.That(events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Single().Reason,
+            Is.EqualTo(PeriodAutoCloseBlockReason.StandInWorks));
     }
 
     [Test]
