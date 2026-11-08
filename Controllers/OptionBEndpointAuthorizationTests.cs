@@ -5,7 +5,9 @@
 /// target model stays readable from the tests: a caller without any role (Planer) writes work,
 /// absences and notes; everything that shapes the installation stays with Admin or Authorised.
 /// Attribute-level only — the runtime effect of these attributes is the subject of
-/// AuthorizeAttributeInheritanceTests and ControllerAuthorizeSchemeGuardTests.
+/// AuthorizeAttributeInheritanceTests and ControllerAuthorizeSchemeGuardTests. The absence TYPES
+/// (AbsencesController) are a setting and Admin-only since the owner decision of 2026-11-08; that pin lives in
+/// WorkAreaEndpointAuthorizationTests, which intersects the override's Admin attribute with the inherited one.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -95,15 +97,6 @@ public class OptionBEndpointAuthorizationTests
                 $"{controller.Name}.{methodName} must stay open to a caller without any role (Planer): " +
                 "work, employee absences and client notes are the Planer's own write surface.");
         }
-    }
-
-    [Test]
-    public void AbsencesController_TheAbsenceTypes_StayWithAdminAndAuthorised()
-    {
-        RolesOf(typeof(AbsencesController), "Post").ShouldBe(
-            AdminAndAuthorised,
-            "AbsencesController manages the absence TYPES, which are a settings concern — not the " +
-            "employee absences a Planer records (those are BreakPlaceholders and Breaks).");
     }
 
     private static string? RolesOf(Type controller, string methodName)

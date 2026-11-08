@@ -6,7 +6,9 @@
 /// CRUD controller serving one of these resources are Admin-only, while the reads of the main controllers stay open to
 /// every authenticated caller. The controllers are discovered by reflection (ICrudResourceController of a settings
 /// resource), because a second controller on the same resource (AssignedGroupsController next to GroupsController)
-/// would otherwise reopen the write unnoticed. The overrides only add [Authorize(Roles = Admin)] to the inherited
+/// would otherwise reopen the write unnoticed. The owner decision of 2026-11-08 (all settings are Admin work) added
+/// the absence types with their extended absences, the monthly target hours, the individual periods, the countries
+/// and the states. The overrides only add [Authorize(Roles = Admin)] to the inherited
 /// Admin/Authorised attribute; both are AND-combined (AuthorizeAttributeInheritanceTests), so the roles an endpoint
 /// admits are the intersection of every role-bearing attribute on the action and on its type chain.
 /// </summary>
@@ -14,10 +16,15 @@
 using System.Reflection;
 using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.DTOs.Scheduling;
+using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.DTOs.Settings;
 using Klacks.Api.Presentation.Controllers.UserBackend.Associations;
+using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Klacks.Api.Presentation.Controllers.UserBackend.Scheduling;
+using Klacks.Api.Presentation.Controllers.UserBackend.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shouldly;
@@ -29,8 +36,9 @@ public class WorkAreaEndpointAuthorizationTests
 {
     private const string PostAction = "Post";
     private const string PutAction = "Put";
+    private const string DeleteAction = "Delete";
     private const string GetAction = "Get";
-    private const int MinimumSettingsControllers = 7;
+    private const int MinimumSettingsControllers = 14;
 
     private static readonly Type[] SettingsResources =
     [
@@ -39,7 +47,13 @@ public class WorkAreaEndpointAuthorizationTests
         typeof(SchedulingRuleResource),
         typeof(CounterRuleResource),
         typeof(PeriodCapRuleResource),
-        typeof(RestrictedTimeWindowRuleResource)
+        typeof(RestrictedTimeWindowRuleResource),
+        typeof(AbsenceResource),
+        typeof(AbsenceDetailResource),
+        typeof(MonthlyTargetHoursResource),
+        typeof(IndividualPeriodResource),
+        typeof(CountryResource),
+        typeof(StateResource)
     ];
 
     private static readonly Type[] SettingsReadControllers =
@@ -49,14 +63,21 @@ public class WorkAreaEndpointAuthorizationTests
         typeof(SchedulingRulesController),
         typeof(CounterRulesController),
         typeof(PeriodCapRulesController),
-        typeof(RestrictedTimeWindowRulesController)
+        typeof(RestrictedTimeWindowRulesController),
+        typeof(AbsencesController),
+        typeof(AbsenceDetailsController),
+        typeof(MonthlyTargetHoursController),
+        typeof(IndividualPeriodsController),
+        typeof(CountriesController),
+        typeof(StatesController)
     ];
 
     private static IEnumerable<TestCaseData> SettingsWrites() =>
         SettingsControllers().SelectMany(controller => new[]
         {
             new TestCaseData(controller, PostAction).SetName($"{controller.Name}_{PostAction}_IsAdminOnly"),
-            new TestCaseData(controller, PutAction).SetName($"{controller.Name}_{PutAction}_IsAdminOnly")
+            new TestCaseData(controller, PutAction).SetName($"{controller.Name}_{PutAction}_IsAdminOnly"),
+            new TestCaseData(controller, DeleteAction).SetName($"{controller.Name}_{DeleteAction}_IsAdminOnly")
         });
 
     private static IEnumerable<TestCaseData> SettingsReads() =>
@@ -73,6 +94,8 @@ public class WorkAreaEndpointAuthorizationTests
             "The scan found fewer controllers than are known to serve a settings resource; an empty or short list proves nothing.");
         discovered.ShouldContain(typeof(GroupsController));
         discovered.ShouldContain(typeof(ContractsController));
+        discovered.ShouldContain(typeof(AbsencesController));
+        discovered.ShouldContain(typeof(StatesController));
     }
 
     [TestCaseSource(nameof(SettingsWrites))]
@@ -97,7 +120,8 @@ public class WorkAreaEndpointAuthorizationTests
 
         EffectiveRoles(controller, read).ShouldBeNull(
             $"{controller.Name}.{GetAction} must stay readable for the Planer and the Supervisor: the employee " +
-            "card lists the contracts, and every page reads the group tree.");
+            "card lists the contracts, every page reads the group tree, the schedule reads the absence types and " +
+            "addresses read the countries and states.");
     }
 
     private static IEnumerable<Type> SettingsControllers() =>
