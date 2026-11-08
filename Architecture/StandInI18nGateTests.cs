@@ -5,7 +5,9 @@
 /// all four core catalogues of Klacks.Ui and in every language plugin (owner rule: all 25 languages, no English
 /// fallback): the type name and the schedule filter, the row header tooltip, the payroll blocker, the period issue,
 /// the refused period close and the refused delete, and the two dialogs "create placeholders" and "convert into
-/// employee" with their labels, refusals and results and the placeholder's master data card. Follows
+/// employee" with their labels, refusals and results and the placeholder's master data card, and the more-actions menu
+/// of the schedule toolbar that opens "create placeholders" (its tooltip, the hint without a selected group and the
+/// placeholder text of the qualification pull-down). Follows
 /// ContractStandardRatesI18nGateTests: the Klacks.Ui half reports inconclusive when that repository is not checked
 /// out next to Klacks.Api.
 /// </summary>
@@ -38,6 +40,7 @@ public class StandInI18nGateTests
         "standIn.create.validFrom",
         "standIn.create.validUntil",
         "standIn.create.qualifications",
+        "standIn.create.qualificationsPlaceholder",
         "standIn.create.noQualifications",
         "standIn.create.submit",
         "standIn.create.success",
@@ -56,6 +59,8 @@ public class StandInI18nGateTests
         "standIn.convert.invalid.address",
         "standIn.persona.displayName",
         "standIn.persona.hint",
+        "schedule.toolbar.more-actions",
+        "schedule.toolbar.needsGroup",
     ];
 
     private const string UiCatalogueRelativePath = "Klacks.Ui/src/assets/i18n";
