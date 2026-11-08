@@ -439,6 +439,7 @@ public class WizardContextBuilderTests
         {
             personWithHours.ToString(), personWithoutHours.ToString(), standInWithHours.ToString(), standIn.ToString(),
         });
+        result.Agents.Select(a => a.IsStandIn).ShouldBe(new[] { false, false, true, true });
     }
 
     private void SetupContractsWithGuaranteedHours(IReadOnlyDictionary<Guid, decimal> guaranteedHoursPerAgent)
