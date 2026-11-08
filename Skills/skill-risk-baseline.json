@@ -211,6 +211,7 @@
   "explain_payroll_export_handoff": "ReadOnly",
   "explain_period_closing_model": "ReadOnly",
   "explain_personal_access_tokens": "ReadOnly",
+  "explain_placeholder_employees": "ReadOnly",
   "explain_planning_assistant": "ReadOnly",
   "explain_planning_divide_et_impera": "ReadOnly",
   "explain_planning_sheets_modular": "ReadOnly",
