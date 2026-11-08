@@ -49,7 +49,7 @@ public class PutCommandHandlerTests
         _userService = Substitute.For<IUserService>();
 
         // The default caller is the Planer floor: every authenticated user holds it, and it carries
-        // CanViewContracts but not CanEditContracts, so the contract branch still refuses by default.
+        // CanViewClients but not CanEditClients, so the contract branch still refuses by default.
         _userService.GetRights().Returns(Permissions.PlannerFloor);
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
@@ -182,20 +182,19 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit employees");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     /// <summary>
-    /// The owner decision of 21.09.2026: assigning, re-dating and detaching a person's contract is
-    /// supervisor work. The supervisor is not an admin, so the old IsAdmin() gate refused them — and the
-    /// Ui offered the form all the same, which made the card a dead end for the role that is supposed to
-    /// use it.
+    /// The owner decision of 21.09.2026, confirmed by the work-area rule of 2026-11-07: assigning, re-dating
+    /// and detaching a person's contract is employee maintenance and supervisor work, gated by CanEditClients.
+    /// The supervisor is not an admin, so the old IsAdmin() gate refused them.
     /// </summary>
     [Test]
-    public async Task Handle_NonAdminHoldingCanEditContracts_CanModifyClientContracts()
+    public async Task Handle_NonAdminHoldingCanEditClients_CanModifyClientContracts()
     {
         var clientId = Guid.NewGuid();
         var contractId = Guid.NewGuid();
@@ -243,11 +242,61 @@ public class PutCommandHandlerTests
     }
 
     /// <summary>
+    /// The contract-template right alone does not open the assignment: since 2026-11-07 the assignment is employee
+    /// maintenance and runs under CanEditClients, while CanEditContracts only governs the templates (settings).
+    /// </summary>
+    [Test]
+    public async Task Handle_NonAdminHoldingOnlyTheTemplateRight_CannotModifyClientContracts()
+    {
+        var clientId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.ClientContracts = new List<ClientContract>
+        {
+            new ClientContract
+            {
+                Id = contractId,
+                ContractId = Guid.NewGuid(),
+                IsActive = true,
+                FromDate = new DateOnly(2024, 1, 1),
+                UntilDate = null
+            }
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>
+            {
+                new ClientContractResource
+                {
+                    Id = contractId,
+                    ContractId = Guid.NewGuid(),
+                    IsActive = false,
+                    FromDate = new DateOnly(2024, 6, 1),
+                    UntilDate = new DateOnly(2024, 12, 31)
+                }
+            },
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
+        _userService.GetRights().Returns(new List<string> { Permissions.CanViewClients, Permissions.CanEditContracts });
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+
+        Func<Task> act = async () => await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit employees");
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+    }
+
+    /// <summary>
     /// A supervisor changing contracts in the same request may change memberships only within visible groups,
     /// so the widened contract gate cannot be used to pull a client into a hidden group.
     /// </summary>
     [Test]
-    public async Task Handle_NonAdminHoldingCanEditContracts_CannotAddAHiddenGroup()
+    public async Task Handle_NonAdminHoldingCanEditClients_CannotAddAHiddenGroup()
     {
         var clientId = Guid.NewGuid();
         var existingClient = new Client
@@ -561,7 +610,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit employees");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
@@ -603,7 +652,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit employees");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }

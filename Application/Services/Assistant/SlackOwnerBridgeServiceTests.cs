@@ -210,7 +210,7 @@ public class SlackOwnerBridgeServiceTests
                 // Capped at Authorised: the supervisor rights are present, Admin is not — neither as a
                 // granular right nor as the role string the executor's admin bypass matches on.
                 c.UserRights.Contains(Permissions.CanEditShifts) &&
-                !c.UserRights.Contains(Permissions.CanDeleteShifts) &&
+                !c.UserRights.Contains(Permissions.CanDeleteClients) &&
                 !c.UserRights.Contains(Roles.Admin) &&
                 c.AccessToken != null),
             Arg.Any<CancellationToken>());

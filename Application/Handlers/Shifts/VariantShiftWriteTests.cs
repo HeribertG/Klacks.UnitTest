@@ -534,13 +534,13 @@ public class VariantShiftWriteTests
     }
 
     [Test]
-    public void ShiftDelete_StaysAdminOnly_AndNeedsNoVariantTokenDoor()
+    public void ShiftDelete_IsASupervisorAction_AndNeedsNoVariantTokenDoor()
     {
         var action = ControllerAction(nameof(ShiftsController.Delete));
 
         action.GetCustomAttribute<AllowVariantTokenAttribute>().ShouldBeNull();
         action.GetCustomAttributes<AuthorizeAttribute>(inherit: true).Single().Roles
-            .ShouldBe(Klacks.Api.Domain.Constants.Roles.Admin);
+            .ShouldBe($"{Klacks.Api.Domain.Constants.Roles.Admin},{Klacks.Api.Domain.Constants.Roles.Authorised}");
     }
 
     private static MethodInfo ControllerAction(string name)
@@ -680,7 +680,7 @@ public class VariantShiftWriteTests
         new ScheduleMapper(),
         _unitOfWork,
         Substitute.For<ISealedOrderFamilyDeletion>(),
-        Substitute.For<IHttpContextAccessor>(),
+        Substitute.For<Klacks.Api.Domain.Interfaces.IUserService>(),
         ShiftVisibilityGuards.AllowAll(),
         _writeGuard,
         Substitute.For<ILogger<DeleteCommandHandler>>());

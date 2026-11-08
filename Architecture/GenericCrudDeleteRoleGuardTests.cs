@@ -3,9 +3,9 @@
 /// <summary>
 /// Holds the generic CRUD DELETE verb at Admin-only. InputBaseController.Delete used to carry
 /// [Authorize(Roles = Admin,Authorised)] — a role check from before the granular rights model, inherited
-/// unchanged by every derived controller, so a supervisor could delete contracts, shifts, absences,
-/// countries and group subtrees although Permissions.GetPermissionsForRole grants the Authorised role no
-/// CanDelete* right at all.
+/// unchanged by every derived controller, so a supervisor could delete contracts, absences, countries and
+/// group subtrees although Permissions.GetPermissionsForRole grants the Authorised role no CanDelete* right
+/// beyond CanDeleteShifts (orders and shifts are its work area, owner decision 2026-11-07).
 ///
 /// Why this is a per-type guard rather than a single assertion on the base method: an [Authorize] on an
 /// override is AND-combined with the base one (AuthorizeAttributeInheritanceTests), so the roles an
@@ -47,7 +47,11 @@ public class GenericCrudDeleteRoleGuardTests
                 "Membership removal is a supervisor action (spec 2.3 pins the sibling action " +
                 "RemoveByClientAndGroup that way), and the skills remove_client_from_group " +
                 "(CanEditClients) and remove_shift_from_group (CanEditShifts) delete by id through the " +
-                "self API under the caller's own token, so an Admin-only DELETE would answer them 403."
+                "self API under the caller's own token, so an Admin-only DELETE would answer them 403.",
+            ["ShiftsController"] =
+                "Orders and shifts are the supervisor's work area (owner decision 2026-11-07): the Authorised " +
+                "role holds CanDeleteShifts, the Ui shows the order delete button under that right, and " +
+                "delete_shift (CanDeleteShifts) dispatches the same DeleteCommand<ShiftResource>."
         };
 
     [Test]
@@ -84,8 +88,8 @@ public class GenericCrudDeleteRoleGuardTests
         }
 
         violations.ShouldBeEmpty(
-            "Deleting a record is an administrative act under the granular rights model: the Authorised " +
-            "role holds CanCreate*/CanEdit* but no CanDelete* right. A controller whose DELETE really is a " +
+            "Deleting a record is an administrative act under the granular rights model: the only delete " +
+            "right of the Authorised role is CanDeleteShifts. A controller whose DELETE really is a " +
             "supervisor action derives from SupervisorDeletableController and is named in " +
             $"{nameof(SupervisorDeletableWithReason)} together with the flow that makes it one." +
             $"{Environment.NewLine}{report}");

@@ -3,10 +3,11 @@
 /// <summary>
 /// Pins the three client-contract seed permissions to the rule the write path actually enforces. All
 /// three skills mutate Client.ClientContracts and save the whole aggregate with PUT api/backend/Clients,
-/// so PutCommandHandler is the gate they have to agree with — and since the owner decision of 21.09.2026
-/// that gate is CanEditContracts, not the Admin role: assigning, re-dating and detaching a person's
-/// contract is supervisor work, while the contract TEMPLATE stays administrative (create_contract keeps
-/// CanCreateContracts, delete_contract keeps CanDeleteContracts).
+/// so PutCommandHandler is the gate they have to agree with — and since the owner decision of 2026-11-07
+/// (roles are work areas) that gate is CanEditClients: assigning, re-dating and detaching a person's
+/// contract is employee maintenance and supervisor work, while the contract TEMPLATE is a setting and
+/// Admin-only (create_contract keeps CanCreateContracts, delete_contract keeps CanDeleteContracts, and
+/// the Authorised role no longer expands to any of the Can*Contracts write rights).
 ///
 /// The seed is the only autorising difference between the two roles here: ClientsController.Put carries
 /// no role restriction at all, so a seed that still said "Admin" would hide from a supervisor a tool the
@@ -49,16 +50,35 @@ public class ClientContractSkillPermissionTests
         };
 
     [TestCaseSource(nameof(ContractMutatingSkills))]
-    public void ContractAssignmentSkill_RequiresExactlyTheContractEditingRight(string skillName)
+    public void ContractAssignmentSkill_RequiresExactlyTheEmployeeEditingRight(string skillName)
     {
         var permissions = PermissionsOf(skillName);
 
         permissions.ShouldBe(
-            new List<string> { Permissions.CanEditContracts },
+            new List<string> { Permissions.CanEditClients },
             $"'{skillName}' changes the contract ASSIGNMENT of one person, which PutCommandHandler allows " +
-            "to every caller holding CanEditContracts since the owner decision of 21.09.2026. A wider " +
-            "entry (the Admin role) hides the tool from a supervisor the endpoint would accept; a " +
-            "different one lets the assistant propose a call the handler then refuses.");
+            "to every caller holding CanEditClients since the owner decision of 2026-11-07. The template " +
+            "right CanEditContracts is Admin-only now and would hide the tool from a supervisor the " +
+            "endpoint accepts; a different one lets the assistant propose a call the handler then refuses.");
+    }
+
+    [TestCaseSource(nameof(ContractMutatingSkills))]
+    public void ContractAssignmentSkill_IsHeldByASupervisorButNotByThePlannerFloor(string skillName)
+    {
+        var permissions = PermissionsOf(skillName);
+
+        permissions.All(Permissions.ExpandRoles(new[] { Roles.Authorised }).Contains).ShouldBeTrue(
+            $"'{skillName}' is employee maintenance, which the Supervisor may do.");
+        permissions.All(Permissions.PlannerFloor.Contains).ShouldBeFalse(
+            $"'{skillName}' would be reachable by a caller without a role.");
+    }
+
+    [TestCaseSource(nameof(ContractTemplateSkills))]
+    public void ContractTemplateSkill_IsAdminOnly(KeyValuePair<string, string> skill)
+    {
+        Permissions.ExpandRoles(new[] { Roles.Authorised }).ShouldNotContain(
+            skill.Value,
+            $"'{skill.Key}' writes a contract template, which is a setting and Admin-only (owner decision 2026-11-07).");
     }
 
     [TestCaseSource(nameof(ContractTemplateSkills))]

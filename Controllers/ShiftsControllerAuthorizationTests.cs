@@ -142,14 +142,14 @@ public class ShiftsControllerAuthorizationTests
     }
 
     [Test]
-    public void ShiftsController_ShouldInheritFromInputBaseController()
+    public void ShiftsController_ShouldInheritFromSupervisorDeletableController()
     {
         // Arrange & Act
         var baseType = typeof(ShiftsController).BaseType;
 
         // Assert
         baseType.ShouldNotBeNull();
-        baseType!.Name.ShouldBe("InputBaseController`1",
-            "ShiftsController should inherit authorization from InputBaseController");
+        baseType!.Name.ShouldBe("SupervisorDeletableController`1",
+            "Orders and shifts are the supervisor's work area (owner decision 2026-11-07), so DELETE is open to Admin and Authorised");
     }
 }

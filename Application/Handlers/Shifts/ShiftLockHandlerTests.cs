@@ -53,14 +53,14 @@ public class ShiftLockHandlerTests
             Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
             _shiftFamilyEndService,
             Substitute.For<ILogger<PutCommandHandler>>());
-        var accessor = Substitute.For<IHttpContextAccessor>();
-        accessor.HttpContext.Returns((HttpContext?)null);
+        var userService = Substitute.For<Klacks.Api.Domain.Interfaces.IUserService>();
+        userService.GetRights().Returns(Klacks.Api.Domain.Constants.Permissions.PlannerFloor);
         _deleteHandler = new DeleteCommandHandler(
             _shiftRepository,
             _mapper,
             _unitOfWork,
             Substitute.For<ISealedOrderFamilyDeletion>(),
-            accessor,
+            userService,
             ShiftVisibilityGuards.AllowAll(),
             Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());

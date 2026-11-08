@@ -89,19 +89,56 @@ public class PermissionsTests
     }
 
     /// <summary>
-    /// Owner decision 2026-09-21: creating a group is a Supervisor right, deleting one and touching the
-    /// settings are not. Every group-creation path (create_group, the Groups POST endpoint, the Angular
-    /// button) resolves to CanCreateGroups, so the role expansion is where that decision lives.
+    /// Owner decision 2026-11-07, roles are work areas (supersedes 2026-09-21, when creating a group was a
+    /// Supervisor right): the group structure and the contract templates are settings and Admin-only, so the
+    /// Supervisor holds none of Can(Create|Edit|Delete)(Groups|Contracts). Assigning a contract or a group
+    /// membership is employee maintenance and runs under CanEditClients, which the Supervisor keeps.
     /// </summary>
     [Test]
-    public void ExpandRoles_Authorised_MayCreateGroupsButNotDeleteThem()
+    public void ExpandRoles_Authorised_HoldsNoGroupStructureOrContractTemplateRight()
     {
         var rights = Permissions.ExpandRoles(new[] { Roles.Authorised });
 
+        rights.ShouldContain(Permissions.CanViewGroups);
+        rights.ShouldContain(Permissions.CanViewContracts);
+        rights.ShouldContain(Permissions.CanEditClients);
+        rights.ShouldNotContain(Permissions.CanCreateGroups);
+        rights.ShouldNotContain(Permissions.CanEditGroups);
+        rights.ShouldNotContain(Permissions.CanDeleteGroups);
+        rights.ShouldNotContain(Permissions.CanCreateContracts);
+        rights.ShouldNotContain(Permissions.CanEditContracts);
+        rights.ShouldNotContain(Permissions.CanDeleteContracts);
+        rights.ShouldNotContain(Permissions.CanEditSettings);
+    }
+
+    /// <summary>
+    /// Owner decision 2026-11-07: orders and shifts are the Supervisor's work area, deleting them included;
+    /// deleting employees stays with the Admin.
+    /// </summary>
+    [Test]
+    public void ExpandRoles_Authorised_MayDeleteShiftsButNotEmployees()
+    {
+        var rights = Permissions.ExpandRoles(new[] { Roles.Authorised });
+
+        rights.ShouldContain(Permissions.CanCreateShifts);
+        rights.ShouldContain(Permissions.CanEditShifts);
+        rights.ShouldContain(Permissions.CanDeleteShifts);
+        rights.ShouldNotContain(Permissions.CanDeleteClients);
+    }
+
+    [Test]
+    public void ExpandRoles_Admin_HoldsTheGroupStructureAndContractTemplateRights()
+    {
+        var rights = Permissions.GetPermissionsForRole(Roles.Admin);
+
         rights.ShouldContain(Permissions.CanCreateGroups);
         rights.ShouldContain(Permissions.CanEditGroups);
-        rights.ShouldNotContain(Permissions.CanDeleteGroups);
-        rights.ShouldNotContain(Permissions.CanEditSettings);
+        rights.ShouldContain(Permissions.CanDeleteGroups);
+        rights.ShouldContain(Permissions.CanCreateContracts);
+        rights.ShouldContain(Permissions.CanEditContracts);
+        rights.ShouldContain(Permissions.CanDeleteContracts);
+        rights.ShouldContain(Permissions.CanDeleteShifts);
+        rights.ShouldContain(Permissions.CanDeleteClients);
     }
 
     [Test]

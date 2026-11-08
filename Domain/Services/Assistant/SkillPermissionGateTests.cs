@@ -55,16 +55,33 @@ public class SkillPermissionGateTests
     }
 
     /// <summary>
-    /// Owner decision 2026-09-21: an Admin and a Supervisor may create groups, a caller without a role
-    /// may not, and deleting one stays with the Admin. The gate is what decides it for every skill path,
-    /// so the three cases are pinned here rather than only in the seed file.
+    /// Owner decision 2026-11-07, roles are work areas (supersedes 2026-09-21): the group structure is a
+    /// setting, so only the Admin may create groups; a Supervisor and a caller without a role may not. The
+    /// gate is what decides it for every skill path, so the three cases are pinned here rather than only in
+    /// the seed file.
     /// </summary>
     [Test]
-    public async Task Supervisor_MayCreateGroups()
+    public async Task Supervisor_MayNotCreateGroups()
     {
         var user = GivenUser(Roles.Authorised);
 
-        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanCreateGroups]), Is.True);
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanCreateGroups]), Is.False);
+    }
+
+    [Test]
+    public async Task Supervisor_MayAssignContractsAndGroupMemberships()
+    {
+        var user = GivenUser(Roles.Authorised);
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanEditClients]), Is.True);
+    }
+
+    [Test]
+    public async Task Supervisor_MayDeleteShifts()
+    {
+        var user = GivenUser(Roles.Authorised);
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanDeleteShifts]), Is.True);
     }
 
     [Test]

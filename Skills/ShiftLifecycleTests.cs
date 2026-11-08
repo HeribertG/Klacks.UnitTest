@@ -3,8 +3,8 @@
 /// <summary>
 /// Unit tests for the shift-lifecycle skills + delete handler: update_shift patches only the supplied
 /// fields (times/weekdays survive when only the name is changed) and writes exactly one shift through the handler, which
-/// refuses locked content; delete_shift refuses cuts (redirecting to the cut editor) and active works, lets an administrator
-/// delete a whole sealed order family and leaves every other non-draft shift to the handler; the shift delete handler
+/// refuses locked content; delete_shift refuses cuts (redirecting to the cut editor) and active works, lets a caller holding
+/// CanDeleteShifts (Admin and supervisor) delete a whole sealed order family and leaves every other non-draft shift to the handler; the shift delete handler
 /// soft-deletes a draft via the repository and applies the same rules. Both skills answer a shift with an analyse token
 /// like a missing one, so a variant (key) stays out of reach of the assistant although the handlers accept it.
 /// </summary>
@@ -258,7 +258,6 @@ public class ShiftLifecycleTests
         UserPermissions = new List<string> { Roles.Admin, "CanEditShifts", "CanDeleteShifts" }
     };
 
-    [TestCase(ShiftStatus.SealedOrder)]
     [TestCase(ShiftStatus.OriginalShift)]
     [TestCase(ShiftStatus.SplitShift)]
     public async Task Delete_NonDraftShift_BySupervisor_IsLeftToTheHandlerWhichRefusesIt(ShiftStatus status)
@@ -278,6 +277,50 @@ public class ShiftLifecycleTests
 
         thrown.ConflictCode.ShouldBe(ShiftLockedException.ErrorCode);
         thrown.Message.ShouldContain(status.ToString());
+        await familyDeletion.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Delete_SealedOrder_BySupervisor_DeletesTheWholeFamily()
+    {
+        var order = ExistingShift(status: ShiftStatus.SealedOrder);
+        var repo = Substitute.For<IShiftRepository>();
+        repo.Get(ShiftId).Returns(order);
+        var familyDeletion = Substitute.For<ISealedOrderFamilyDeletion>();
+        familyDeletion.DeleteAsync(order, Arg.Any<CancellationToken>()).Returns(3);
+        var mediator = Substitute.For<IMediator>();
+        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion, ShiftVisibilityGuards.AllowAll());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
+
+        result.Success.ShouldBeTrue();
+        await familyDeletion.Received(1).DeleteAsync(order, Arg.Any<CancellationToken>());
+        await mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_SealedOrder_WithoutTheDeleteRight_IsLeftToTheHandlerWhichRefusesIt()
+    {
+        var order = ExistingShift(status: ShiftStatus.SealedOrder);
+        var repo = Substitute.For<IShiftRepository>();
+        repo.Get(ShiftId).Returns(order);
+        repo.HasActiveWorksAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(false);
+        var familyDeletion = Substitute.For<ISealedOrderFamilyDeletion>();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ShiftResource?>>(_ => throw ShiftLockedException.ForDelete(order));
+        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion, ShiftVisibilityGuards.AllowAll());
+        var plannerContext = new SkillExecutionContext
+        {
+            UserId = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            UserName = "planner",
+            UserPermissions = Permissions.PlannerFloor.ToList()
+        };
+
+        await Should.ThrowAsync<ShiftLockedException>(() =>
+            skill.ExecuteAsync(plannerContext, new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() }));
+
         await familyDeletion.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
     }
 
@@ -375,16 +418,10 @@ public class ShiftLifecycleTests
     private static DeleteCommandHandler HandlerFor(
         IShiftRepository repo, ISealedOrderFamilyDeletion familyDeletion, string? role, IUnitOfWork? uow = null)
     {
-        var accessor = Substitute.For<IHttpContextAccessor>();
-        var context = new DefaultHttpContext();
-        if (role != null)
-        {
-            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "test"));
-        }
-
-        accessor.HttpContext.Returns(context);
+        var userService = Substitute.For<Klacks.Api.Domain.Interfaces.IUserService>();
+        userService.GetRights().Returns(Permissions.ExpandRoles(role != null ? [role] : []));
         return new DeleteCommandHandler(
-            repo, new ScheduleMapper(), uow ?? Substitute.For<IUnitOfWork>(), familyDeletion, accessor, ShiftVisibilityGuards.AllowAll(),
+            repo, new ScheduleMapper(), uow ?? Substitute.For<IUnitOfWork>(), familyDeletion, userService, ShiftVisibilityGuards.AllowAll(),
             Substitute.For<Klacks.Api.Application.Interfaces.IVariantShiftWriteGuard>(), Substitute.For<ILogger<DeleteCommandHandler>>());
     }
 
@@ -419,9 +456,25 @@ public class ShiftLifecycleTests
         await repo.DidNotReceive().Delete(Arg.Any<Guid>());
     }
 
-    [TestCase(Roles.Authorised)]
+    [Test]
+    public async Task DeleteHandler_SealedOrder_BySupervisor_DeletesTheFamily()
+    {
+        var order = ExistingShift(status: ShiftStatus.SealedOrder);
+        var repo = Substitute.For<IShiftRepository>();
+        repo.Get(ShiftId).Returns(order);
+        var familyDeletion = Substitute.For<ISealedOrderFamilyDeletion>();
+        var handler = HandlerFor(repo, familyDeletion, Roles.Authorised);
+
+        var result = await handler.Handle(new DeleteCommand<ShiftResource>(ShiftId), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await familyDeletion.Received(1).DeleteAsync(order, Arg.Any<CancellationToken>());
+        await repo.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
     [TestCase(null)]
-    public async Task DeleteHandler_SealedOrder_ByAnyoneButTheAdministrator_IsRefused(string? role)
+    [TestCase("UnknownRole")]
+    public async Task DeleteHandler_SealedOrder_ByACallerWithoutTheDeleteRight_IsRefused(string? role)
     {
         var repo = Substitute.For<IShiftRepository>();
         repo.Get(ShiftId).Returns(ExistingShift(status: ShiftStatus.SealedOrder));

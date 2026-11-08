@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Pins the seeded rights of the group-creating skills to the owner decision of 2026-09-21: an Admin and
-/// a Supervisor (role Authorised) may create groups, a caller without a role may not, and deleting a
-/// group stays with the Admin. create_group demanded CanEditSettings, which only the Admin holds, while
-/// the REST endpoint it writes through (InputBaseController.Post, Admin plus Authorised) and the Angular
-/// button (CanCreateGroups) both accepted a Supervisor - the assistant refused what the UI offered.
+/// Pins the seeded rights of the group-creating skills to the owner decision of 2026-11-07 (roles are work
+/// areas, superseding 2026-09-21): the group structure is a setting, so only the Admin creates and deletes
+/// groups. The skills ask for the group rights (CanCreateGroups, CanDeleteGroups), which the Authorised role
+/// no longer expands to, so the seed, the REST endpoint (Groups POST and DELETE, Admin-only) and the Angular
+/// button (CanCreateGroups) agree.
 /// </summary>
 
 using System.Text.Json;
@@ -47,26 +47,21 @@ public class GroupCreationSkillPermissionTests
 
         permissions.ShouldContain(
             Permissions.CanCreateGroups,
-            $"'{skillName}' creates groups, which an Admin and a Supervisor may both do. {VersionBumpReminder}");
+            $"'{skillName}' creates groups and asks for the group-creation right. {VersionBumpReminder}");
 
         permissions.ShouldNotContain(
             Permissions.CanEditSettings,
-            $"'{skillName}' must not be gated on CanEditSettings - only the Admin holds it, so a " +
-            $"Supervisor would be refused a group the UI lets them create. {VersionBumpReminder}");
+            $"'{skillName}' is gated on the group right, not on CanEditSettings, so the seed and the Ui " +
+            $"button read the same right. {VersionBumpReminder}");
     }
 
     [TestCaseSource(nameof(GroupCreatingSkills))]
-    public void GroupCreatingSkill_EveryRightItAsksFor_IsHeldByASupervisor(string skillName)
+    public void GroupCreatingSkill_IsNotReachableForASupervisor(string skillName)
     {
         var supervisorRights = Permissions.ExpandRoles(new[] { Roles.Authorised });
 
-        foreach (var permission in SeededPermissionsOf(skillName))
-        {
-            supervisorRights.ShouldContain(
-                permission,
-                $"'{skillName}' asks for '{permission}', which the Authorised role does not expand to, " +
-                "so the skill is Admin-only however the other entries read.");
-        }
+        SeededPermissionsOf(skillName).All(supervisorRights.Contains).ShouldBeFalse(
+            $"'{skillName}' creates groups, which is a setting and Admin-only (owner decision 2026-11-07).");
     }
 
     [TestCaseSource(nameof(GroupCreatingSkills))]
@@ -80,15 +75,16 @@ public class GroupCreationSkillPermissionTests
     }
 
     [Test]
-    public void DeleteGroupSkill_StaysWithTheAdmin()
+    public void DeleteGroupSkill_AsksForTheGroupDeletionRight_AndStaysWithTheAdmin()
     {
-        SeededPermissionsOf(DeleteGroupSkill).ShouldContain(
-            Permissions.CanEditSettings,
-            $"Deleting a group stays an Admin action (owner decision 2026-09-21). {VersionBumpReminder}");
+        SeededPermissionsOf(DeleteGroupSkill).ShouldBe(
+            new List<string> { Permissions.CanDeleteGroups },
+            $"delete_group is gated on CanDeleteGroups like the Ui delete button. {VersionBumpReminder}");
 
         Permissions.ExpandRoles(new[] { Roles.Authorised }).ShouldNotContain(
-            Permissions.CanEditSettings,
-            "The gate above only holds as long as the Authorised role does not expand to CanEditSettings.");
+            Permissions.CanDeleteGroups,
+            "Deleting a group stays an Admin action; the gate only holds while the Authorised role does not " +
+            "expand to CanDeleteGroups.");
     }
 
     private static List<string> SeededPermissionsOf(string skillName)

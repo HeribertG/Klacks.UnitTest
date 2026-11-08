@@ -488,7 +488,8 @@ public class CorrectionTurnPreparerTests
 
     // The redemption runs SkillExecutorService.ValidatePermissions before the autonomy gate, so an undo
     // the caller may not release is refused after it was promised. create_group is reversed by
-    // delete_group, which stays Admin-only: a Supervisor was offered an undo Klacksy then denied.
+    // delete_group, which is Admin-only: before 2026-11-07, when a Supervisor could still create groups,
+    // they were offered an undo Klacksy then denied.
     [Test]
     public async Task WithAnUndoTheCallerMayNotRelease_OffersNothingAndHoldsNothing()
     {

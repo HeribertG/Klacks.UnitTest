@@ -58,7 +58,7 @@ public class UserRoleChangeAdvisorTests
         evaluation.RightsGained.ShouldBeEmpty();
         evaluation.RightsLost.ShouldContain(Permissions.CanEditSettings);
         evaluation.RightsLost.ShouldContain(Permissions.CanViewSettings);
-        evaluation.RightsLost.ShouldContain(Permissions.CanDeleteShifts);
+        evaluation.RightsLost.ShouldContain(Permissions.CanDeleteClients);
         evaluation.RightsLost.ShouldNotContain(Permissions.CanEditShifts);
         Codes(evaluation).ShouldContain(UserRoleChangeFindingCode.AdminBypassLost);
         Codes(evaluation).ShouldContain(UserRoleChangeFindingCode.SettingsAccessLost);

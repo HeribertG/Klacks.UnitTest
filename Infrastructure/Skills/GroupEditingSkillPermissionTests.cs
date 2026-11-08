@@ -2,13 +2,11 @@
 
 /// <summary>
 /// Pins the seeded rights of the group-editing skills to the same rule the rest of the stack applies:
-/// the REST endpoints they write through (InputBaseController.Put, POST Groups/move/{id} and
-/// PUT Groups/{id}/location, all Admin plus Authorised) and the Angular group forms and tree
-/// drag-and-drop (CanEditGroups) accept a Supervisor, while the seed demanded CanEditSettings, which
-/// only the Admin holds. A Supervisor could therefore create a group after the owner decision of
-/// 2026-09-21 and change, move or locate it in the Ui, but not do any of that through the assistant.
-/// Deliberately not covered: delete_group and list_groups_hierarchical, which the same owner decision
-/// left on the settings rights.
+/// the group structure is a setting and Admin-only (owner decision 2026-11-07, roles are work areas). The
+/// REST endpoints they write through (Groups PUT, POST Groups/move/{id} and PUT Groups/{id}/location) are
+/// Admin-only, the Angular group forms and tree drag-and-drop ask for CanEditGroups, and the skills ask for
+/// the same right, which the Authorised role no longer expands to. Deliberately not covered: delete_group
+/// (GroupCreationSkillPermissionTests) and list_groups_hierarchical.
 /// </summary>
 
 using System.Text.Json;
@@ -43,29 +41,25 @@ public class GroupEditingSkillPermissionTests
 
         permissions.ShouldContain(
             Permissions.CanEditGroups,
-            $"'{skillName}' edits a group, which an Admin and a Supervisor may both do. " +
+            $"'{skillName}' edits a group and asks for the group-editing right. " +
             VersionBumpReminder);
 
         permissions.ShouldNotContain(
             Permissions.CanEditSettings,
-            $"'{skillName}' must not be gated on CanEditSettings - only the Admin holds it, so a " +
-            $"Supervisor would be refused a change the Ui and the endpoint both allow. {VersionBumpReminder}");
+            $"'{skillName}' is gated on the group right, not on CanEditSettings, so the seed and the Ui " +
+            $"read the same right. {VersionBumpReminder}");
     }
 
     [TestCase(UpdateGroupSkill)]
     [TestCase(MoveGroupSkill)]
     [TestCase(SetGroupLocationSkill)]
-    public void GroupEditingSkill_EveryRightItAsksFor_IsHeldByASupervisor(string skillName)
+    public void GroupEditingSkill_IsNotReachableForASupervisor(string skillName)
     {
         var supervisorRights = Permissions.ExpandRoles(new[] { Roles.Authorised });
 
-        foreach (var permission in SeededPermissionsOf(skillName))
-        {
-            supervisorRights.ShouldContain(
-                permission,
-                $"'{skillName}' asks for '{permission}', which the Authorised role does not expand " +
-                "to, so the skill is Admin-only however the other entries read.");
-        }
+        SeededPermissionsOf(skillName).All(supervisorRights.Contains).ShouldBeFalse(
+            $"'{skillName}' changes the group structure, which is a setting and Admin-only " +
+            "(owner decision 2026-11-07).");
     }
 
     [TestCase(UpdateGroupSkill)]

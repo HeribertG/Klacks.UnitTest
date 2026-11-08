@@ -3,7 +3,7 @@
 /// <summary>
 /// Pins the access of the variant (key) endpoints: reading the list and the shifts of a key is open to every
 /// authenticated user, every other action of the controller (including the delete of a single key shift, which the REST
-/// shift delete keeps admin-only) needs Admin or Authorised, no action allows anonymous
+/// shift delete also opens to Admin and Authorised since 2026-11-07) needs Admin or Authorised, no action allows anonymous
 /// access, and the JWT scheme stays pinned through BaseController. A new action therefore starts protected and has to
 /// be added to the read list on purpose to be opened.
 /// </summary>
@@ -71,7 +71,7 @@ public class ScenarioVariantsAuthorizationTests
     }
 
     [Test]
-    public void DeleteShift_IsOpenToSupervisorsThroughTheVariantRouteAndNotThroughTheShiftDelete()
+    public void DeleteShift_IsOpenToSupervisorsThroughTheVariantRouteAndThroughTheShiftDelete()
     {
         var action = Actions().Single(m => m.Name == nameof(ScenarioVariantsController.DeleteShift));
 
@@ -79,7 +79,7 @@ public class ScenarioVariantsAuthorizationTests
         action.GetCustomAttribute<AuthorizeAttribute>(inherit: false)!.Roles.ShouldContain(Roles.Authorised);
         typeof(ShiftsController).GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Single(m => m.Name == nameof(ShiftsController.Delete))
-            .GetCustomAttributes<AuthorizeAttribute>(inherit: true).Single().Roles.ShouldBe(Roles.Admin);
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true).Single().Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
     }
 
     [Test]
