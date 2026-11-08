@@ -114,17 +114,24 @@ public class CreateGroupSkillCharacterizationTests
     }
 
     [Test]
-    public async Task ParentOutsideScope_ReturnsTheScopeText()
+    public async Task ParentOutsideScope_IsAnsweredExactlyLikeAMissingParent_WithoutItsName()
     {
-        var parentId = Guid.NewGuid();
-        var access = GroupScopeAccess.Restricted(new[] { Guid.NewGuid() }, new[] { "Verkauf" });
-        _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "Logistik", Root = Guid.NewGuid() });
+        var hiddenParentId = Guid.NewGuid();
+        var missingParentId = Guid.NewGuid();
+        _groupRepository.Get(hiddenParentId)
+            .Returns(new Group { Id = hiddenParentId, Name = "Geheimprojekt", Root = Guid.NewGuid() });
+        _groupRepository.Get(missingParentId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingParentId} not found.")));
+        var skill = Skill(TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"));
 
-        var result = await Skill(TestGroupScopeGuard.For(access))
-            .ExecuteAsync(Ctx(), Params(("parentId", parentId.ToString())));
+        var hidden = await skill.ExecuteAsync(Ctx(), Params(("parentId", hiddenParentId.ToString())));
+        var missing = await skill.ExecuteAsync(Ctx(), Params(("parentId", missingParentId.ToString())));
 
-        result.Success.ShouldBeFalse();
-        result.Message.ShouldBe(access.BuildOutOfScopeError("Logistik"));
+        hidden.Success.ShouldBeFalse();
+        missing.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Parent group '{hiddenParentId}' not found.");
+        missing.Message.ShouldBe($"Parent group '{missingParentId}' not found.");
+        hidden.Message.ShouldNotContain("Geheimprojekt");
         _api.Calls.ShouldBeEmpty();
     }
 

@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Group writes must respect the caller's group visibility: a hidden target group or a hidden node to move is
-/// answered exactly like a missing one, adding a client the caller cannot see is answered like a missing client,
+/// answered exactly like a missing one (on Put also through the validation pipeline, whose planned-works rules would
+/// otherwise answer a hidden group with 400), a missing parent of a supervisor's subgroup like a hidden one, adding a client the caller cannot see is answered like a missing client,
 /// and no refused write ever reaches the (self-committing) repository. Removing members of a visible group stays
 /// allowed. The supervisor's subgroup rule (owner decision 2026-11-08) on Groups Post and Put: a caller without the
 /// Admin role creates only subgroups under a visible parent, which take payment interval and holiday calendar from
@@ -19,6 +20,7 @@ using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Associations;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Validation;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Geo;
 using Klacks.UnitTest.TestHelpers;
@@ -26,6 +28,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using GroupDeleteHandler = Klacks.Api.Application.Handlers.Groups.DeleteCommandHandler;
 using GroupPostHandler = Klacks.Api.Application.Handlers.Groups.PostCommandHandler;
 using GroupPutHandler = Klacks.Api.Application.Handlers.Groups.PutCommandHandler;
+using GroupPutValidator = Klacks.Api.Application.Validation.Groups.PutCommandValidator;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
@@ -121,6 +124,24 @@ public class GroupWriteVisibilityTests
         await Should.ThrowAsync<ForbiddenException>(
             () => handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, _hiddenGroup)), CancellationToken.None));
 
+        await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Post_UnderMissingParentBySupervisor_IsAnsweredExactlyLikeAHiddenParent()
+    {
+        var missing = Guid.NewGuid();
+        _groupRepository.Get(missing)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missing} not found.")));
+        _groupRepository.Get(_hiddenGroup).Returns(StoredGroup(_hiddenGroup, null));
+        var handler = PostHandler(Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+
+        var hidden = await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, _hiddenGroup)), CancellationToken.None));
+        var absent = await Should.ThrowAsync<ForbiddenException>(
+            () => handler.Handle(new PostCommand<GroupResource>(ResourceOf(Guid.Empty, missing)), CancellationToken.None));
+
+        absent.Message.ShouldBe(hidden.Message);
         await NoGroupWasWrittenAsync();
     }
 
@@ -251,6 +272,51 @@ public class GroupWriteVisibilityTests
         hidden.Message.ShouldBe($"Group with ID {_hiddenGroup} not found.");
         absent.Message.ShouldBe($"Group with ID {missing} not found.");
         await NoGroupWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task Put_HiddenGroupWithPlannedWorks_IsAnsweredThroughTheValidatorExactlyLikeAMissingGroup()
+    {
+        var missing = Guid.NewGuid();
+        var plannedMember = Guid.NewGuid();
+        _groupRepository.Get(missing)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missing} not found.")));
+        _groupRepository.Get(_hiddenGroup).Returns(StoredGroup(_hiddenGroup, _visibleRoot, plannedMember));
+        var shiftRepository = Substitute.For<IShiftRepository>();
+        shiftRepository.HasWorksForGroupAsync(_hiddenGroup, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        shiftRepository.HasWorksForClientInGroupAsync(
+                plannedMember, _hiddenGroup, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var supervisor = Supervisor();
+        var hiddenResource = ResourceOf(_hiddenGroup, _visibleRoot);
+        hiddenResource.ValidUntil = ValidFrom.AddMonths(1);
+        var missingResource = ResourceOf(missing, _visibleRoot);
+        missingResource.ValidUntil = ValidFrom.AddMonths(1);
+
+        var hidden = await Should.ThrowAsync<KeyNotFoundException>(
+            () => PutThroughPipelineAsync(supervisor, shiftRepository, hiddenResource));
+        var absent = await Should.ThrowAsync<KeyNotFoundException>(
+            () => PutThroughPipelineAsync(supervisor, shiftRepository, missingResource));
+
+        hidden.Message.ShouldBe($"Group with ID {_hiddenGroup} not found.");
+        absent.Message.ShouldBe($"Group with ID {missing} not found.");
+        await shiftRepository.DidNotReceive()
+            .HasWorksForGroupAsync(_hiddenGroup, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>());
+        await shiftRepository.DidNotReceive()
+            .HasWorksForClientInGroupAsync(plannedMember, _hiddenGroup, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>());
+        await NoGroupWasWrittenAsync();
+    }
+
+    private Task<GroupResource?> PutThroughPipelineAsync(
+        IGroupVisibilityGuard groupGuard, IShiftRepository shiftRepository, GroupResource resource)
+    {
+        var command = new PutCommand<GroupResource>(resource);
+        var validator = new GroupPutValidator(shiftRepository, _groupRepository, groupGuard);
+        var pipeline = new ValidationBehavior<PutCommand<GroupResource>, GroupResource?>(
+            [validator], NullLogger<ValidationBehavior<PutCommand<GroupResource>, GroupResource?>>.Instance);
+        var handler = PutHandler(groupGuard, TestGroupWriteVisibility.AllClientsVisible());
+        return pipeline.Handle(command, () => handler.Handle(command, CancellationToken.None), CancellationToken.None);
     }
 
     [Test]

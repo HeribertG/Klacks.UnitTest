@@ -29,7 +29,14 @@ public class PutCommandValidatorTests
         _groupRepository.Get(Arg.Any<Guid>())
             .Returns(Task.FromException<Group>(new KeyNotFoundException()));
 
-        _validator = new PutCommandValidator(_shiftRepository, _groupRepository);
+        _validator = new PutCommandValidator(_shiftRepository, _groupRepository, AllGroupsVisible());
+    }
+
+    private static IGroupVisibilityGuard AllGroupsVisible()
+    {
+        var guard = Substitute.For<IGroupVisibilityGuard>();
+        guard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        return guard;
     }
 
     [Test]

@@ -287,7 +287,7 @@ public class GroupCrudSkillTests
     }
 
     [Test]
-    public async Task UpdateGroup_ReturnsScopeError_WhenGroupIsOutsideUserScope()
+    public async Task UpdateGroup_ReturnsNotFound_WhenGroupIsOutsideUserScope()
     {
         var scopedRootId = Guid.NewGuid();
         var foreignRootId = Guid.NewGuid();
@@ -303,8 +303,7 @@ public class GroupCrudSkillTests
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
-        Assert.That(result.Message, Does.Contain("Verkauf"));
+        Assert.That(result.Message, Is.EqualTo($"Group with ID '{id}' not found."));
         _api.Calls.ShouldBeEmpty();
     }
 

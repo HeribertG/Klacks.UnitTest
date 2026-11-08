@@ -91,7 +91,7 @@ public class UpdateGroupSkillCharacterizationTests
         Data(result).EnumerateObject().Select(p => p.Name).ToList();
 
     [Test]
-    public async Task UnknownGroup_ReturnsNotFoundText_WithoutConsultingTheScope()
+    public async Task UnknownGroup_ReturnsNotFoundText_WithoutCallingTheApi()
     {
         var unknownId = Guid.NewGuid();
         _groupRepository.Get(unknownId).Returns((Group?)null);
@@ -104,7 +104,34 @@ public class UpdateGroupSkillCharacterizationTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe($"Group with ID '{unknownId}' not found.");
-        await guard.DidNotReceive().GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GroupOutsideScope_IsAnsweredExactlyLikeAMissingGroup_WithoutItsName()
+    {
+        var missingId = Guid.NewGuid();
+        _groupRepository.Get(missingId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingId} not found.")));
+        _groupRepository.Get(_groupId).Returns(new Group
+        {
+            Id = _groupId, Name = "Geheimprojekt", Root = Guid.NewGuid(), ValidFrom = OriginalFrom
+        });
+        var skill = new UpdateGroupSkill(
+            _groupRepository, TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"),
+            _calendarSelectionRepository, new GroupMapper(), _api.Client,
+            new FixedCompanyClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+
+        var hidden = await skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["groupId"] = _groupId.ToString(), ["name"] = "Neu" });
+        var missing = await skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["groupId"] = missingId.ToString(), ["name"] = "Neu" });
+
+        hidden.Success.ShouldBeFalse();
+        missing.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Group with ID '{_groupId}' not found.");
+        missing.Message.ShouldBe($"Group with ID '{missingId}' not found.");
+        hidden.Message.ShouldNotContain("Geheimprojekt");
         _api.Calls.ShouldBeEmpty();
     }
 
