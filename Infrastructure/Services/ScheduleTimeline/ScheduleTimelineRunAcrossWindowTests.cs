@@ -6,7 +6,8 @@
 /// night shift must report the same work-time findings: the full run of eleven days dated on its first day, the daily
 /// work time of the day after a night and the weekly cap. Before the fix the single check counted only the ISO week
 /// (14 December, 7 days) and the daily work time of the edited day only, and the range check counted a run from the
-/// first day of its window. A run that ended before the edited week stays out of the single check.
+/// first day of its window. The single check sends again every run in the window the client retracts (the week's Monday
+/// minus 14 days up to its Sunday) on its true start, and leaves out a run that ended before that window.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
@@ -27,6 +28,7 @@ public class ScheduleTimelineRunAcrossWindowTests
     private static readonly DateOnly SecondNight = new(2026, 12, 16);
     private static readonly DateOnly DayAfterNights = new(2026, 12, 17);
     private static readonly DateOnly WeekMonday = new(2026, 12, 14);
+    private static readonly DateOnly RetractWindowStart = new(2026, 12, 7);
 
     private static readonly string[] WorkTimeKeys =
     [
@@ -38,6 +40,7 @@ public class ScheduleTimelineRunAcrossWindowTests
 
     private ScheduleTimelineTestHost _host = null!;
     private Guid _employeeId;
+    private Guid _colleagueShiftId;
 
     [SetUp]
     public async Task SetUp()
@@ -77,17 +80,47 @@ public class ScheduleTimelineRunAcrossWindowTests
     }
 
     [Test]
-    public async Task SingleCheck_RunThatEndedBeforeTheEditedWeek_IsNotReported()
+    public async Task SingleCheck_RunInsideTheRetractWindowBeforeTheWeek_IsSentAgainOnItsTrueStart()
     {
-        var colleagueId = await _host.AddEmployeeAsync("Beispiel", "Ben");
-        var shift = await _host.AddCustomerShiftAsync("Bundesplatz 3", "3003", "Bern");
-        for (var day = MonthStart; day <= MonthStart.AddDays(8); day = day.AddDays(1))
-        {
-            await _host.AddWorkAsync(colleagueId, shift, day, new TimeOnly(7, 0), new TimeOnly(15, 0));
-        }
-
+        var colleagueId = await AddColleagueRunAsync(MonthStart, MonthStart.AddDays(8));
         var editedDay = new DateOnly(2026, 12, 23);
-        await _host.AddWorkAsync(colleagueId, shift, editedDay, new TimeOnly(7, 0), new TimeOnly(15, 0));
+        await AddColleagueWorkAsync(colleagueId, editedDay);
+
+        _host.Service.QueueCheck(colleagueId, editedDay, null);
+        await _host.StartAsync();
+        var validations = await _host.WaitForValidationsAsync(1);
+
+        var run = validations.ShouldHaveSingleItem().Entries
+            .Where(e => e.Comment == ScheduleValidationKeys.ConsecutiveDays)
+            .ShouldHaveSingleItem();
+        run.Date.ShouldBe(MonthStart);
+        run.CommentParams!["actualDays"].ShouldBe("9");
+    }
+
+    [Test]
+    public async Task SingleCheck_RunEndingOnTheFirstDayOfTheRetractWindow_IsSentAgain()
+    {
+        var colleagueId = await AddColleagueRunAsync(MonthStart, RetractWindowStart);
+        var editedDay = new DateOnly(2026, 12, 23);
+        await AddColleagueWorkAsync(colleagueId, editedDay);
+
+        _host.Service.QueueCheck(colleagueId, editedDay, null);
+        await _host.StartAsync();
+        var validations = await _host.WaitForValidationsAsync(1);
+
+        var run = validations.ShouldHaveSingleItem().Entries
+            .Where(e => e.Comment == ScheduleValidationKeys.ConsecutiveDays)
+            .ShouldHaveSingleItem();
+        run.Date.ShouldBe(MonthStart);
+        run.CommentParams!["actualDays"].ShouldBe("7");
+    }
+
+    [Test]
+    public async Task SingleCheck_RunEndingTheDayBeforeTheRetractWindow_IsNotReported()
+    {
+        var colleagueId = await AddColleagueRunAsync(RetractWindowStart.AddDays(-7), RetractWindowStart.AddDays(-1));
+        var editedDay = new DateOnly(2026, 12, 23);
+        await AddColleagueWorkAsync(colleagueId, editedDay);
 
         _host.Service.QueueCheck(colleagueId, editedDay, null);
         await _host.StartAsync();
@@ -123,6 +156,21 @@ public class ScheduleTimelineRunAcrossWindowTests
         run.Date.ShouldBe(RunStart);
         run.CommentParams!["actualDays"].ShouldBe("11");
     }
+
+    private async Task<Guid> AddColleagueRunAsync(DateOnly first, DateOnly last)
+    {
+        var colleagueId = await _host.AddEmployeeAsync("Beispiel", "Ben");
+        _colleagueShiftId = await _host.AddCustomerShiftAsync("Bundesplatz 3", "3003", "Bern");
+        for (var day = first; day <= last; day = day.AddDays(1))
+        {
+            await AddColleagueWorkAsync(colleagueId, day);
+        }
+
+        return colleagueId;
+    }
+
+    private Task<Work> AddColleagueWorkAsync(Guid colleagueId, DateOnly day)
+        => _host.AddWorkAsync(colleagueId, _colleagueShiftId, day, new TimeOnly(7, 0), new TimeOnly(15, 0));
 
     private static void AssertProbeFindings(List<ScheduleValidationNotificationDto> entries)
     {
