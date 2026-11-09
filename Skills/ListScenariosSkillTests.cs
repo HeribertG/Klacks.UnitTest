@@ -170,6 +170,8 @@ public class ListScenariosSkillTests
     {
         RestrictToWinterthur();
         var missingId = Guid.NewGuid();
+        _groupRepository.Get(missingId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingId} not found.")));
 
         var hidden = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

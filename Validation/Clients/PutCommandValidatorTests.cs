@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
 using NUnit.Framework;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Validation.Clients;
 
@@ -16,6 +17,8 @@ namespace Klacks.UnitTest.Validation.Clients;
 public class PutCommandValidatorTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private PutCommandValidator _validator = null!;
 
     private const string MembershipCloseErrorKey = "group.validation.membership-close-has-future-works";
@@ -31,7 +34,43 @@ public class PutCommandValidatorTests
         _shiftRepository.HasWorksForClientInGroupAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
-        _validator = new PutCommandValidator(geocoding, stateResolver, countryResolver, addressRepository, _shiftRepository, Substitute.For<IClientRepository>());
+        _clientVisibilityGuard = TestGroupWriteVisibility.AllClientsVisible();
+        _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
+        _validator = new PutCommandValidator(
+            geocoding, stateResolver, countryResolver, addressRepository, _shiftRepository, Substitute.For<IClientRepository>(),
+            _clientVisibilityGuard, _groupVisibilityGuard);
+    }
+
+    [Test]
+    public async Task MembershipClose_InAHiddenGroup_IsNotCheckedSoTheHandlerAnswersItLikeAMissingGroup()
+    {
+        var clientId = Guid.NewGuid();
+        var hiddenGroupId = Guid.NewGuid();
+        _groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
+        _shiftRepository.HasWorksForClientInGroupAsync(clientId, hiddenGroupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _validator.ValidateAsync(CommandWithMembership(clientId, hiddenGroupId, new DateTime(2026, 6, 30, 0, 0, 0, DateTimeKind.Utc)));
+
+        result.Errors.ShouldNotContain(f => f.ErrorMessage == MembershipCloseErrorKey);
+        await _shiftRepository.DidNotReceive()
+            .HasWorksForClientInGroupAsync(clientId, hiddenGroupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MembershipClose_OfAHiddenClient_IsNotCheckedSoTheHandlerAnswersItLikeAMissingClient()
+    {
+        var hiddenClientId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        _clientVisibilityGuard.IsVisibleAsync(hiddenClientId, Arg.Any<CancellationToken>()).Returns(false);
+        _shiftRepository.HasWorksForClientInGroupAsync(hiddenClientId, groupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _validator.ValidateAsync(CommandWithMembership(hiddenClientId, groupId, new DateTime(2026, 6, 30, 0, 0, 0, DateTimeKind.Utc)));
+
+        result.Errors.ShouldNotContain(f => f.ErrorMessage == MembershipCloseErrorKey);
+        await _shiftRepository.DidNotReceive()
+            .HasWorksForClientInGroupAsync(hiddenClientId, groupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>());
     }
 
     private static PutCommand<ClientResource> CommandWithMembership(Guid clientId, Guid groupId, DateTime? validUntil)

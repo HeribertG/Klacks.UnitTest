@@ -127,18 +127,20 @@ public class GetGroupDetailsSkillTests
     }
 
     [Test]
-    public async Task ReturnsScopeError_WhenGroupOutsideUserScope()
+    public async Task GroupOutsideUserScope_IsAnsweredExactlyLikeAMissingGroup_WithoutItsName()
     {
-        var scopedRootId = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
+        _groupRepository.Get(missingId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingId} not found.")));
         _group.Root = Guid.NewGuid();
+        var skill = Skill(TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"));
 
-        var result = await Skill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"))
-            .ExecuteAsync(Ctx(), new Dictionary<string, object>
-            {
-                ["groupId"] = _group.Id.ToString()
-            });
+        var hidden = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["groupId"] = _group.Id.ToString() });
+        var missing = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["groupId"] = missingId.ToString() });
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(hidden.Message, Is.EqualTo($"Group with ID '{_group.Id}' not found."));
+        Assert.That(missing.Message, Is.EqualTo($"Group with ID '{missingId}' not found."));
+        Assert.That(hidden.Message, Does.Not.Contain(_group.Name));
     }
 }

@@ -143,11 +143,40 @@ public class MoveGroupSkillTests
     }
 
     [Test]
-    public async Task ReturnsScopeError_WhenGroupOutsideUserScope()
+    public async Task GroupOutsideUserScope_IsAnsweredExactlyLikeAMissingGroup_WithoutItsName()
     {
         var scopedRootId = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
         _child.Root = Guid.NewGuid();
         _newParent.Root = scopedRootId;
+        _groupRepository.Get(missingId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingId} not found.")));
+        var skill = Skill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"));
+
+        var hidden = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = _child.Id.ToString(),
+            ["newParentId"] = _newParent.Id.ToString()
+        });
+        var missing = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = missingId.ToString(),
+            ["newParentId"] = _newParent.Id.ToString()
+        });
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(hidden.Message, Is.EqualTo($"Group with ID '{_child.Id}' not found."));
+        Assert.That(missing.Message, Is.EqualTo($"Group with ID '{missingId}' not found."));
+        Assert.That(hidden.Message, Does.Not.Contain(_child.Name));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task NewParentOutsideUserScope_IsAnsweredExactlyLikeAMissingGroup_WithoutItsName()
+    {
+        var scopedRootId = Guid.NewGuid();
+        _child.Root = scopedRootId;
+        _newParent.Root = Guid.NewGuid();
 
         var result = await Skill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"))
             .ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -157,7 +186,8 @@ public class MoveGroupSkillTests
             });
 
         Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
+        Assert.That(result.Message, Is.EqualTo($"Group with ID '{_newParent.Id}' not found."));
+        Assert.That(result.Message, Does.Not.Contain(_newParent.Name));
         _api.Calls.ShouldBeEmpty();
     }
 

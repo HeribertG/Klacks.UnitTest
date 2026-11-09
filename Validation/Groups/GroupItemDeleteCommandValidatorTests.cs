@@ -15,6 +15,7 @@ public class GroupItemDeleteCommandValidatorTests
     private GroupItemDeleteCommandValidator _validator;
     private IGroupItemRepository _groupItemRepository;
     private IShiftRepository _shiftRepository;
+    private IGroupVisibilityGuard _groupVisibilityGuard;
 
     [SetUp]
     public void Setup()
@@ -28,7 +29,28 @@ public class GroupItemDeleteCommandValidatorTests
         _shiftRepository.HasActiveWorksAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
-        _validator = new GroupItemDeleteCommandValidator(_groupItemRepository, _shiftRepository);
+        _groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        _validator = new GroupItemDeleteCommandValidator(_groupItemRepository, _shiftRepository, _groupVisibilityGuard);
+    }
+
+    [Test]
+    public async Task Validate_ShouldBeValid_WithoutReadingWorks_WhenTheItemsGroupIsHidden()
+    {
+        var hiddenGroupId = Guid.NewGuid();
+        var clientId = Guid.NewGuid();
+        _groupItemRepository.Get(Arg.Any<Guid>())
+            .Returns(new GroupItem { Id = Guid.NewGuid(), GroupId = hiddenGroupId, ClientId = clientId });
+        _groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
+        _shiftRepository.HasWorksForClientInGroupAsync(clientId, hiddenGroupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _validator.ValidateAsync(new DeleteCommand<GroupItemResource>(Guid.NewGuid()));
+
+        Assert.That(result.IsValid, Is.True);
+        await _shiftRepository.DidNotReceive()
+            .HasWorksForClientInGroupAsync(clientId, hiddenGroupId, Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -101,13 +101,12 @@ public class GroupScopeGuardTests
     }
 
     [Test]
-    public async Task UserWithoutVisibilityRows_ErrorsSayThatNoGroupIsAssigned()
+    public async Task UserWithoutVisibilityRows_RootCreationErrorSaysThatNoGroupIsAssigned()
     {
         SetupScope(GroupVisibilityScope.Restricted([], []));
 
         var access = await _guard.GetAccessAsync(Ctx());
 
-        Assert.That(access.BuildOutOfScopeError("Verkauf"), Does.Contain("no group is assigned to you"));
         Assert.That(access.BuildRootCreationError(), Does.Contain("no group is assigned to you"));
     }
 
@@ -161,15 +160,13 @@ public class GroupScopeGuardTests
     }
 
     [Test]
-    public async Task ScopedUser_OutOfScopeError_NamesGroupAndVisibleRoots()
+    public async Task ScopedUser_RootCreationError_NamesTheVisibleRoots()
     {
         SetupVisibleRoots(SalesRootId);
 
         var access = await _guard.GetAccessAsync(Ctx());
-        var message = access.BuildOutOfScopeError("Logistik Ost");
 
-        Assert.That(message, Does.Contain("Group 'Logistik Ost' is outside your assigned group scope"));
-        Assert.That(message, Does.Contain("Verkauf"));
+        Assert.That(access.BuildRootCreationError(), Does.Contain("Verkauf"));
         Assert.That(access.VisibleRootNames, Is.EqualTo(new[] { "Verkauf" }));
     }
 }

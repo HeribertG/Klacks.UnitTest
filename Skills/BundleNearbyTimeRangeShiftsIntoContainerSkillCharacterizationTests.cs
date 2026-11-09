@@ -315,7 +315,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         shift.GroupItems.Single().GroupId.ShouldBe(GroupId);
         shift.GroupItems.Single().ValidFrom.ShouldBe(new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         shift.CurrentUserCreated.ShouldBe("tester");
-        _calls.Take(4).ShouldBe(["group-get", "group-visible", "group-items", "default-macro"]);
+        _calls.Take(4).ShouldBe(["group-visible", "group-get", "group-items", "default-macro"]);
 
         var request = _autofillRequest!;
         request.ContainerId.ShouldBe(ContainerId);
@@ -461,14 +461,26 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
     }
 
     [Test]
-    public async Task UnknownGroup_IsRefused_WithoutAskingTheGuard()
+    public async Task UnknownGroup_IsRefused_AfterTheGuard()
     {
         _groupRepository.Get(Arg.Any<Guid>()).Returns(_ => { _calls.Add("group-get"); return (Group?)null; });
 
         var result = await Skill().ExecuteAsync(Ctx(), Params(("groupIds", GroupId.ToString())));
 
         result.Message.ShouldBe($"Group with ID {GroupId} not found.");
-        _calls.ShouldBe(["group-get"]);
+        _calls.ShouldBe(["group-visible", "group-get"]);
+    }
+
+    [Test]
+    public async Task HiddenGroup_IsRefused_BeforeTheRepositoryRead()
+    {
+        _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { _calls.Add("group-visible"); return false; });
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params(("groupIds", GroupId.ToString())));
+
+        result.Message.ShouldBe($"Group with ID {GroupId} not found.");
+        _calls.ShouldBe(["group-visible"]);
     }
 
     [Test]

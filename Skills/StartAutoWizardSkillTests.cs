@@ -270,20 +270,30 @@ public class StartAutoWizardSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_GroupOutsideScope_IsRefused()
+    public async Task ExecuteAsync_GroupOutsideScope_IsAnsweredExactlyLikeAMissingGroup_WithoutItsName()
     {
         var (groupId, _) = ArrangeRunnableGroup("Winterthur");
+        var missingId = Guid.NewGuid();
+        _groupRepository.Get(missingId)
+            .Returns(Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {missingId} not found.")));
         _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(GroupScopeAccess.Restricted(new[] { Guid.NewGuid() }, new[] { "Bern" }));
 
-        var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
+        var hidden = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
         {
             { "groupId", groupId.ToString() },
             { "calendarWeek", 45 }
         });
+        var missing = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
+        {
+            { "groupId", missingId.ToString() },
+            { "calendarWeek", 45 }
+        });
 
-        result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("outside your assigned group scope");
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Group with ID {groupId} not found.");
+        missing.Message.ShouldBe($"Group with ID {missingId} not found.");
+        hidden.Message.ShouldNotContain("Winterthur");
     }
 
     [Test]

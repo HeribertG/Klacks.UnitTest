@@ -169,7 +169,7 @@ public class CreateShiftSkillCharacterizationTests
             "\"Abbreviation\":\"RM\",\"StartTime\":\"07:00\",\"EndTime\":\"15:00\",\"FromDate\":\"2026-06-01\"," +
             "\"UntilDate\":\"2026-12-31\",\"WorkTime\":8,\"SumEmployees\":2,\"GroupCount\":1,\"ClientId\":\"" + ClientId + "\"," +
             "\"ClientName\":\"Mueller AG\",\"MacroId\":\"" + DefaultMacroId + "\",\"MacroName\":\"Standard\"}");
-        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-get", "group-visible",
+        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-visible", "group-get",
             "reuse-lookup", "add", "complete"]);
 
         var shift = _added!;
@@ -389,26 +389,32 @@ public class CreateShiftSkillCharacterizationTests
     }
 
     [Test]
-    public async Task UnknownGroup_IsRefused_WithoutAskingTheVisibilityGuard()
+    public async Task UnknownGroup_IsRefused_AfterTheVisibilityGuard()
     {
         _groupRepository.Get(Arg.Any<Guid>()).Returns(_ => { _calls.Add("group-get"); return (Group?)null; });
 
         var result = await _skill.ExecuteAsync(Ctx(), With(("groupIds", GroupId.ToString())));
 
         result.Message.ShouldBe($"Group with ID {GroupId} not found.");
-        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-get"]);
+        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-visible", "group-get"]);
     }
 
     [Test]
-    public async Task HiddenGroup_IsRefused_AfterTheRepositoryRead()
+    public async Task HiddenGroup_IsRefused_BeforeTheRepositoryRead()
     {
         _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(_ => { _calls.Add("group-visible"); return false; });
+        _groupRepository.Get(Arg.Any<Guid>())
+            .Returns(_ =>
+            {
+                _calls.Add("group-get");
+                return Task.FromException<Group?>(new KeyNotFoundException($"Group with ID {GroupId} not found."));
+            });
 
         var result = await _skill.ExecuteAsync(Ctx(), With(("groupIds", GroupId.ToString())));
 
         result.Message.ShouldBe($"Group with ID {GroupId} not found.");
-        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-get", "group-visible"]);
+        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "group-visible"]);
     }
 
     [Test]
