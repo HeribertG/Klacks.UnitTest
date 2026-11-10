@@ -2,20 +2,14 @@
 
 /// <summary>
 /// Pins the seeded Belgian and Irish public holiday rules (CalendarRulesSeed) to the dates the authorities publish.
-/// The rows are read from the SQL the seed really emits and computed with the production HolidaysListCalculator, so a
+/// The rows are read from the SQL the seed really emits (SeededCalendarRules) and computed with the production HolidaysListCalculator, so a
 /// wrong rule string, a lost row or a broken weekday sub rule fails here. Expected dates: Belgian law of 4 January 1974
 /// (ten national holidays) and Irish Organisation of Working Time Act 1997, Schedule 2, plus S.I. No. 50/2022
 /// (Organisation of Working Time (Covid-19 Commemoration) Regulations 2022), Regulations 4 and 5, for St. Brigid's Day:
 /// first Monday in February from 2023, or 1 February when that is a Friday.
 /// </summary>
 
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Klacks.Api.Data.Seed;
-using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Holidays;
-using Microsoft.EntityFrameworkCore.Migrations;
-using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Klacks.UnitTest.Infrastructure.Persistence.Seed;
 
@@ -24,20 +18,12 @@ public class BelgiumIrelandHolidaySeedTests
 {
     private const string Belgium = "BE";
     private const string Ireland = "IE";
-    private const string EnglishLanguage = "en";
-    private const string EscapedApostrophe = "''";
-    private const string Apostrophe = "'";
     private const string StBrigidsDay = "St. Brigid's Day";
-
-    private static readonly Regex SeedRow = new(
-        "\\('(?<id>[0-9a-f-]{36})', '(?<rule>[^']*)', '(?<sub>[^']*)', (?<mandatory>true|false), (?<paid>true|false), "
-        + "'(?<state>[^']*)', '(?<country>[^']*)', '(?:[^']|'')*', '(?<name>(?:[^']|'')*)'\\)",
-        RegexOptions.Compiled);
 
     [Test]
     public void Belgium_2026_HasTheTenStatutoryHolidays()
     {
-        var dates = Compute(Belgium, 2026);
+        var dates = SeededCalendarRules.Compute(Belgium, 2026);
 
         dates.ShouldBe(new[]
         {
@@ -57,7 +43,7 @@ public class BelgiumIrelandHolidaySeedTests
     [Test]
     public void Ireland_2026_HasTheTenPublicHolidays()
     {
-        var dates = Compute(Ireland, 2026);
+        var dates = SeededCalendarRules.Compute(Ireland, 2026);
 
         dates.ShouldBe(new[]
         {
@@ -83,7 +69,7 @@ public class BelgiumIrelandHolidaySeedTests
     [TestCase(2033, 2, 7, TestName = "St. Brigid's Day 2033: 1 February is a Tuesday, next Monday")]
     public void Ireland_StBrigidsDay_FollowsTheFridayException(int year, int month, int day)
     {
-        var rules = LoadSeededRules(Ireland).Where(rule => rule.Name.En == StBrigidsDay).ToList();
+        var rules = SeededCalendarRules.Load(Ireland).Where(rule => rule.Name.En == StBrigidsDay).ToList();
         rules.Count.ShouldBe(1);
 
         var calculator = new HolidaysListCalculator { CurrentYear = year };
@@ -97,52 +83,9 @@ public class BelgiumIrelandHolidaySeedTests
     [TestCase(Ireland)]
     public void SeededRules_AreNationalMandatoryAndPaid(string country)
     {
-        var rules = LoadSeededRules(country);
+        var rules = SeededCalendarRules.Load(country);
 
         rules.Count.ShouldBe(10);
         rules.ShouldAllBe(rule => rule.State == country && rule.IsMandatory && rule.IsPaid);
-    }
-
-    private static List<DateOnly> Compute(string country, int year)
-    {
-        var calculator = new HolidaysListCalculator { CurrentYear = year };
-        calculator.AddRange(LoadSeededRules(country));
-        calculator.ComputeHolidays();
-
-        return calculator.HolidayList.Select(holiday => holiday.CurrentDate).OrderBy(date => date).ToList();
-    }
-
-    private static List<CalendarRule> LoadSeededRules(string country)
-    {
-        var builder = new MigrationBuilder(activeProvider: null);
-        CalendarRulesSeed.SeedData(builder);
-        AdditionalCalendarRulesSeed.SeedData(builder);
-
-        var rules = new List<CalendarRule>();
-        foreach (var sql in builder.Operations.OfType<SqlOperation>().Select(operation => operation.Sql))
-        {
-            foreach (Match match in SeedRow.Matches(sql))
-            {
-                if (match.Groups["country"].Value != country)
-                {
-                    continue;
-                }
-
-                using var name = JsonDocument.Parse(match.Groups["name"].Value.Replace(EscapedApostrophe, Apostrophe));
-                rules.Add(new CalendarRule
-                {
-                    Id = Guid.Parse(match.Groups["id"].Value),
-                    Rule = match.Groups["rule"].Value,
-                    SubRule = match.Groups["sub"].Value,
-                    IsMandatory = match.Groups["mandatory"].Value == "true",
-                    IsPaid = match.Groups["paid"].Value == "true",
-                    State = match.Groups["state"].Value,
-                    Country = country,
-                    Name = new MultiLanguage { En = name.RootElement.GetProperty(EnglishLanguage).GetString() },
-                });
-            }
-        }
-
-        return rules;
     }
 }
