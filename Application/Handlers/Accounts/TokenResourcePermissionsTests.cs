@@ -39,9 +39,10 @@ public class TokenResourcePermissionsTests
 
         var handler = new LoginUserQueryHandler(
             _authenticationService,
+            Substitute.For<IAdminSetupGateService>(),
             Substitute.For<ILogger<LoginUserQueryHandler>>());
 
-        var result = await handler.Handle(new LoginUserQuery(Email, "password"), CancellationToken.None);
+        var result = await handler.Handle(new LoginUserQuery(Email, "password", IsLocalRequest: false), CancellationToken.None);
 
         result.Permissions.ShouldBe(permissions);
         result.Permissions.ShouldContain(Permissions.CanEditClientNotes);

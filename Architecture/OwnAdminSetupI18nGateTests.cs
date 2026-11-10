@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Guards the texts of the own-admin setup page (password rules, confirmation, inline errors) and the translated
-/// reasons of a rejected registration: every key must exist and be non-empty, with the same placeholders as
+/// Guards the texts of the own-admin setup page (password rules, confirmation, inline errors), the translated
+/// reasons of a rejected registration and the first-run page "Country and industry" that follows the setup: every key must exist and be non-empty, with the same placeholders as
 /// en.json, in all four core catalogues of Klacks.Ui and in every language plugin (owner rule: all 25 languages, no
 /// English fallback). The retired "setup.userName" must be gone everywhere, because the server now generates the
 /// user name. Same structure as the other i18n gates: inconclusive when Klacks.Ui is not checked out next to
@@ -33,6 +33,9 @@ public class OwnAdminSetupI18nGateTests
         "setup.error.passwordMismatch",
         "setup.error.alreadyCompleted",
         "setup.error.server",
+        "setup.setupCode",
+        "setup.setupCodeHint",
+        "setup.error.setupCodeRejected",
         "accountRegistration.reason.PasswordTooShort",
         "accountRegistration.reason.PasswordRequiresDigit",
         "accountRegistration.reason.PasswordRequiresNonAlphanumeric",
@@ -44,6 +47,13 @@ public class OwnAdminSetupI18nGateTests
         "accountRegistration.reason.InvalidEmail",
         "accountRegistration.reason.InvalidUserName",
         "accountRegistration.reason.unknown",
+        "companySetup.header",
+        "companySetup.intro",
+        "companySetup.country",
+        "companySetup.countryHint",
+        "companySetup.noCountry",
+        "companySetup.assistantHint",
+        "companySetup.continue",
     ];
 
     private const string RetiredKey = "setup.userName";

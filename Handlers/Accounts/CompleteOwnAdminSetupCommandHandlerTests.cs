@@ -50,7 +50,10 @@ public class CompleteOwnAdminSetupCommandHandlerTests
             Substitute.For<Microsoft.Extensions.Logging.ILogger<CompleteOwnAdminSetupCommandHandler>>());
     }
 
-    private static CompleteOwnAdminSetupCommand Cmd(string email = "new-admin@example.com", string firstName = "New") =>
+    private const string TypedSetupCode = "ABCD-EFGH-JK23";
+
+    private static CompleteOwnAdminSetupCommand Cmd(
+        string email = "new-admin@example.com", string firstName = "New", bool isFirstStart = false) =>
         new(new RegistrationResource
         {
             Email = email,
@@ -58,7 +61,12 @@ public class CompleteOwnAdminSetupCommandHandlerTests
             LastName = "Admin",
             Password = "Password1!",
             UserName = ClientUserName,
-        });
+        }, isFirstStart, IsLocalRequest: false, SetupCode: TypedSetupCode);
+
+    private void SetupCodeAccepted()
+    {
+        _gateService.IsFirstStartCodeAccepted(false, TypedSetupCode).Returns(true);
+    }
 
     private void GateActive()
     {
@@ -100,6 +108,103 @@ public class CompleteOwnAdminSetupCommandHandlerTests
 
         ex.Message.ShouldBe(AdminSetupMessages.AlreadyCompleted);
         await _userManagementService.DidNotReceive().RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_FirstStartWhileOpen_ChecksUnderTheLockAndReplacesTheSeedAdmin()
+    {
+        SetupCodeAccepted();
+        _gateService.IsFirstStartSetupOpenAsync().Returns(true);
+        AllStepsSucceed();
+        using var cts = new CancellationTokenSource();
+
+        var result = await _sut.Handle(Cmd(isFirstStart: true), cts.Token);
+
+        result.ShouldBeTrue();
+        Received.InOrder(() =>
+        {
+            _gateService.IsFirstStartCodeAccepted(false, TypedSetupCode);
+            _gateService.IsFirstStartSetupOpenAsync();
+            _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+            _administratorRoleLock.AcquireAsync(cts.Token);
+            _gateService.IsFirstStartSetupOpenAsync();
+            _userManagementService.RegisterUserAsync(Arg.Any<AppUser>(), "Password1!");
+            _userManagementService.ChangeUserRoleAsync(Arg.Any<string>(), Roles.Admin, true);
+            _userManagementService.DeactivateUserAsync(Guid.Parse(SystemAccounts.SeedAdminUserId), Arg.Any<string>());
+        });
+        await _gateService.DidNotReceive().IsGateActiveAsync();
+    }
+
+    [Test]
+    public async Task Handle_FirstStartWhenClosed_AnswersTheUniformConflictWithoutWriting()
+    {
+        SetupCodeAccepted();
+        _gateService.IsFirstStartSetupOpenAsync().Returns(false);
+        _gateService.IsExemptAsync().Returns(true);
+        _gateService.IsGateActiveAsync().Returns(true);
+
+        var ex = await Should.ThrowAsync<ConflictException>(
+            async () => await _sut.Handle(Cmd(isFirstStart: true), CancellationToken.None));
+
+        ex.Message.ShouldBe(AdminSetupMessages.FirstStartUnavailable);
+        await _administratorRoleLock.DidNotReceive().AcquireAsync(Arg.Any<CancellationToken>());
+        await _userManagementService.DidNotReceive().RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+        await _userManagementService.DidNotReceive().DeactivateUserAsync(Arg.Any<Guid>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_FirstStartClosedWhileWaitingForTheLock_AnswersTheUniformConflictWithoutWriting()
+    {
+        SetupCodeAccepted();
+        _gateService.IsFirstStartSetupOpenAsync().Returns(true, false);
+
+        var ex = await Should.ThrowAsync<ConflictException>(
+            async () => await _sut.Handle(Cmd(isFirstStart: true), CancellationToken.None));
+
+        ex.Message.ShouldBe(AdminSetupMessages.FirstStartUnavailable);
+        await _administratorRoleLock.Received(1).AcquireAsync(Arg.Any<CancellationToken>());
+        await _userManagementService.DidNotReceive().RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_TwoFirstStartsInARow_OnlyTheFirstCreatesAnAdmin()
+    {
+        SetupCodeAccepted();
+        _gateService.IsFirstStartSetupOpenAsync().Returns(true, true, false);
+        AllStepsSucceed();
+
+        (await _sut.Handle(Cmd(isFirstStart: true), CancellationToken.None)).ShouldBeTrue();
+        await Should.ThrowAsync<ConflictException>(
+            async () => await _sut.Handle(Cmd(email: "second@example.com", isFirstStart: true), CancellationToken.None));
+
+        await _userManagementService.Received(1).RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+        await _administratorRoleLock.Received(1).AcquireAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_FirstStartWithARejectedSetupCode_AnswersTheSameConflictWithoutReadingTheGate()
+    {
+        _gateService.IsFirstStartCodeAccepted(false, TypedSetupCode).Returns(false);
+        _gateService.IsFirstStartSetupOpenAsync().Returns(true);
+
+        var ex = await Should.ThrowAsync<ConflictException>(
+            async () => await _sut.Handle(Cmd(isFirstStart: true), CancellationToken.None));
+
+        ex.Message.ShouldBe(AdminSetupMessages.FirstStartUnavailable);
+        await _gateService.DidNotReceive().IsFirstStartSetupOpenAsync();
+        await _administratorRoleLock.DidNotReceive().AcquireAsync(Arg.Any<CancellationToken>());
+        await _userManagementService.DidNotReceive().RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_SeededAdminPath_NeverAsksForASetupCode()
+    {
+        GateActive();
+        AllStepsSucceed();
+
+        (await _sut.Handle(Cmd(), CancellationToken.None)).ShouldBeTrue();
+
+        _gateService.DidNotReceive().IsFirstStartCodeAccepted(Arg.Any<bool>(), Arg.Any<string?>());
     }
 
     [Test]

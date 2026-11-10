@@ -3,7 +3,9 @@ using Klacks.Api.Presentation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Shouldly;
 
 namespace Klacks.UnitTest.Presentation;
@@ -139,5 +141,56 @@ public class NativeUiHostingExtensionsTests
             .Build();
 
         NativeUiHostingExtensions.GetUiRoot(configuration).ShouldBe(Path.GetFullPath(uiRoot));
+    }
+
+    [TestCase("index.html", "/", "no-cache")]
+    [TestCase("index.html", "/index.html", "no-cache")]
+    [TestCase("version.json", "/version.json", "no-store")]
+    [TestCase("de.json", "/assets/i18n/de.json", "no-cache")]
+    [TestCase("active-industries-manual.html", "/assets/docs/de/active-industries-manual.html", "no-cache")]
+    [TestCase("login-background.png", "/assets/png/login-background.png", "no-cache")]
+    [TestCase("main-5XKQ2JBL.js", "/main-5XKQ2JBL.js", null)]
+    [TestCase("styles-AB12CD34.css", "/styles-AB12CD34.css", null)]
+    [TestCase("chunk-ZY98XW76.js", "/chunk-ZY98XW76.js", null)]
+    public void GetCacheControl_RevalidatesEveryFileWhoseNameSurvivesABuild(string fileName, string path, string? expected)
+    {
+        NativeUiHostingExtensions.GetCacheControl(fileName, new PathString(path)).ShouldBe(expected);
+    }
+
+    [TestCase("/assets/i18n/de.json", "no-cache")]
+    [TestCase("/version.json", "no-store")]
+    [TestCase("/main-5XKQ2JBL.js", null)]
+    public async Task UseNativeUi_ServesStaticFilesWithTheirCacheControl(string path, string? expected)
+    {
+        Directory.CreateDirectory(Path.Combine(_uiRoot, "assets", "i18n"));
+        File.WriteAllText(Path.Combine(_uiRoot, "assets", "i18n", "de.json"), "{}");
+        File.WriteAllText(Path.Combine(_uiRoot, "version.json"), "{}");
+        File.WriteAllText(Path.Combine(_uiRoot, "main-5XKQ2JBL.js"), "x");
+        var environment = Substitute.For<IWebHostEnvironment>();
+        environment.WebRootFileProvider.Returns(new PhysicalFileProvider(_uiRoot));
+        environment.ContentRootPath.Returns(_uiRoot);
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddOptions()
+            .AddSingleton(environment)
+            .BuildServiceProvider();
+        var app = new ApplicationBuilder(services);
+        app.UseNativeUi(_uiRoot);
+        var pipeline = app.Build();
+        var context = CreateContext(HttpMethods.Get, path);
+        context.RequestServices = services;
+
+        await pipeline(context);
+
+        context.Response.StatusCode.ShouldBe(StatusCodes.Status200OK);
+        var cacheControl = context.Response.Headers.CacheControl.ToString();
+        if (expected is null)
+        {
+            cacheControl.ShouldBeEmpty();
+        }
+        else
+        {
+            cacheControl.ShouldBe(expected);
+        }
     }
 }

@@ -87,7 +87,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     public async Task Handle_PlannerAccountWithoutRole_RefusesWithAccessDeniedWithoutStoringCode()
     {
         _userManagementService.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string>());
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -99,7 +99,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_UnknownClient_ReturnsInvalidClient()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, "client-unknown", RegisteredRedirectUri, CodeChallenge, null);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, "client-unknown", RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -110,7 +110,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_UnregisteredRedirectUri_ReturnsInvalidRequest()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, UnregisteredRedirectUri, CodeChallenge, null);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, UnregisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -121,7 +121,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_InvalidCredentials_ReturnsAccessDenied()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, WrongPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, WrongPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -132,7 +132,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_HappyPath_StoresCodeBoundToClientRedirectUriAndChallenge()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -152,7 +152,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_SeedAdminWhileSetupGateActive_RefusesWithoutStoringCode()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -166,7 +166,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     public async Task Handle_SeedAdminAfterSetup_IssuesCode()
     {
         _adminSetupGateService.IsGateActiveAsync().Returns(false);
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -177,7 +177,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_NormalUserWhileSetupGateActive_IssuesCodeWithoutConsultingGate()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -188,11 +188,35 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_InvalidCredentials_DoesNotReportSetupRequired()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, WrongPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, WrongPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.IsSetupRequired.ShouldBeFalse();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+    }
+
+    [Test]
+    public async Task Handle_SeedAdminReservedForTheSetupCode_RefusesBeforeThePasswordIsChecked()
+    {
+        _adminSetupGateService.IsSeedAdminSignInReservedForSetupCodeAsync(SeedAdminEmail, false).Returns(true);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.Code.ShouldBeNull();
+        result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.ErrorDescription.ShouldBe("Invalid email or password.");
+        await _authenticationService.DidNotReceive().ValidateCredentialsAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_PassesTheRequestOriginToTheReservationCheck()
+    {
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: true);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _adminSetupGateService.Received(1).IsSeedAdminSignInReservedForSetupCodeAsync(Email, true);
     }
 }
