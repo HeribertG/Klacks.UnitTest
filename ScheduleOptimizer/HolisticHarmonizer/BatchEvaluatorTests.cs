@@ -203,7 +203,7 @@ public class BatchEvaluatorTests
     }
 
     [Test]
-    public void Evaluate_WouldDegradeFeedsRejectMemoryWithRealScoreAndForbiddenSwaps()
+    public void Evaluate_WouldDegradeReportsRealScoreAndRevertedStepsAsForbiddenSwaps()
     {
         var bitmap = BuildBitmap(rows: 2, days: 5);
         for (var d = 0; d < 5; d++)
@@ -213,15 +213,13 @@ public class BatchEvaluatorTests
         }
         var step = new PlanCellSwap(1, 2, 0, 2, "breaks both homogeneous blocks");
         var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [step]);
-        var memory = new RejectMemory();
 
         var result = BuildEvaluator().Evaluate(bitmap, batch);
-        memory.Note(result);
 
         result.Result.ShouldBe(BatchAcceptance.WouldDegrade);
-        memory.Entries.Single().RejectedSwaps.ShouldBe([step]);
-        memory.Entries.Single().Summary.ShouldContain(result.ScoreAfter.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
-        memory.SameDayForbiddenSwapKeys().ShouldContain(new ForbiddenSwapKey(0, 1, 2));
+        result.ScoreAfter.ShouldBeLessThan(result.ScoreBefore);
+        result.RevertedSteps.ShouldBe([step]);
+        result.RevertedSteps.Select(ForbiddenSwapKey.From).ShouldContain(new ForbiddenSwapKey(0, 1, 2));
     }
 
     /// <summary>

@@ -37,7 +37,6 @@ public sealed class HolisticHarmonizerControllerTests
         _sut = new HolisticHarmonizerController(
             _runner,
             _applyService,
-            null!,
             _stateCache);
     }
 
@@ -50,9 +49,7 @@ public sealed class HolisticHarmonizerControllerTests
         RejectedSwaps: [],
         Batches: [],
         AgentDisplayNames: [],
-        QualificationGaps: [],
-        LlmParsingError: null,
-        LlmRawResponsePreview: null);
+        QualificationGaps: []);
 
     [Test]
     public async Task Status_ReturnsRunning_WhenJobIsRunning()

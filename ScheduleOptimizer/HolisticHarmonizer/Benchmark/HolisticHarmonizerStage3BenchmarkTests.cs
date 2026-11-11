@@ -7,7 +7,6 @@
  *   S2_PRORATED   stage 1 + stage 2 with prorated targets     (fix A)
  *   CTRL_RAW      deterministic control (all candidates + pairs, no LLM) on S2_RAW, raw targets
  *   CTRL_PRORATED deterministic control on S2_PRORATED, prorated targets (A + B evaluator)
- *   LLM_*         production engine with a real model on S2_* (env-gated, see Stage3LlmArm)
  *   PROD_DET      shipped DeterministicHarmonyOptimizer (production defaults) on S2_PRORATED
  * Live-size scenarios (16x37, 30x31) run only in the PROD_DET tests; their CTRL arm is pair-capped.
  * All arms are scored by Stage3BenchmarkMetrics on the prorated yardstick.
@@ -22,19 +21,15 @@ using NUnit.Framework;
 
 namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer.Benchmark;
 
-[TestFixture, Explicit("Stage-3 benchmark - run manually; slow and (LLM arm) paid.")]
+[TestFixture, Explicit("Stage-3 benchmark - run manually; slow.")]
 [Category("HarmonizerStage3Benchmark")]
 public class HolisticHarmonizerStage3BenchmarkTests
 {
     private const int FixedSeed = 42;
     private const int Repetitions = 20;
     private const int SweepSeedCount = 20;
-    private const int DefaultLlmRuns = 20;
     private const string PairCapVariable = "KLACKS_BENCH_PAIR_CAP";
     private const string OutputVariable = "KLACKS_BENCH_OUT";
-    private const string LlmRunsVariable = "KLACKS_BENCH_LLM_RUNS";
-    private const string LlmTargetVariable = "KLACKS_BENCH_LLM_TARGET";
-    private const string LlmScenarioVariable = "KLACKS_BENCH_LLM_SCENARIO";
     private const string PairCapsVariable = "KLACKS_BENCH_PAIR_CAPS";
     private const string SweepScenarioVariable = "KLACKS_BENCH_SWEEP_SCENARIO";
     private const string ProdRepetitionsVariable = "KLACKS_BENCH_PROD_REPS";
@@ -210,54 +205,6 @@ public class HolisticHarmonizerStage3BenchmarkTests
         }
 
         Report("SEED SWEEP seeds 1..20 (stage-1/2 seed = run seed), paired across arms", rows);
-        Assert.That(rows, Is.Not.Empty);
-    }
-
-    [Test]
-    public async Task LlmArm_FixedSeed()
-    {
-        var settings = Stage3LlmSettings.FromEnvironment();
-        if (settings is null)
-        {
-            Assert.Inconclusive(
-                $"LLM arm pending: set {Stage3LlmSettings.ApiKeyVariable}, {Stage3LlmSettings.BaseUrlVariable} and {Stage3LlmSettings.ApiModelVariable}.");
-            return;
-        }
-
-        var runs = int.TryParse(Environment.GetEnvironmentVariable(LlmRunsVariable), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
-            ? n
-            : DefaultLlmRuns;
-        var mode = Enum.TryParse<Stage3TargetMode>(Environment.GetEnvironmentVariable(LlmTargetVariable), ignoreCase: true, out var m)
-            ? m
-            : Stage3TargetMode.Prorated;
-        var scenarioFilter = Environment.GetEnvironmentVariable(LlmScenarioVariable);
-        var arm = mode == Stage3TargetMode.Raw ? "LLM_RAW" : "LLM_PRORATED";
-
-        var rows = new List<ArmRun>();
-        foreach (var scenario in Scenarios.Where(s => string.IsNullOrEmpty(scenarioFilter) || s.Name == scenarioFilter))
-        {
-            var raw = Stage3BenchmarkPipeline.RunStages(scenario, FixedSeed, Stage3TargetMode.Raw);
-            var stages = mode == Stage3TargetMode.Raw ? raw : WithStage2(raw, scenario, mode, FixedSeed);
-            for (var run = 0; run < runs; run++)
-            {
-                var watch = Stopwatch.StartNew();
-                var result = await Stage3LlmArm.RunAsync(Stage3BenchmarkPipeline.Rebuild(stages.Stage2Bitmap, scenario, mode), settings, CancellationToken.None);
-                watch.Stop();
-                var row = Measure(scenario, arm, run, result.FinalBitmap, watch.Elapsed, result.AcceptedBatches) with
-                {
-                    LlmCalls = result.LlmCalls,
-                    InputTokens = result.InputTokens,
-                    OutputTokens = result.OutputTokens,
-                    WouldDegrade = result.WouldDegradeBatches,
-                    Rejected = result.RejectedBatches,
-                    Error = result.ParsingError,
-                };
-                rows.Add(row);
-                Log(row.ToCsv());
-            }
-        }
-
-        Report($"LLM ARM {arm} model={settings.ApiModelId}, fixed seed 42, N={runs}", rows);
         Assert.That(rows, Is.Not.Empty);
     }
 

@@ -1,7 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
-using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using NUnit.Framework;
 using Shouldly;
 
@@ -111,21 +110,11 @@ public sealed class AutoWizardStageOutcomePlannerTests
     }
 
     [Test]
-    public void HolisticStageFailure_WithMissingPrerequisite_NamesThePrerequisite()
+    public void HolisticStageFailure_FallsBackAndCarriesTheFailure()
     {
         AutoWizardStageOutcomePlanner
-            .HolisticStageFallbackReason(HolisticHarmonizerReadiness.NotReady("model is text-only"), "engine crashed")
-            .ShouldBe("model is text-only");
-    }
-
-    [Test]
-    public void HolisticStageFailure_WithPrerequisiteMet_FallsBackAndCarriesTheFailure()
-    {
-        var reason = AutoWizardStageOutcomePlanner
-            .HolisticStageFallbackReason(HolisticHarmonizerReadiness.Ready(), "engine crashed");
-
-        reason.ShouldContain("engine crashed");
-        reason.ShouldContain("stage 2");
+            .HolisticStageFallbackReason("engine crashed")
+            .ShouldBe("the stage failed and the harmonized plan of stage 2 is kept: engine crashed");
     }
 
     [Test]

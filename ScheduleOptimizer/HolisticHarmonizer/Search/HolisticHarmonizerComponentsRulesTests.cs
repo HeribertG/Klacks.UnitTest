@@ -12,6 +12,7 @@ using Klacks.ScheduleOptimizer.HolisticHarmonizer.Committee.Agents;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Search;
 using Klacks.UnitTest.ScheduleOptimizer.Harmonizer.Rules;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 

@@ -9,7 +9,6 @@
 /// </summary>
 
 using System.Text.RegularExpressions;
-using AppSettings = Klacks.Api.Application.Constants.Settings;
 using Klacks.Api.Data.Seed;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -29,9 +28,9 @@ public class HolisticHarmonizerModelDefaultSqlTests
     private static string Normalize(string sql) => Regex.Replace(sql, @"\s+", " ").Trim();
 
     [Test]
-    public void SettingType_MatchesTheApplicationConstant()
+    public void SettingType_IsTheFrozenStageThreeModelSetting()
     {
-        HolisticHarmonizerModelDefaultSql.SettingType.ShouldBe(AppSettings.HOLISTIC_HARMONIZER_LLM_MODEL);
+        HolisticHarmonizerModelDefaultSql.SettingType.ShouldBe("WIZARD3_LLM_MODEL");
     }
 
     [Test]

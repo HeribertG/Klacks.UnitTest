@@ -167,7 +167,7 @@ public class MoveCandidatePoolTests
     }
 
     [Test]
-    public void Generate_WithRejectMemoryKeys_ExcludesForbiddenSameDaySwapsInBothOrientations()
+    public void Generate_WithForbiddenSwapKeys_ExcludesForbiddenSameDaySwapsInBothOrientations()
     {
         var bitmap = BuildBitmap(rows: 4, days: 2);
         bitmap.SetCell(0, 0, Work(CellSymbol.Early));
@@ -181,15 +181,13 @@ public class MoveCandidatePoolTests
             new MoveCandidate(3, 0, 2, 0, "forbidden-mirrored", 4.0),
             new MoveCandidate(0, 0, 3, 0, "allowed", 1.0));
         var pool = new MoveCandidatePool(BuildValidator(), new[] { (IMoveCandidateGenerator)fakeGenerator });
-        var memory = new RejectMemory();
-        memory.Note(new BatchEvaluation(
-            Guid.NewGuid(), HolisticIntent.ConsolidateBlock, BatchAcceptance.WouldDegrade,
-            AppliedSteps: [], Rejections: [], StoppedAtStep: null, ScoreBefore: 0.5, ScoreAfter: 0.4)
+        var excluded = new HashSet<ForbiddenSwapKey>
         {
-            RevertedSteps = [new PlanCellSwap(1, 0, 0, 0, ""), new PlanCellSwap(2, 0, 3, 0, "")],
-        });
+            ForbiddenSwapKey.From(new PlanCellSwap(1, 0, 0, 0, "")),
+            ForbiddenSwapKey.From(new PlanCellSwap(2, 0, 3, 0, "")),
+        };
 
-        var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock, memory.SameDayForbiddenSwapKeys());
+        var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock, excluded);
 
         result.Select(c => c.Hint).ShouldBe(new[] { "allowed" });
     }

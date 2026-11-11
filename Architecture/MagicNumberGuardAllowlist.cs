@@ -11,9 +11,10 @@
 /// Infrastructure, out of the guarded directories, leaving 481 in 146 files. Round 12 (a1-magic2) named the
 /// business-rule values (trigger severity thresholds, memory importance scale, day and week units, planning
 /// context window, autofill tolerances, token and password sizes, list and search limits, report and model
-/// defaults, cache lifetimes, option defaults) and left 242 in 13 files. What remains is deliberate for now:
+/// defaults, cache lifetimes, option defaults) and left 242 in 13 files. Removing the stage-3 language-model mode
+/// (2026-11-11) deleted HarmonizerEvalScenarioFactory (7), leaving 235 in 12 files. What remains is deliberate for now:
 /// calendar algorithms (HolidaysListCalculator, HijriCalendar), sample and evaluation data (ExportSampleDataFactory,
-/// HarmonizerEvalScenarioFactory, CreateTestEnvironmentSkill), the feature-vector slots of TurnIntentHandFeatures,
+/// CreateTestEnvironmentSkill), the feature-vector slots of TurnIntentHandFeatures,
 /// the Haversine and Wilson-interval formula coefficients, the median halving of two statistics helpers, and the
 /// files other branches still own (AddClientToNearestGroupSkill, UpdateAbsenceTypeSkill, TurnEvalMemoryProbe).
 /// </summary>
@@ -28,7 +29,6 @@ public static class MagicNumberGuardAllowlist
         ["Application/Services/Assistant/Evaluation/TurnEval/TurnEvalMemoryProbe.cs"] = 1,
         ["Application/Services/ClientImport/ClientImportColumnDetector.cs"] = 1,
         ["Application/Services/Exports/ExportSampleDataFactory.cs"] = 39,
-        ["Application/Services/Schedules/HolisticHarmonizer/HarmonizerEvalScenarioFactory.cs"] = 7,
         ["Application/Skills/AddClientToNearestGroupSkill.cs"] = 3,
         ["Application/Skills/CreateTestEnvironmentSkill.cs"] = 44,
         ["Application/Skills/UpdateAbsenceTypeSkill.cs"] = 1,

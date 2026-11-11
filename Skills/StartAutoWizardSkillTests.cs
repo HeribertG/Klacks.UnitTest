@@ -2,8 +2,7 @@
 
 /// <summary>
 /// Unit tests for StartAutoWizardSkill - parameter validation, group lookup by id or name, calendar-week
-/// resolution, the up-front notice when the holistic harmonization cannot run, and agent/shift
-/// auto-resolution, and the roster order handed to the run (the chat user's saved order, the automatic order for an
+/// resolution, the three announced stages, agent/shift auto-resolution, and the roster order handed to the run (the chat user's saved order, the automatic order for an
 /// external agent). The actual AutoWizardJobRunner is fully mocked; the roster order runs through the real
 /// SkillRosterOrderResolver.
 /// </summary>
@@ -13,8 +12,6 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
-using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
-using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -38,7 +35,6 @@ public class StartAutoWizardSkillTests
     private IShiftScheduleRepository _shiftScheduleRepository = null!;
     private IGroupScopeGuard _groupScopeGuard = null!;
     private ICompanyClock _companyClock = null!;
-    private IHolisticHarmonizerReadinessCheck _readinessCheck = null!;
     private IClientSortPreferenceRepository _sortPreferenceRepository = null!;
     private StartAutoWizardSkill _skill = null!;
     private SkillExecutionContext _context = null!;
@@ -55,15 +51,13 @@ public class StartAutoWizardSkillTests
             .Returns(GroupScopeAccess.Unrestricted());
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayDateAsync(Arg.Any<CancellationToken>()).Returns(new DateOnly(2026, 9, 29));
-        _readinessCheck = Substitute.For<IHolisticHarmonizerReadinessCheck>();
-        _readinessCheck.CheckAsync(Arg.Any<CancellationToken>()).Returns(HolisticHarmonizerReadiness.Ready());
         _sortPreferenceRepository = Substitute.For<IClientSortPreferenceRepository>();
         _sortPreferenceRepository.GetByUserAndGroupAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new List<ClientSortPreference>());
 
         _skill = new StartAutoWizardSkill(
             _runner, _groupRepository, _planningAgentRepository, _shiftScheduleRepository,
-            _groupScopeGuard, _companyClock, _readinessCheck, new SkillRosterOrderResolver(_sortPreferenceRepository));
+            _groupScopeGuard, _companyClock, new SkillRosterOrderResolver(_sortPreferenceRepository));
         _context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -547,11 +541,9 @@ public class StartAutoWizardSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_HolisticHarmonizerNotReady_TellsUpFrontThatStageThreeIsSkipped()
+    public async Task ExecuteAsync_AnnouncesAllThreeStages()
     {
         ArrangeRunnableGroup("Winterthur");
-        _readinessCheck.CheckAsync(Arg.Any<CancellationToken>())
-            .Returns(HolisticHarmonizerReadiness.NotReady(HolisticHarmonizerReadinessCheck.ModelNotConfiguredReason));
 
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
         {
@@ -560,23 +552,6 @@ public class StartAutoWizardSkillTests
         });
 
         result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldContain("will be skipped");
-        result.Message.ShouldContain(HolisticHarmonizerReadinessCheck.ModelNotConfiguredReason);
-        result.Message.ShouldNotContain("Stages: planning, harmonizing and holistic harmonization.");
-    }
-
-    [Test]
-    public async Task ExecuteAsync_HolisticHarmonizerReady_AnnouncesAllThreeStages()
-    {
-        ArrangeRunnableGroup("Winterthur");
-
-        var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>
-        {
-            { "groupName", "Winterthur" },
-            { "calendarWeek", 45 }
-        });
-
-        result.Message.ShouldContain("holistic harmonization");
-        result.Message.ShouldNotContain("will be skipped");
+        result.Message.ShouldContain("Stages: planning, harmonizing and holistic harmonization.");
     }
 }

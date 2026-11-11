@@ -58,7 +58,6 @@ public abstract class AutoWizardJobRunnerTestHarness
     protected IWizardApplyService _wizardApply = null!;
     protected IHarmonizerApplyService _harmonizerApply = null!;
     protected IHolisticHarmonizerApplyService _holisticApply = null!;
-    protected IHolisticHarmonizerReadinessCheck _readiness = null!;
     protected IAnalyseScenarioRepository _scenarioRepository = null!;
     protected IMediator _mediator = null!;
     protected JobTerminalStateCache<AutoWizardJobResultDto> _stateCache = null!;
@@ -113,9 +112,6 @@ public abstract class AutoWizardJobRunnerTestHarness
                 _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns((Resource(_holisticScenarioId), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
 
-        _readiness = Substitute.For<IHolisticHarmonizerReadinessCheck>();
-        _readiness.CheckAsync(Arg.Any<CancellationToken>()).Returns(HolisticHarmonizerReadiness.Ready());
-
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         _scenarioRepository.Get(Arg.Any<Guid>()).Returns(call => _scenarios.GetValueOrDefault(call.Arg<Guid>()));
         _mediator = Substitute.For<IMediator>();
@@ -137,17 +133,16 @@ public abstract class AutoWizardJobRunnerTestHarness
         _matrixBuilder = matrixBuilder;
         _wizardResults = wizardResults;
         _harmonizerResults = harmonizerResults;
-        RebuildRunner(_readiness);
+        RebuildRunner();
     }
 
-    protected void RebuildRunner(IHolisticHarmonizerReadinessCheck readiness)
+    protected void RebuildRunner()
     {
         _provider?.Dispose();
         var services = new ServiceCollection();
         services.AddSingleton(_wizardApply);
         services.AddSingleton(_harmonizerApply);
         services.AddSingleton(_holisticApply);
-        services.AddSingleton(readiness);
         services.AddSingleton(_scenarioRepository);
         services.AddSingleton(Substitute.For<IUnitOfWork>());
         services.AddSingleton(_mediator);

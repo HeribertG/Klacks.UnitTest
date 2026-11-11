@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Control arm WITHOUT an LLM: per iteration it pulls the UNTRIMMED candidate lists of all three intent
+ * Deterministic control arm: per iteration it pulls the UNTRIMMED candidate lists of all three intent
  * generators, evaluates every single candidate and every pair of candidates (on clones) through the very same
- * BatchEvaluator the LLM path uses (hard validator + committee + score-greedy), and applies the best strictly
+ * BatchEvaluator the production search uses (hard validator + committee + score-greedy), and applies the best strictly
  * improving batch. Same iteration cap as the engine (10). Stops early when nothing improves.
  * @param pairPoolCap - pairs are formed among the best PairPoolCap singles (ranked by their real end score);
  *                      int.MaxValue means all pairs
