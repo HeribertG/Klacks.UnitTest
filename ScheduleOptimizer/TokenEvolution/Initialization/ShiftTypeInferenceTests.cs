@@ -8,9 +8,12 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Initialization;
 
 /// <summary>
 /// Every engine asks this one class what kind of shift it is looking at, and the answer decides who may
-/// work it, what it is worth and how the plan is scored. The bands are Early 06:00-14:59, Late
-/// 15:00-22:59, Night 23:00-05:59, and a shift takes the strongest band its SPAN touches - Night beats
-/// Late beats Early - because a shift that runs into the night is night work whatever the roster says.
+/// work it, what it is worth and how the plan is scored. The bands are Early 06:00-17:00, Late
+/// 17:01-22:59, Night 23:00-05:59 (owner decision 2026-11-11; before: Early 06:00-14:59, Late
+/// 15:00-22:59), and a shift is classified by its SPAN: the minutes per band are counted and the stronger
+/// band (Night beats Late beats Early) wins unless its share is tolerated - at most 60 minutes AND less
+/// than half of the shift (owner decision 2026-11-11, tolerance 60 minutes). The end is exclusive, so
+/// 09:00-18:01 has exactly 60 late minutes and stays early, 09:00-18:02 has 61 and is late.
 /// </summary>
 [TestFixture]
 public sealed class ShiftTypeInferenceTests
@@ -22,29 +25,96 @@ public sealed class ShiftTypeInferenceTests
     }
 
     [Test]
-    public void FromSpan_EarlyShiftReachingIntoTheLateBand_IsLate()
+    public void FromSpan_DayShiftEightToFour_IsEarly()
     {
-        // Most of it sits in the early band; the last hour does not, and that decides.
-        Classify("08:00", "16:00").ShouldBe(ShiftTypeInference.LateIndex);
+        // Owner decision 2026-11-11: until then this shift reached into the late band from 15:00 on.
+        Classify("08:00", "16:00").ShouldBe(ShiftTypeInference.EarlyIndex);
     }
 
     [Test]
-    public void FromSpan_ShiftStartingBeforeSix_IsNight()
+    public void FromSpan_DayShiftReachingAFewMinutesIntoTheLateBand_IsEarly()
     {
-        Classify("05:00", "13:00").ShouldBe(ShiftTypeInference.NightIndex);
+        // Owner, 2026-11-11 (tolerance 60 minutes): 09:00-18:00 has 59 late minutes, which are tolerated.
+        Classify("09:00", "18:00").ShouldBe(ShiftTypeInference.EarlyIndex);
+    }
+
+    [TestCase("18:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("18:01", ShiftTypeInference.EarlyIndex)]
+    [TestCase("18:02", ShiftTypeInference.LateIndex)]
+    public void FromSpan_LateMinutesAroundTheTolerance_SixtyAreTolerated(string end, int expected)
+    {
+        // The late band begins with the minute 17:01, so an end at 18:01 has exactly 60 late minutes.
+        Classify("09:00", end).ShouldBe(expected);
     }
 
     [Test]
-    public void FromSpan_EndingExactlyAtTheLateBoundary_StaysEarly()
+    public void FromSpan_ShiftStartingSixtyMinutesBeforeSix_IsEarly()
     {
-        // The end is exclusive: the last worked minute is 14:59.
-        Classify("06:00", "15:00").ShouldBe(ShiftTypeInference.EarlyIndex);
+        Classify("05:00", "13:00").ShouldBe(ShiftTypeInference.EarlyIndex);
     }
 
     [Test]
-    public void FromSpan_EndingOneMinutePastTheLateBoundary_IsLate()
+    public void FromSpan_ShiftStartingSixtyOneMinutesBeforeSix_IsNight()
     {
-        Classify("06:00", "15:01").ShouldBe(ShiftTypeInference.LateIndex);
+        Classify("04:59", "13:00").ShouldBe(ShiftTypeInference.NightIndex);
+    }
+
+    [TestCase("15:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("15:01", ShiftTypeInference.EarlyIndex)]
+    [TestCase("17:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("17:01", ShiftTypeInference.EarlyIndex)]
+    [TestCase("17:02", ShiftTypeInference.EarlyIndex)]
+    [TestCase("18:01", ShiftTypeInference.EarlyIndex)]
+    [TestCase("18:02", ShiftTypeInference.LateIndex)]
+    public void FromSpan_EndAroundTheLateBoundary_OnlyMoreThanSixtyLateMinutesTurnTheShiftLate(string end, int expected)
+    {
+        // 06:00 to 17:02 works the single late minute 17:01, which is tolerated; 06:00 to 18:02 works 61.
+        Classify("06:00", end).ShouldBe(expected);
+    }
+
+    [TestCase("16:59", "22:00")]
+    [TestCase("17:00", "22:00")]
+    [TestCase("17:01", "22:00")]
+    [TestCase("17:30", "18:30")]
+    [TestCase("16:30", "17:45")]
+    public void FromSpan_ShiftsLyingMostlyInTheLateBand_AreLate(string start, string end)
+    {
+        Classify(start, end).ShouldBe(ShiftTypeInference.LateIndex);
+    }
+
+    [Test]
+    public void FromSpan_StartingAtFiveAndEndingAtOnePastFive_IsEarly()
+    {
+        // Its only minute is 17:00, which still belongs to the early band.
+        Classify("17:00", "17:01").ShouldBe(ShiftTypeInference.EarlyIndex);
+    }
+
+    [TestCase("06:00", "14:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("07:00", "15:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("08:00", "16:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("09:00", "18:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("09:00", "18:01", ShiftTypeInference.EarlyIndex)]
+    [TestCase("09:00", "18:02", ShiftTypeInference.LateIndex)]
+    [TestCase("13:00", "19:00", ShiftTypeInference.LateIndex)]
+    [TestCase("13:00", "21:00", ShiftTypeInference.LateIndex)]
+    [TestCase("14:00", "22:00", ShiftTypeInference.LateIndex)]
+    [TestCase("15:00", "23:00", ShiftTypeInference.LateIndex)]
+    [TestCase("17:30", "18:30", ShiftTypeInference.LateIndex)]
+    [TestCase("16:30", "17:45", ShiftTypeInference.LateIndex)]
+    [TestCase("05:00", "13:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("04:59", "13:00", ShiftTypeInference.NightIndex)]
+    [TestCase("14:00", "00:00", ShiftTypeInference.LateIndex)]
+    [TestCase("16:00", "00:00", ShiftTypeInference.LateIndex)]
+    [TestCase("15:00", "00:30", ShiftTypeInference.NightIndex)]
+    [TestCase("22:30", "00:00", ShiftTypeInference.NightIndex)]
+    [TestCase("22:15", "23:45", ShiftTypeInference.NightIndex)]
+    [TestCase("22:00", "06:00", ShiftTypeInference.NightIndex)]
+    [TestCase("23:00", "07:00", ShiftTypeInference.NightIndex)]
+    [TestCase("07:00", "07:00", ShiftTypeInference.NightIndex)]
+    [TestCase("00:00", "00:00", ShiftTypeInference.NightIndex)]
+    public void FromSpan_TypicalShifts_FollowTheOwnerDecisionOf20261111(string start, string end, int expected)
+    {
+        Classify(start, end).ShouldBe(expected);
     }
 
     [Test]
@@ -54,10 +124,15 @@ public sealed class ShiftTypeInferenceTests
     }
 
     [Test]
-    public void FromSpan_LateShiftReachingIntoTheNightBand_IsNight()
+    public void FromSpan_LateShiftReachingMoreThanSixtyMinutesIntoTheNightBand_IsNight()
     {
-        // Night is the strongest band, so it wins over late for the same reason late wins over early.
-        Classify("15:00", "23:30").ShouldBe(ShiftTypeInference.NightIndex);
+        Classify("15:00", "00:30").ShouldBe(ShiftTypeInference.NightIndex);
+    }
+
+    [Test]
+    public void FromSpan_LateShiftReachingAFewMinutesIntoTheNightBand_StaysLate()
+    {
+        Classify("15:00", "23:30").ShouldBe(ShiftTypeInference.LateIndex);
     }
 
     [Test]
@@ -104,7 +179,10 @@ public sealed class ShiftTypeInferenceTests
     [TestCase("05:59", ShiftTypeInference.NightIndex)]
     [TestCase("06:00", ShiftTypeInference.EarlyIndex)]
     [TestCase("14:59", ShiftTypeInference.EarlyIndex)]
-    [TestCase("15:00", ShiftTypeInference.LateIndex)]
+    [TestCase("15:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("16:59", ShiftTypeInference.EarlyIndex)]
+    [TestCase("17:00", ShiftTypeInference.EarlyIndex)]
+    [TestCase("17:01", ShiftTypeInference.LateIndex)]
     [TestCase("22:59", ShiftTypeInference.LateIndex)]
     [TestCase("23:00", ShiftTypeInference.NightIndex)]
     public void FromStartTime_ClassifiesTheStartInstant(string start, int expected)

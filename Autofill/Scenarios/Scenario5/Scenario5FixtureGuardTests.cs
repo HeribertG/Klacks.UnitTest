@@ -20,13 +20,14 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario5;
 public class Scenario5FixtureGuardTests
 {
     [Test]
-    public void TheDayShiftSpanIsClassifiedAsLate()
+    public void TheDayShiftSpanIsClassifiedAsEarly()
     {
         var problems = AutofillShiftCatalog.ValidateDayShiftInference();
 
         problems.ShouldBeEmpty(
             "The whole scenario-5 modelling rests on this single fact: the engine has no fourth shift class and "
-            + "classifies the day shift's span as late, which is why the day shift is a slot with an id of its own and "
+            + "classifies the day shift's span as early (owner decision 2026-11-11, early band 06:00-17:00), which is "
+            + "why the day shift is a slot with an id of its own and "
             + "why every rotation, purity and fairness expectation of this scenario is written for a three-class view. "
             + $"{string.Join(" | ", problems)}");
 
@@ -63,7 +64,7 @@ public class Scenario5FixtureGuardTests
         }
 
         problems.ShouldBeEmpty(
-            "The day shift and the late shift carry the SAME engine class, so the shift reference id is the only thing "
+            "The day shift and the early shift carry the SAME engine class, so the shift reference id is the only thing "
             + "that separates them: every day-shift metric, the plan matrix and the blacklist check resolve through it. "
             + $"An id that does not resolve back makes all three measure the wrong slot. {string.Join(" | ", problems)}");
 

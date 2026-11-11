@@ -21,14 +21,14 @@ public sealed record ChangedAssignment(
 {
     /// <summary>
     /// Shift reference of the slot. Date and shift CLASS stopped identifying a slot the moment one
-    /// order gained a second slot of the late class — a day shift and a late shift of the same order
+    /// order gained a second slot of the early class — a day shift and an early shift of the same order
     /// share a date and a class — so anything that has to look a slot up, such as a blacklist or a
     /// preference bound to a shift reference, must key on this and not on the pair above.
     /// </summary>
     public Guid ShiftRefId { get; init; }
 
     /// <summary>
-    /// Slot kind of the slot, which separates a day shift from a late one;
+    /// Slot kind of the slot, which separates a day shift from an early one;
     /// <see cref="ShiftType"/> for a shift reference the catalog does not know.
     /// </summary>
     public AutofillShiftKind SlotKind => AutofillShiftCatalog.SlotKindOf(ShiftRefId) ?? ShiftType;

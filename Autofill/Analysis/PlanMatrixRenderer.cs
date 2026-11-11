@@ -393,9 +393,9 @@ public static class PlanMatrixRenderer
         if (definition.HasDayShifts)
         {
             builder.AppendLine(
-                "  The day shift is a slot of its own, but the engine classifies its span as LATE: every rule about");
+                "  The day shift is a slot of its own, but the engine classifies its span as EARLY: every rule about");
             builder.AppendLine(
-                "  shift kinds counts a T cell as a late shift, and only the shift id tells T and S apart.");
+                "  shift kinds counts a T cell as an early shift, and only the shift id tells T and F apart.");
         }
 
         return builder.ToString();

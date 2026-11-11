@@ -6,7 +6,7 @@
 /// itself. Rules as measured here:
 /// <list type="bullet">
 /// <item>A block is a run of shifts whose rest to the previous shift is below 48 hours (end to start, in hours).</item>
-/// <item>A block is pure when all its shifts have the same shift class (the day shift counts as late).</item>
+/// <item>A block is pure when all its shifts have the same shift class (the day shift counts as early).</item>
 /// <item>The previous block hands over its LAST shift class; the new block is judged by its FIRST shift class.</item>
 /// <item>Ideal successor: the next class in early, late, night, early, skipping classes that are not allowed; after a
 /// pause of at least 7 free calendar days the first allowed class from early.</item>

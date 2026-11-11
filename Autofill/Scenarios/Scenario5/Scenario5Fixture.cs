@@ -12,10 +12,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario5;
 /// of the two lowest ranks.
 /// <para>
 /// THE DAY SHIFT IS A SLOT, NOT A CLASS. The engine has three shift classes and infers them from the
-/// time span; 08:00-16:00 lands on LATE. Scenario 5 therefore gives the day shift a shift reference id
-/// of its own per order and accepts that every rule about shift kinds counts it as a late shift. A
-/// package mixing day and late shifts is not impure from the engine's point of view, and the
-/// specification says so explicitly. The consequence to keep in mind while reading any result: the
+/// time span; 08:00-16:00 lands on EARLY since the owner decision of 2026-11-11 (on LATE before, which
+/// the specification text still describes). Scenario 5 therefore gives the day shift a shift reference id
+/// of its own per order and accepts that every rule about shift kinds counts it as an early shift. A
+/// package mixing day and early shifts is not impure from the engine's point of view, while a package
+/// mixing day and late shifts now is. The consequence to keep in mind while reading any result: the
 /// only place a day shift is visible as such is the dayShift metric family, which resolves it through
 /// the shift reference id.
 /// </para>

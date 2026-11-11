@@ -16,7 +16,7 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// </summary>
 /// <param name="Employee">Employee holding the slot</param>
 /// <param name="Date">Calendar day the slot starts on</param>
-/// <param name="SlotKind">Slot kind, which separates a day shift from a late one</param>
+/// <param name="SlotKind">Slot kind, which separates a day shift from an early one</param>
 /// <param name="Order">Order the slot belongs to</param>
 /// <param name="ShiftRefId">Shift reference of the slot — the only identifier that is unique per day</param>
 public sealed record PlanAssignmentRow(

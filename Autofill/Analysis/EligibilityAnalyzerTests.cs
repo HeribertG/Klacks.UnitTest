@@ -261,7 +261,7 @@ public sealed class EligibilityAnalyzerTests
             c => c.Order == AutofillShiftCatalog.SingleOrderIndex,
             "This scenario plans a single unnamed order, so every changed slot resolves back to the order-less "
             + "shift triple. The shift reference is part of the comparison because date and shift class stopped "
-            + "identifying a slot once one order could hold two slots of the same class — a day shift and a late "
+            + "identifying a slot once one order could hold two slots of the same class — a day shift and an early "
             + "shift — which is what scenario 5 introduces.");
     }
 

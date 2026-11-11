@@ -2,8 +2,8 @@
 
 /**
  * Loads a ScenarioSnapshot JSON from the Scenarios folder and converts it into the
- * harmonizer's BitmapInput. CellSymbol is derived from start time (same rule as production
- * HarmonizerContextBuilder.SymbolFromStartTime).
+ * harmonizer's BitmapInput. CellSymbol is derived from the time span (same rule as production
+ * HarmonizerContextBuilder.SymbolOfSpan).
  */
 
 using System.Text.Json;
@@ -51,7 +51,7 @@ public static class ScenarioLoader
                 var date = DateOnly.Parse(a.Date);
                 var start = TimeOnly.Parse(a.StartTime);
                 var end = TimeOnly.Parse(a.EndTime);
-                var symbol = SymbolFromStartTime(start);
+                var symbol = SymbolOfSpan(start, end);
                 var startAt = date.ToDateTime(start);
                 var endAt = end < start ? date.AddDays(1).ToDateTime(end) : date.ToDateTime(end);
                 return new BitmapAssignment(
@@ -74,9 +74,9 @@ public static class ScenarioLoader
             Assignments: assignments);
     }
 
-    private static CellSymbol SymbolFromStartTime(TimeOnly start)
+    private static CellSymbol SymbolOfSpan(TimeOnly start, TimeOnly end)
     {
-        var typeIndex = ShiftTypeInference.FromStartTime(start);
+        var typeIndex = ShiftTypeInference.FromSpan(start, end);
         return typeIndex switch
         {
             0 => CellSymbol.Early,

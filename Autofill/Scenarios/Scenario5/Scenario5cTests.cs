@@ -129,9 +129,9 @@ public class Scenario5cTests : Scenario5RunTestBase
 
         (frozenDayShifts + replannedDayShifts).ShouldBe(
             Scenario5SpecConstants.TotalDayShifts,
-            "S5c: the day shift is distinguishable from the late shift by its shift reference id alone, and the "
+            "S5c: the day shift is distinguishable from the early shift by its shift reference id alone, and the "
             + "frozen prefix carries that id through the freeze. If the count came out short, the freeze would have "
-            + "collapsed day shifts into late shifts — the one failure mode this scenario's whole modelling is "
+            + "collapsed day shifts into early shifts — the one failure mode this scenario's whole modelling is "
             + "exposed to, and one no class-based check could see.");
     }
 

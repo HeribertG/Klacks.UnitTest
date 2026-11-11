@@ -45,23 +45,43 @@ public sealed class RecoverySnapshotBuilderCategoryParityTests
     }
 
     [Test]
-    public void BuildWorks_ShiftReachingIntoTheLateBand_IsLate()
+    public void BuildWorks_ShiftReachingMoreThanSixtyMinutesIntoTheLateBand_IsLate()
     {
-        // Starts in the early band, ends past 15:00 - the later band wins, exactly as in the wizards.
-        Category("08:00", "16:00").ShouldBe(ShiftCategory.Late);
+        // 09:00-18:02 works 61 minutes from 17:01 on - more than the tolerance of 60 minutes, as in the wizards.
+        Category("09:00", "18:02").ShouldBe(ShiftCategory.Late);
     }
 
     [Test]
-    public void BuildWorks_ShiftStartingBeforeSix_IsNight()
+    public void BuildWorks_ShiftReachingAFewMinutesIntoTheLateBand_IsEarly()
+    {
+        // Owner decision 2026-11-11 (tolerance 60 minutes): 09:00-18:00 works 59 late minutes.
+        Category("09:00", "18:00").ShouldBe(ShiftCategory.Early);
+    }
+
+    [Test]
+    public void BuildWorks_DayShiftEndingBeforeTheLateBand_IsEarly()
+    {
+        // Owner decision 2026-11-11: the late band begins with the minute 17:01, so 08:00-16:00 is early.
+        Category("08:00", "16:00").ShouldBe(ShiftCategory.Early);
+    }
+
+    [Test]
+    public void BuildWorks_ShiftStartingMoreThanSixtyMinutesBeforeSix_IsNight()
     {
         // The old heuristic called this early, which quietly opened it to non-shift workers.
-        Category("05:00", "13:00").ShouldBe(ShiftCategory.Night);
+        Category("04:59", "13:00").ShouldBe(ShiftCategory.Night);
     }
 
     [Test]
-    public void BuildWorks_ShiftReachingIntoTheNightBand_IsNight()
+    public void BuildWorks_ShiftStartingSixtyMinutesBeforeSix_IsEarly()
     {
-        Category("15:00", "23:30").ShouldBe(ShiftCategory.Night);
+        Category("05:00", "13:00").ShouldBe(ShiftCategory.Early);
+    }
+
+    [Test]
+    public void BuildWorks_ShiftReachingMoreThanSixtyMinutesIntoTheNightBand_IsNight()
+    {
+        Category("15:00", "00:30").ShouldBe(ShiftCategory.Night);
     }
 
     [Test]

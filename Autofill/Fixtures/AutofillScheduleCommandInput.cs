@@ -53,7 +53,7 @@ public sealed class AutofillScheduleCommandInput
     /// <summary>True when at least one command of that employee and day forbids the given slot kind.</summary>
     /// <param name="agentId">Employee identifier</param>
     /// <param name="date">Calendar day of the assignment</param>
-    /// <param name="kind">Slot kind of the assignment; the day shift is judged as late</param>
+    /// <param name="kind">Slot kind of the assignment; the day shift is judged as early</param>
     public bool Forbids(string agentId, DateOnly date, AutofillShiftKind kind)
         => CommandsOn(agentId, date).Any(c => c.ForbidsKind(kind));
 

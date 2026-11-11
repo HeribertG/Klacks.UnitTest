@@ -11,9 +11,9 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="Employee">Employee identifier</param>
 /// <param name="Date">Calendar day the shift starts on</param>
 /// <param name="Kind">
-/// Engine shift CLASS: early, late or night. A day shift carries <c>Late</c> here, because that is
-/// what the engine inferred from its span and what every rotation, purity and fairness measure must
-/// see. Use <see cref="PlannedShift.SlotKind"/> to tell a day shift from a late one
+/// Engine shift CLASS: early, late or night. A day shift carries <c>Early</c> here (owner decision
+/// 2026-11-11), because that is what the engine inferred from its span and what every rotation, purity
+/// and fairness measure must see. Use <see cref="PlannedShift.SlotKind"/> to tell a day shift from an early one
 /// </param>
 /// <param name="StartAt">Absolute start</param>
 /// <param name="EndAt">Absolute end; for a night shift this lies on the following day</param>

@@ -104,8 +104,9 @@ public static class AutofillPlanAnalyzer
         + "reported, never asserted per assignment.";
 
     private const string DayShiftNote =
-        "The day shift 08:00-16:00 is a slot of its own but not a shift class of its own: the engine infers LATE "
-        + "from its span, so rotation, purity and fairness count every day shift as a late shift and dayShift.* is "
+        "The day shift 08:00-16:00 is a slot of its own but not a shift class of its own: the engine infers EARLY "
+        + "from its span (owner decision 2026-11-11; LATE before), so rotation, purity and fairness count every day "
+        + "shift as an early shift and dayShift.* is "
         + "the only place it is visible. Every day-shift entry is resolved through the shift reference id.";
 
     private const string PlannedHoursNote =
@@ -1297,15 +1298,15 @@ public static class AutofillPlanAnalyzer
     /// <para>
     /// A STILL RUNNING package expects its own SLOT back: the employee is mid-package and continuing
     /// means the same shift, so the comparison runs on the slot kind. That distinction only becomes
-    /// visible once one order holds two slots of the same class — a day shift and a late shift are both
-    /// late to the engine, and continuing a day-shift package on the late shift of the same order would
+    /// visible once one order holds two slots of the same class — a day shift and an early shift are both
+    /// early to the engine, and continuing a day-shift package on the early shift of the same order would
     /// otherwise read as a faithful continuation.
     /// </para>
     /// <para>
     /// A CLOSED package expects a rotation CLASS, because that is all the specification's rotation
     /// table names: the next package rotates early to late to night, and it says nothing about which
     /// slot of that class the employee lands on. A day shift therefore satisfies an expectation of
-    /// "late", exactly as the scenario-5 decision to treat the day shift as a late shift requires.
+    /// "early", because the engine classifies it as an early shift since the owner decision of 2026-11-11.
     /// </para>
     /// </summary>
     /// <param name="shifts">The employee's in-period shifts, sorted by day and start time</param>

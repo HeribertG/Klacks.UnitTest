@@ -11,7 +11,7 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// </summary>
 /// <param name="Employee">Employee identifier</param>
 /// <param name="Date">Calendar day the assignment starts on, which is also an absence day</param>
-/// <param name="SlotKind">Slot kind of the assignment; the day shift is separated from the late shift here</param>
+/// <param name="SlotKind">Slot kind of the assignment; the day shift is separated from the early shift here</param>
 /// <param name="Order">Order the slot belongs to</param>
 /// <param name="ShiftRefId">Shift reference of the slot, so the entry is re-checkable</param>
 /// <param name="IsCarryIn">True when the assignment is fixed previous-month input rather than planned</param>

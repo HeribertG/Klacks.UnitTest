@@ -11,7 +11,8 @@ namespace Klacks.UnitTest.Autofill.Fixtures;
 /// a shift kind and the engine's shift-type index.
 /// <para>
 /// The shift kind early/late/night is nowhere persisted; the engine derives it from the time span in
-/// <see cref="ShiftTypeInference"/>, whose banding rule was last changed on 2026-08-06. Every fixture
+/// <see cref="ShiftTypeInference"/>, whose bands were last changed on 2026-11-11 (early 06:00-17:00, late
+/// 17:01-22:59, night 23:00-05:59; owner decision). Every fixture
 /// therefore has to prove, not assume, that 07:00-15:00 / 15:00-23:00 / 23:00-07:00 still land on
 /// early / late / night — that is what <see cref="ValidateShiftTypeInference"/> is for. The builder
 /// calls it on every Build(), and a scenario test can call it directly as an explicit guard.
@@ -20,12 +21,12 @@ namespace Klacks.UnitTest.Autofill.Fixtures;
 /// SLOT KIND versus SHIFT CLASS. Since scenario 5 the two are not the same thing. A slot kind is what
 /// a fixture demands — early, late, night or the day shift 08:00-16:00 — and it addresses one pinned
 /// id through <see cref="SlotIndexOf"/>. A shift class is what the engine infers from the time span,
-/// and there are only three of them: the day shift's span classifies as LATE, so
-/// <see cref="ShiftTypeIndexOf"/> maps day and late onto the same index and is deliberately not
-/// injective. Everything about rotation, purity and fairness reasons in classes and uses
+/// and there are only three of them: the day shift's span classifies as EARLY since the owner decision
+/// of 2026-11-11 (LATE before), so <see cref="ShiftTypeIndexOf"/> maps day and early onto the same index
+/// and is deliberately not injective. Everything about rotation, purity and fairness reasons in classes and uses
 /// <see cref="Kinds"/>; everything that builds or identifies a slot reasons in slot kinds and uses
 /// <see cref="SlotKinds"/> or <see cref="SlotKindOf"/>. Confusing the two is the one way to make a
-/// day shift silently disappear into the late statistics or a late shift silently count as a day one.
+/// day shift silently disappear into the early statistics or an early shift silently count as a day one.
 /// </para>
 /// </summary>
 public static class AutofillShiftCatalog
@@ -99,7 +100,7 @@ public static class AutofillShiftCatalog
     /// <summary>
     /// Every slot kind a fixture can demand, the day shift included. Kept apart from
     /// <see cref="AllKinds"/> on purpose: that list is the three ROTATION CLASSES of rule 5, and the
-    /// day shift is not a fourth class — it is a fourth slot whose class is late.
+    /// day shift is not a fourth class — it is a fourth slot whose class is early.
     /// </summary>
     private static readonly AutofillShiftKind[] AllSlotKinds =
         [AutofillShiftKind.Early, AutofillShiftKind.Late, AutofillShiftKind.Night, AutofillShiftKind.Day];
@@ -205,7 +206,7 @@ public static class AutofillShiftCatalog
 
     /// <summary>
     /// Slot kind an id belongs to, or null for an id the catalog does not know. This is the ONLY way
-    /// to tell a day shift from a late one: both carry the engine's late shift type index, and the
+    /// to tell a day shift from an early one: both carry the engine's early shift type index, and the
     /// shift reference id is what separates them.
     /// </summary>
     /// <param name="shiftId">Shift reference id of a token, locked work or demanded slot</param>
@@ -303,7 +304,7 @@ public static class AutofillShiftCatalog
     };
 
     /// <summary>
-    /// The rotation CLASS of a slot kind: itself for the three classic shifts, late for the day shift.
+    /// The rotation CLASS of a slot kind: itself for the three classic shifts, early for the day shift.
     /// This is the projection every rule about rotation, purity and fairness applies before it judges.
     /// </summary>
     /// <param name="kind">Slot kind</param>
@@ -322,8 +323,9 @@ public static class AutofillShiftCatalog
     };
 
     /// <summary>
-    /// The engine SHIFT CLASS a kind is expected to map to. The day shift maps to the late index —
-    /// <c>ShiftTypeInference</c> classifies 08:00-16:00 as late and a fourth class does not exist — so
+    /// The engine SHIFT CLASS a kind is expected to map to. The day shift maps to the early index —
+    /// <c>ShiftTypeInference</c> classifies 08:00-16:00 as early since 2026-11-11 and a fourth class does
+    /// not exist — so
     /// this function is deliberately not injective and must never be used to address the pinned id
     /// table. <see cref="SlotIndexOf"/> is the lookup for that.
     /// </summary>
@@ -333,14 +335,14 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => ShiftTypeInference.EarlyIndex,
         AutofillShiftKind.Late => ShiftTypeInference.LateIndex,
         AutofillShiftKind.Night => ShiftTypeInference.NightIndex,
-        AutofillShiftKind.Day => ShiftTypeInference.LateIndex,
+        AutofillShiftKind.Day => ShiftTypeInference.EarlyIndex,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
 
     /// <summary>
     /// Position of a slot kind in the pinned id table and in the slot order of a day. Unlike
     /// <see cref="ShiftTypeIndexOf"/> this IS injective: it is what keeps the day shift's id apart
-    /// from the late shift's id although the engine gives both the same class.
+    /// from the early shift's id although the engine gives both the same class.
     /// </summary>
     /// <param name="kind">Shift kind</param>
     public static int SlotIndexOf(AutofillShiftKind kind) => kind switch
@@ -557,18 +559,19 @@ public static class AutofillShiftCatalog
 
     /// <summary>
     /// Proves the single fact the whole scenario-5 modelling rests on: the day shift's span
-    /// 08:00-16:00 is classified LATE by the production inference. Scenario 5 keeps the day shift as a
-    /// slot of its own precisely BECAUSE the engine has no fourth class for it, and every rotation,
-    /// purity and fairness expectation of that scenario is written for the three-class view that
-    /// follows. Were the inference to grow a day class, the day shift would stop being a late shift
-    /// and those expectations would silently measure something else — so this is checked separately
-    /// from the loop above, with its own message, rather than folded into a generic kind sweep.
+    /// 08:00-16:00 is classified EARLY by the production inference (owner decision 2026-11-11; it was
+    /// LATE before). Scenario 5 keeps the day shift as a slot of its own precisely BECAUSE the engine
+    /// has no fourth class for it, and every rotation, purity and fairness expectation of that scenario
+    /// is written for the three-class view that follows. Were the inference to grow a day class or move
+    /// the day shift again, those expectations would silently measure something else — so this is
+    /// checked separately from the loop above, with its own message, rather than folded into a generic
+    /// kind sweep.
     /// </summary>
     public static IReadOnlyList<string> ValidateDayShiftInference()
     {
         const AutofillShiftKind Kind = AutofillShiftKind.Day;
         var actual = ShiftTypeInference.FromSpanString(StartTimeOf(Kind), EndTimeOf(Kind));
-        if (actual == ShiftTypeInference.LateIndex)
+        if (actual == ShiftTypeInference.EarlyIndex)
         {
             return [];
         }
@@ -577,8 +580,8 @@ public static class AutofillShiftCatalog
         [
             $"The day shift ({StartTimeOf(Kind)}-{EndTimeOf(Kind)}) is classified as shift type index "
             + $"{actual.ToString(CultureInfo.InvariantCulture)}, but scenario 5 models it as a slot of its own whose "
-            + $"engine CLASS is late (index {ShiftTypeInference.LateIndex.ToString(CultureInfo.InvariantCulture)}). "
-            + "ShiftTypeInference changed: the day shift is no longer a late shift, so every rotation, purity and "
+            + $"engine CLASS is early (index {ShiftTypeInference.EarlyIndex.ToString(CultureInfo.InvariantCulture)}). "
+            + "ShiftTypeInference changed: the day shift is no longer an early shift, so every rotation, purity and "
             + "fairness expectation written for the three-class view now measures something else.",
         ];
     }

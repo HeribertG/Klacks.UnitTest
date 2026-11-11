@@ -17,11 +17,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario5;
 /// scenario-5 run so the phase-D table compares the same judgements across the runs.
 /// <para>
 /// THE THREE-CLASS VIEW. Rotation, package purity and fairness are measured on the engine's three
-/// shift classes, and a day shift counts there as a late shift. That is not a simplification the suite
+/// shift classes, and a day shift counts there as an early shift. That is not a simplification the suite
 /// chose but the only view that exists: the inference derives the class from the time span and
-/// 08:00-16:00 is late. A package of day and late shifts is therefore NOT mixed, and the specification
-/// accepts that explicitly. The day shift is visible only in the dayShift family, through its shift
-/// reference id.
+/// 08:00-16:00 is early since the owner decision of 2026-11-11 (late before; the specification text still
+/// says late). A package of day and early shifts is therefore NOT mixed, a package of day and late shifts
+/// is. The day shift is visible only in the dayShift family, through its shift reference id.
 /// </para>
 /// <para>
 /// TWO ASSERTIONS ARE MARKED SpecFirstRed, and the reason is engine code rather than a measurement.
@@ -260,7 +260,7 @@ public abstract class Scenario5AssertionsBase
 
         problems.ShouldBeEmpty(
             "S5-4: the schedule commands are hard. Both FREE windows must be completely empty and every Only* window "
-            + "may hold only shifts of the named class, the day shift counting as late. The window list is reported "
+            + "may hold only shifts of the named class, the day shift counting as early. The window list is reported "
             + "next to the violations because an honoured FREE window produces no entry anywhere and would otherwise "
             + $"be indistinguishable from a window that was never applied: {Scenario5Diagnostics.DescribeWindows(windows)}. "
             + $"{Describe(problems)}");
@@ -301,14 +301,14 @@ public abstract class Scenario5AssertionsBase
         problems.ShouldBeEmpty(
             $"S5-5: the {Scenario5SpecConstants.OpenCarryInCount.ToString(CultureInfo.InvariantCulture)} running "
             + "packages must be continued on the same order and the same SLOT for exactly the declared number of days "
-            + "— slot, not class, because one order now holds two slots of the late class and continuing a day-shift "
-            + "package on the late shift of the same order is not a continuation. The one uncovered slot, the day "
+            + "— slot, not class, because one order now holds two slots of the early class and continuing a day-shift "
+            + "package on the early shift of the same order is not a continuation. The one uncovered slot, the day "
             + "shift of the third order on the first day, must be staffed freshly. All packages: "
             + $"{Scenario5Diagnostics.DescribeCarryIn(carryIn)}. {Describe(problems)}");
     }
 
     [Test]
-    public void S5_6_EveryDayShiftIsTraceableAndCountsAsALateShift()
+    public void S5_6_EveryDayShiftIsTraceableAndCountsAsAnEarlyShift()
     {
         var dayShift = Metrics.DayShift;
         var problems = new List<string>();
@@ -333,12 +333,12 @@ public abstract class Scenario5AssertionsBase
 
         var classified = Run.Plan.Tokens
             .Where(t => AutofillShiftCatalog.IsDayShift(t.ShiftRefId))
-            .Where(t => AutofillShiftCatalog.FromShiftTypeIndex(t.ShiftTypeIndex) != AutofillShiftKind.Late)
+            .Where(t => AutofillShiftCatalog.FromShiftTypeIndex(t.ShiftTypeIndex) != AutofillShiftKind.Early)
             .ToList();
         if (classified.Count > 0)
         {
             problems.Add(
-                $"{classified.Count.ToString(CultureInfo.InvariantCulture)} day-shift token(s) do not carry the late "
+                $"{classified.Count.ToString(CultureInfo.InvariantCulture)} day-shift token(s) do not carry the early "
                 + "shift class, so rotation and fairness would count them as something else");
         }
 
@@ -352,8 +352,9 @@ public abstract class Scenario5AssertionsBase
 
         problems.ShouldBeEmpty(
             "S5-6: every day-shift assignment must be traceable through its shift reference id and must appear to "
-            + "rotation, purity and fairness as a LATE shift — the engine infers the class from the span and "
-            + $"{AutofillSpecConstants.DayStartTime}-{AutofillSpecConstants.DayEndTime} is late. A day shift carrying "
+            + "rotation, purity and fairness as an EARLY shift — the engine infers the class from the span and "
+            + $"{AutofillSpecConstants.DayStartTime}-{AutofillSpecConstants.DayEndTime} is early (owner decision "
+            + "2026-11-11; the specification text still says late). A day shift carrying "
             + "another class would mean the inference changed and every three-class expectation of this scenario "
             + $"measures something else. {Describe(problems)}");
     }
@@ -391,7 +392,7 @@ public abstract class Scenario5AssertionsBase
     }
 
     [Test]
-    public void S5_8_RotationRunsForwardWithTheDayShiftCountedAsLate()
+    public void S5_8_RotationRunsForwardWithTheDayShiftCountedAsEarly()
     {
         var rotation = Metrics.Rotation;
 
@@ -400,7 +401,7 @@ public abstract class Scenario5AssertionsBase
             "S5-8: at least "
             + (Scenario5SpecConstants.MinForwardRotationRate * 100).ToString("0", CultureInfo.InvariantCulture)
             + " % of the package transitions must rotate forwards, early to late to night to early, with a day shift "
-            + "counted as a late shift. Measured "
+            + "counted as an early shift. Measured "
             + rotation.ForwardRate.ToString("0.###", CultureInfo.InvariantCulture)
             + $" over {rotation.Transitions.Count.ToString(CultureInfo.InvariantCulture)} transition(s), of which "
             + $"{rotation.BackwardOrSkipCount.ToString(CultureInfo.InvariantCulture)} run backwards or skip a class "
@@ -595,8 +596,9 @@ public abstract class Scenario5AssertionsBase
         mixed.ShouldBe(
             0,
             "A4: inside one work package the shift CLASS must not change. The day shift does not weaken this rule and "
-            + "does not test it either: it carries the late class, so a package alternating day and late shifts is "
-            + "pure to this measure by construction, which the specification accepts explicitly. What this assertion "
+            + "does not test it either: it carries the early class (owner decision 2026-11-11), so a package alternating "
+            + "day and early shifts is pure to this measure by construction, while day and late shifts in one package "
+            + "now count as mixed. What this assertion "
             + $"still catches is a package mixing early, late and night. Packages: "
             + $"{Metrics.Packages.Items.Count.ToString(CultureInfo.InvariantCulture)}, of them "
             + $"{mixed.ToString(CultureInfo.InvariantCulture)} mixed.");
@@ -651,15 +653,15 @@ public abstract class Scenario5AssertionsBase
             .Where(c => c.ActualShiftType is not null && c.ActualShiftType != c.ExpectedShiftType)
             .Select(c =>
                 $"{c.Employee} owed {c.ExpectedShiftType} but started on {c.ActualShiftType}"
-                + (c.ActualFirstSlotKind == AutofillShiftKind.Day ? " (a day shift, which IS the late class)" : string.Empty))
+                + (c.ActualFirstSlotKind == AutofillShiftKind.Day ? " (a day shift, which IS the early class)" : string.Empty))
             .ToList();
 
         problems.ShouldBeEmpty(
             $"A13/S4-8: the {Scenario5SpecConstants.ClosedCarryInCount.ToString(CultureInfo.InvariantCulture)} "
             + "packages that closed in February owe the period a rotated shift CLASS — early to late to night to "
             + "early — and no particular order, because the specification's rotation table names no order. A day "
-            + "shift satisfies an owed late, which is the direct consequence of the scenario-5 decision to treat it "
-            + $"as one. {Describe(problems)}");
+            + "shift satisfies an owed early, which is the direct consequence of its early class since the owner "
+            + $"decision of 2026-11-11 (it satisfied an owed late before). {Describe(problems)}");
     }
 
     [Test]

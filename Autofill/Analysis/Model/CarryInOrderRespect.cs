@@ -29,7 +29,7 @@ public sealed record CarryInOrderRespect(
 {
     /// <summary>
     /// Slot kind of the first in-period shift; differs from <see cref="ActualShiftType"/> only where a
-    /// day shift stands behind a late class. Reported for readability, never part of the verdict.
+    /// day shift stands behind an early class. Reported for readability, never part of the verdict.
     /// </summary>
     public AutofillShiftKind? ActualFirstSlotKind { get; init; }
 }

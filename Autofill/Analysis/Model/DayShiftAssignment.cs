@@ -4,8 +4,8 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 
 /// <summary>
 /// One assignment that staffs a day shift. The day shift is invisible to the engine's shift class —
-/// its span classifies as late — so it is identified here through the shift reference id, which is
-/// the only field that separates it from an ordinary late shift.
+/// its span classifies as early since the owner decision of 2026-11-11 — so it is identified here
+/// through the shift reference id, which is the only field that separates it from an ordinary early shift.
 /// </summary>
 /// <param name="Date">Calendar day of the assignment</param>
 /// <param name="Order">Order the day shift belongs to</param>

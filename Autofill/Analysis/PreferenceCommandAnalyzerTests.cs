@@ -14,8 +14,9 @@ namespace Klacks.UnitTest.Autofill.Analysis;
 /// so that a red scenario-5 assertion later is attributable to the algorithm and not to the analyzer.
 /// <para>
 /// The plans below are written by hand, a handful of tokens each, and every one of them is built to
-/// make one specific mistake detectable. The case that matters most is the pair of a day shift and a
-/// late shift on the SAME day and the SAME order: both carry the engine's late class, so any measure
+/// make one specific mistake detectable. The case that matters most is the pair of a day shift and an
+/// early shift on the SAME day and the SAME order: both carry the engine's early class (since the owner
+/// decision of 2026-11-11; the late class before), so any measure
 /// that reasons in classes rather than in shift reference ids will confuse them, and every metric here
 /// exists precisely because the engine cannot tell them apart.
 /// </para>
@@ -33,19 +34,19 @@ public sealed class PreferenceCommandAnalyzerTests
     private static readonly DateOnly Day3 = new(2026, 3, 3);
 
     [Test]
-    public void ADayShiftIsCountedAsADayShiftAndALateShiftIsNot()
+    public void ADayShiftIsCountedAsADayShiftAndAnEarlyShiftIsNot()
     {
         var definition = BuildDefinition(withPreferences: true, withCommands: false);
         var plan = PlanOf(
             Token(DayLover, Day1, AutofillShiftKind.Day, OrderOne),
-            Token(Ordinary, Day1, AutofillShiftKind.Late, OrderOne),
+            Token(Ordinary, Day1, AutofillShiftKind.Early, OrderOne),
             Token(Ordinary, Day2, AutofillShiftKind.Day, OrderTwo));
 
         var metrics = AutofillPlanAnalyzer.Analyze(plan, definition, "test", "test", "run1");
 
         metrics.DayShift.Assignments.Count.ShouldBe(
             2,
-            "Only the two day shifts may be counted. The late shift of the same day and the same order carries the "
+            "Only the two day shifts may be counted. The early shift of the same day and the same order carries the "
             + "identical engine class, so a class-based count would report three.");
 
         metrics.DayShift.Assignments.ShouldAllBe(
@@ -141,19 +142,23 @@ public sealed class PreferenceCommandAnalyzerTests
     }
 
     [Test]
-    public void TheDayShiftIsJudgedAsALateShiftByEveryKeyword()
+    public void TheDayShiftIsJudgedAsAnEarlyShiftByEveryKeyword()
     {
-        var onlyLate = new AutofillScheduleCommand(Ordinary, ScheduleCommandKeyword.OnlyLate, Day1, Day1);
         var onlyEarly = new AutofillScheduleCommand(Ordinary, ScheduleCommandKeyword.OnlyEarly, Day1, Day1);
+        var onlyLate = new AutofillScheduleCommand(Ordinary, ScheduleCommandKeyword.OnlyLate, Day1, Day1);
+        var noEarly = new AutofillScheduleCommand(Ordinary, ScheduleCommandKeyword.NoEarly, Day1, Day1);
 
-        onlyLate.ForbidsKind(AutofillShiftKind.Day).ShouldBeFalse(
-            "OnlyLate permits the day shift, because the engine classifies 08:00-16:00 as late. A keyword check that "
-            + "reasoned about slot kinds instead of classes would forbid it and contradict the engine.");
-        onlyLate.ForbidsKind(AutofillShiftKind.Late).ShouldBeFalse();
-        onlyLate.ForbidsKind(AutofillShiftKind.Early).ShouldBeTrue();
+        onlyEarly.ForbidsKind(AutofillShiftKind.Day).ShouldBeFalse(
+            "OnlyEarly permits the day shift, because the engine classifies 08:00-16:00 as early since the owner "
+            + "decision of 2026-11-11. A keyword check that reasoned about slot kinds instead of classes would forbid "
+            + "it and contradict the engine.");
+        onlyEarly.ForbidsKind(AutofillShiftKind.Early).ShouldBeFalse();
+        onlyEarly.ForbidsKind(AutofillShiftKind.Late).ShouldBeTrue();
 
-        onlyEarly.ForbidsKind(AutofillShiftKind.Day).ShouldBeTrue(
-            "OnlyEarly forbids the day shift for the same reason: it is a late shift to the engine.");
+        onlyLate.ForbidsKind(AutofillShiftKind.Day).ShouldBeTrue(
+            "OnlyLate forbids the day shift for the same reason: it is an early shift to the engine.");
+        noEarly.ForbidsKind(AutofillShiftKind.Day).ShouldBeTrue(
+            "NoEarly forbids the day shift, because it is an early shift to the engine.");
     }
 
     [Test]
@@ -173,22 +178,22 @@ public sealed class PreferenceCommandAnalyzerTests
 
     /// <summary>
     /// The case the attributed diff exists for, and the one a class-keyed comparison gets wrong: two
-    /// slots of the SAME day and the SAME late class — a day shift and a late shift — change hands in
+    /// slots of the SAME day and the SAME early class — a day shift and an early shift — change hands in
     /// opposite directions. Only the shift reference id tells them apart, so only a diff that carries
     /// it can attribute each of them to the right cause.
     /// </summary>
     [Test]
-    public void TheDiffKeepsADayShiftAndALateShiftOfOneDayApart()
+    public void TheDiffKeepsADayShiftAndAnEarlyShiftOfOneDayApart()
     {
         var treatmentDefinition = BuildDefinition(withPreferences: true, withCommands: false);
         var controlDefinition = BuildDefinition(withPreferences: false, withCommands: false);
 
         var treatment = PlanOf(
             Token(DayLover, Day1, AutofillShiftKind.Day, OrderOne),
-            Token(Ordinary, Day1, AutofillShiftKind.Late, OrderOne));
+            Token(Ordinary, Day1, AutofillShiftKind.Early, OrderOne));
         var control = PlanOf(
             Token(Ordinary, Day1, AutofillShiftKind.Day, OrderOne),
-            Token(DayLover, Day1, AutofillShiftKind.Late, OrderOne));
+            Token(DayLover, Day1, AutofillShiftKind.Early, OrderOne));
 
         var diff = PreferenceCommandAnalyzer.AttributeDiff(
             treatment, treatmentDefinition, control, controlDefinition);
@@ -201,16 +206,16 @@ public sealed class PreferenceCommandAnalyzerTests
         dayChange.EmployeeControl.ShouldBe(Ordinary);
         dayChange.Order.ShouldBe(OrderOne);
         dayChange.ShiftClass.ShouldBe(
-            AutofillShiftKind.Late,
-            "The day shift's engine class stays late even where the slot kind separates it from the late shift.");
+            AutofillShiftKind.Early,
+            "The day shift's engine class stays early even where the slot kind separates it from the early shift.");
         dayChange.AttributedTo.ShouldBe(
             DiffAttribution.PreferenceGained,
             "MA-16 took a shift he holds a Preferred entry for, which is the direct cause.");
 
-        var lateChange = diff.ChangedAssignments.Single(c => c.SlotKind == AutofillShiftKind.Late);
-        lateChange.EmployeeTreatment.ShouldBe(Ordinary);
-        lateChange.EmployeeControl.ShouldBe(DayLover);
-        lateChange.AttributedTo.ShouldNotBe(
+        var earlyChange = diff.ChangedAssignments.Single(c => c.SlotKind == AutofillShiftKind.Early);
+        earlyChange.EmployeeTreatment.ShouldBe(Ordinary);
+        earlyChange.EmployeeControl.ShouldBe(DayLover);
+        earlyChange.AttributedTo.ShouldNotBe(
             DiffAttribution.Unexplained,
             "MA-16 is constrained in this scenario, so the slot he gave up is at worst a knock-on and never "
             + "unexplained.");

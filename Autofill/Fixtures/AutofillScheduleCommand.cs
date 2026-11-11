@@ -18,7 +18,8 @@ namespace Klacks.UnitTest.Autofill.Fixtures;
 /// </para>
 /// <para>
 /// The class a command compares against is the engine's shift type index, so the day shift 08:00-16:00
-/// counts as LATE here: it is permitted under <c>OnlyLate</c> and forbidden under <c>NoLate</c>.
+/// counts as EARLY here (owner decision 2026-11-11): it is permitted under <c>OnlyEarly</c> and forbidden
+/// under <c>NoEarly</c> and <c>OnlyLate</c>.
 /// </para>
 /// </summary>
 /// <param name="AgentId">Employee the command applies to</param>
@@ -71,6 +72,6 @@ public sealed record AutofillScheduleCommand(
     };
 
     /// <summary>Whether a shift of that kind breaks this keyword, judged on the kind's engine class.</summary>
-    /// <param name="kind">Slot kind of the assignment; the day shift is judged as late</param>
+    /// <param name="kind">Slot kind of the assignment; the day shift is judged as early</param>
     public bool ForbidsKind(AutofillShiftKind kind) => ForbidsClass(AutofillShiftCatalog.ShiftTypeIndexOf(kind));
 }

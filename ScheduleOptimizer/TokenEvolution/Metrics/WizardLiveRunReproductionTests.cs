@@ -147,7 +147,7 @@ public sealed class WizardLiveRunReproductionTests
             var date = DateOnly.Parse(slot.Date);
             var startUtc = date.ToDateTime(start);
             var endUtc = end <= start ? date.AddDays(1).ToDateTime(end) : date.ToDateTime(end);
-            var typeIndex = ShiftTypeInference.FromStartTime(start);
+            var typeIndex = ShiftTypeInference.FromSpan(start, end);
 
             foreach (var agent in ctx.Agents)
             {

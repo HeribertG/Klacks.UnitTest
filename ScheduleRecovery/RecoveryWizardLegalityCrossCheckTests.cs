@@ -141,7 +141,7 @@ public sealed class RecoveryWizardLegalityCrossCheckTests
     private static CoreToken Token(Guid agentId, DateOnly date, DateTime startAt, DateTime endAt, decimal hours, Guid shiftId)
         => new(
             WorkIds: [],
-            ShiftTypeIndex: ShiftTypeInference.FromStartTime(TimeOnly.FromDateTime(startAt)),
+            ShiftTypeIndex: ShiftTypeInference.FromSpan(TimeOnly.FromDateTime(startAt), TimeOnly.FromDateTime(endAt)),
             Date: date,
             TotalHours: hours,
             StartAt: startAt,

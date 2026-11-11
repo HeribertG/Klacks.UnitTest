@@ -52,9 +52,10 @@ public static class AutofillSpecConstants
     public const string NightEndTime = "07:00";
 
     /// <summary>
-    /// Start of the day shift scenario 5 adds. The span 08:00-16:00 classifies as LATE in the
-    /// production inference — a fourth shift class does not exist — so the day shift is a slot kind of
-    /// its own with an id of its own, and a late shift to every rule. Owner decision 2026-08-14.
+    /// Start of the day shift scenario 5 adds. The span 08:00-16:00 classifies as EARLY in the
+    /// production inference since the owner decision of 2026-11-11 (LATE before) — a fourth shift class
+    /// does not exist — so the day shift is a slot kind of its own with an id of its own, and an early
+    /// shift to every rule. Slot of its own: owner decision 2026-08-14.
     /// </summary>
     public const string DayStartTime = "08:00";
 
