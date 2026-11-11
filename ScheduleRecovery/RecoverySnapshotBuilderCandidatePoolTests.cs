@@ -11,8 +11,8 @@ using Shouldly;
 namespace Klacks.UnitTest.ScheduleRecovery;
 
 /// <summary>
-/// The candidate pool of the recovery holds only people who can take over a replacement: a customer under the root is
-/// neither a candidate nor counted against the cap of cross-group candidates.
+/// The borrowable candidates the recovery engine gets are capped: up to the cap all of them stay, beyond it the ones
+/// with the lowest ids. Who is a candidate at all is pinned in ReplacementCandidatePoolResolverTests.
 /// </summary>
 [TestFixture]
 public sealed class RecoverySnapshotBuilderCandidatePoolTests
@@ -21,35 +21,34 @@ public sealed class RecoverySnapshotBuilderCandidatePoolTests
     private readonly ILogger _logger = Substitute.For<ILogger>();
 
     [Test]
-    public void Customers_AreNotCandidates_InGroupOrAcrossGroups()
+    public void UpToTheCap_EveryBorrowableCandidateStays()
     {
-        var inGroupEmployee = Client(EntityTypeEnum.Employee);
-        var inGroupCustomer = Client(EntityTypeEnum.Customer);
-        var crossGroupExternal = Client(EntityTypeEnum.ExternEmp);
-        var crossGroupCustomer = Client(EntityTypeEnum.Customer);
-        var inGroup = new HashSet<Guid> { inGroupEmployee.Id, inGroupCustomer.Id };
+        // Arrange
+        var people = People(RecoveryBuildConstants.CrossGroupPoolCap);
 
-        var pool = RecoverySnapshotBuilder.SelectCandidatePool(
-            [inGroupEmployee, inGroupCustomer, crossGroupExternal, crossGroupCustomer], inGroup, GroupId, _logger);
+        // Act
+        var capped = RecoverySnapshotBuilder.CapCrossGroup(people, GroupId, _logger);
 
-        pool.Select(c => c.Id).ShouldBe([inGroupEmployee.Id, crossGroupExternal.Id], ignoreOrder: true);
+        // Assert
+        capped.Select(c => c.Id).ShouldBe(people.Select(c => c.Id));
     }
 
     [Test]
-    public void Customers_DoNotUseUpTheCrossGroupCap()
+    public void BeyondTheCap_TheLowestIdsStay()
     {
-        var people = Enumerable.Range(0, RecoveryBuildConstants.CrossGroupPoolCap)
-            .Select(_ => Client(EntityTypeEnum.Employee))
-            .ToList();
-        var customers = Enumerable.Range(0, 20).Select(_ => Client(EntityTypeEnum.Customer)).ToList();
+        // Arrange
+        const int surplus = 20;
+        var people = People(RecoveryBuildConstants.CrossGroupPoolCap + surplus);
 
-        var pool = RecoverySnapshotBuilder.SelectCandidatePool(
-            people.Concat(customers).ToList(), new HashSet<Guid>(), GroupId, _logger);
+        // Act
+        var capped = RecoverySnapshotBuilder.CapCrossGroup(people, GroupId, _logger);
 
-        pool.Count.ShouldBe(RecoveryBuildConstants.CrossGroupPoolCap);
-        pool.ShouldAllBe(c => c.Type == EntityTypeEnum.Employee);
+        // Assert
+        capped.Select(c => c.Id).ShouldBe(people.Select(c => c.Id).OrderBy(id => id).Take(RecoveryBuildConstants.CrossGroupPoolCap));
     }
 
-    private static Client Client(EntityTypeEnum type)
-        => new() { Id = Guid.NewGuid(), Name = type.ToString(), FirstName = string.Empty, Type = type };
+    private static List<Client> People(int count)
+        => Enumerable.Range(0, count)
+            .Select(_ => new Client { Id = Guid.NewGuid(), Name = "Person", FirstName = string.Empty, Type = EntityTypeEnum.Employee })
+            .ToList();
 }

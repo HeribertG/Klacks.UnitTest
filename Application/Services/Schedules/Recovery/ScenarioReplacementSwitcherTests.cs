@@ -1041,6 +1041,85 @@ public class ScenarioReplacementSwitcherTests
         _requestRepository.DidNotReceive().Remove(Arg.Any<ReplacementRequest>());
     }
 
+    private void GivenEligibleBorrowed(Guid candidateId)
+        => _mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ReplacementSearchResult(
+                [new ReplacementCandidate(candidateId, "Candidate", false, [], 0m, IsBorrowed: true)], []));
+
+    [Test]
+    public async Task ABorrowedAlternative_JoinsTheGroupInTheScenarioForTheDay()
+    {
+        // Arrange
+        GivenSlotChange();
+        GivenEligibleBorrowed(_alternativeId);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _scenarioService.Received(1).AddScenarioMembershipAsync(
+            _token, _alternativeId, _groupId, Day, Day, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ABorrowedAlternativeOfAMovedSlot_JoinsTheGroupToo()
+    {
+        // Arrange
+        GivenMovedWork(_absentId, _oldStandInId);
+        GivenEligibleBorrowed(_alternativeId);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _scenarioService.Received(1).AddScenarioMembershipAsync(
+            _token, _alternativeId, _groupId, Day, Day, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnAlternativeOfTheOwnGroup_GetsNoTemporaryMembership()
+    {
+        // Arrange
+        GivenSlotChange();
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _scenarioService.DidNotReceiveWithAnyArgs().AddScenarioMembershipAsync(default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task ARefusedBorrowedAlternative_GetsNoMembership()
+    {
+        // Arrange: the candidate already stands in at that time, so the switch is refused before anything is written.
+        GivenSlotChange();
+        GivenEligibleBorrowed(_alternativeId);
+        _workChangeRepository
+            .HasOverlappingScenarioReplacementAsync(_token, _alternativeId, Day, Start, Start, End, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        // Assert
+        await _scenarioService.DidNotReceiveWithAnyArgs().AddScenarioMembershipAsync(default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task TheEligibilitySearch_JudgesOnlyTheAcceptedCandidate()
+    {
+        // Arrange
+        GivenSlotChange();
+
+        // Act
+        await Apply(Row());
+
+        // Assert
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q => q.OnlyClientId == _alternativeId), Arg.Any<CancellationToken>());
+    }
+
     private void GivenEligible(params Guid[] candidateIds)
         => _mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ReplacementSearchResult(

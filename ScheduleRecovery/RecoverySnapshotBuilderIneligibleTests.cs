@@ -244,10 +244,11 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
             .Returns(new List<ScheduleCommand>());
 
         var groupRepository = Substitute.For<IGroupRepository>();
-        groupRepository.Get(ReceivingGroup).Returns((Group?)null);
+        groupRepository.Get(ReceivingGroup).Returns(new Group { Id = ReceivingGroup });
 
         var groupClientService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-        groupClientService.GetAllClientIdsFromGroupAndSubgroups(ReceivingGroup).Returns(inGroup.ToList());
+        groupClientService.GetRealClientIdsFromGroupAndSubgroups(ReceivingGroup, Arg.Any<CancellationToken>())
+            .Returns(inGroup.ToList());
 
         var keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
@@ -265,8 +266,9 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
             .Returns(new Dictionary<Guid, MembershipWindow>());
 
         var builder = new RecoverySnapshotBuilder(
-            clientRepository, contractProvider, periodHoursService, preferenceRepository, eligibilityMatrixBuilder,
-            availabilityRepository, scheduleEntriesService, scheduleCommandRepository, groupRepository, groupClientService,
+            new ReplacementCandidatePoolResolver(clientRepository, groupRepository, groupClientService), contractProvider,
+            periodHoursService, preferenceRepository, eligibilityMatrixBuilder,
+            availabilityRepository, scheduleEntriesService, scheduleCommandRepository, groupClientService,
             keywordProvider, absenceRepository, sealedDayRepository, membershipWindowReader,
             NullLogger<RecoverySnapshotBuilder>.Instance);
 

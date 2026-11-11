@@ -29,6 +29,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -53,6 +54,8 @@ public class FindReplacementQueryHandlerTests
     private IScheduleEntriesService _scheduleEntries = null!;
     private IClientAvailabilityRepository _availabilityRepo = null!;
     private IPeriodHoursService _periodHours = null!;
+    private IClientContractDataProvider _contractProvider = null!;
+    private readonly Dictionary<Guid, EffectiveContractData> _contracts = [];
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IAbsenceRepository _absenceRepo = null!;
@@ -71,7 +74,12 @@ public class FindReplacementQueryHandlerTests
         _groupRepo = Substitute.For<IGroupRepository>();
         _groupRepo.Get(GroupId).Returns(new Group { Id = GroupId });
         _groupClientService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>()).Returns(new List<Guid>());
+        _groupClientService.GetRealClientIdsFromGroupAndSubgroups(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _contracts.Clear();
+        _contractProvider = Substitute.For<IClientContractDataProvider>();
+        _contractProvider.GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(_ => new Dictionary<Guid, EffectiveContractData>(_contracts));
         _checker = Substitute.For<IPreCommitConflictChecker>();
         _checker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
@@ -102,8 +110,8 @@ public class FindReplacementQueryHandlerTests
         SetAdminCaller();
 
         _handler = new FindReplacementQueryHandler(
-            _clientRepo, _groupRepo, _groupClientService, _checker, _prefRepo, _scheduleEntries,
-            _availabilityRepo, _periodHours,
+            new ReplacementCandidatePoolResolver(_clientRepo, _groupRepo, _groupClientService), _checker, _prefRepo, _scheduleEntries,
+            _availabilityRepo, _periodHours, _contractProvider,
             _overrideAuthorizer, _httpContextAccessor, _absenceRepo,
             new GroupVisibilityGuard(_groupVisibilityService, _userService),
             new ClientVisibilityGuard(_clientSearchRepo, _clientGroupFilter),
@@ -239,7 +247,7 @@ public class FindReplacementQueryHandlerTests
     {
         _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(members.ToList());
-        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(GroupId)
+        _groupClientService.GetRealClientIdsFromGroupAndSubgroups(GroupId, Arg.Any<CancellationToken>())
             .Returns(members.Select(m => m.Id).ToList());
     }
 
@@ -348,7 +356,7 @@ public class FindReplacementQueryHandlerTests
 
         _groupRepo.Get(subGroupId).Returns(new Group { Id = subGroupId, Root = rootId });
         SetMembersUnderRoot(rootId, anna);
-        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(subGroupId)
+        _groupClientService.GetRealClientIdsFromGroupAndSubgroups(subGroupId, Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { anna.Id });
 
         var result = await FindIn(subGroupId);
@@ -357,7 +365,7 @@ public class FindReplacementQueryHandlerTests
     }
 
     [Test]
-    public async Task SubGroupId_DoesNotOfferSiblingGroupMembersOfTheSameRoot()
+    public async Task SubGroupId_OffersSiblingGroupMembersOfTheSameRoot_AsBorrowed_AfterTheOwnGroup()
     {
         var rootId = Guid.NewGuid();
         var subGroupId = Guid.NewGuid();
@@ -366,12 +374,12 @@ public class FindReplacementQueryHandlerTests
 
         _groupRepo.Get(subGroupId).Returns(new Group { Id = subGroupId, Root = rootId });
         SetMembersUnderRoot(rootId, anna, sibling);
-        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(subGroupId)
+        _groupClientService.GetRealClientIdsFromGroupAndSubgroups(subGroupId, Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { anna.Id });
 
         var result = await FindIn(subGroupId);
 
-        result.Eligible.Single().ClientId.ShouldBe(anna.Id);
+        result.Eligible.Select(c => (c.ClientId, c.IsBorrowed)).ShouldBe([(anna.Id, false), (sibling.Id, true)]);
         result.Excluded.ShouldBeEmpty();
     }
 
@@ -1056,6 +1064,25 @@ public class FindReplacementQueryHandlerTests
         result.Eligible[0].LevelShortfall.ShouldBe(1);
     }
 
+    [Test]
+    public async Task TwoLevelGapsOfOnePerson_BothCount()
+    {
+        // Arrange: two mandatory qualifications below their level are two findings of the same kind on the same day.
+        var below = Guid.NewGuid();
+        SetMembers(Member(below, "Anna"));
+        SetConflicts(
+            LevelConflict(below, ScheduleValidationType.Warning, levelDelta: 1),
+            LevelConflict(below, ScheduleValidationType.Warning, levelDelta: 2));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        var candidate = result.Eligible.ShouldHaveSingleItem();
+        candidate.LevelShortfall.ShouldBe(3);
+        candidate.SoftConflicts.Count.ShouldBe(2);
+    }
+
     private static ScheduleValidationNotificationDto LevelConflict(Guid clientId, ScheduleValidationType type, int levelDelta)
         => new()
         {
@@ -1068,4 +1095,360 @@ public class FindReplacementQueryHandlerTests
                 [QualificationValidationParamKeys.LevelDelta] = levelDelta.ToString(System.Globalization.CultureInfo.InvariantCulture),
             },
         };
+
+    private static readonly Guid ScenarioToken = Guid.NewGuid();
+    private const string HomeShiftCollision = ScheduleValidationKeys.Collision;
+
+    private void SetPool(Client[] inGroup, Client[] borrowable)
+    {
+        _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(inGroup.Concat(borrowable).ToList());
+        _groupClientService.GetRealClientIdsFromGroupAndSubgroups(GroupId, Arg.Any<CancellationToken>())
+            .Returns(inGroup.Select(m => m.Id).ToList());
+    }
+
+    private Task<ReplacementSearchResult> FindInScenario()
+        => _handler.Handle(
+            new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, ScenarioToken, false), CancellationToken.None);
+
+    private static EffectiveContractData ContractWithoutTuesday() => new() { WorkOnTuesday = false };
+
+    [Test]
+    public async Task TheMembersOfAScenario_AreNotReadForThePool_OnlyTheRealMemberships()
+    {
+        // Arrange
+        var anna = Member(Guid.NewGuid(), "Anna");
+        SetMembers(anna);
+
+        // Act
+        await Find();
+
+        // Assert
+        await _groupClientService.Received(1).GetRealClientIdsFromGroupAndSubgroups(GroupId, Arg.Any<CancellationToken>());
+        await _groupClientService.DidNotReceive().GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task AnExcludedBorrowedPerson_CarriesTheBorrowedMark()
+    {
+        // Arrange
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([anna], [sibling]);
+        SetOnLeave(BreakCell(sibling.Id, SickAbsenceId), BreakCell(anna.Id, SickAbsenceId));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Excluded.Select(e => (e.ClientId, e.IsBorrowed)).ShouldBe([(anna.Id, false), (sibling.Id, true)], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task TheCap_CutsTheBorrowedPeopleByIdAfterTheCallersVisibility()
+    {
+        // Arrange: five more borrowable people than the cap; the caller cannot see the five with the lowest ids.
+        const int hiddenCount = 5;
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var borrowable = Enumerable.Range(0, RecoveryBuildConstants.CrossGroupPoolCap + hiddenCount)
+            .Select(index => Member(Guid.NewGuid(), $"Sibling {index}"))
+            .OrderBy(c => c.Id)
+            .ToArray();
+        var hidden = borrowable.Take(hiddenCount).Select(c => c.Id).ToHashSet();
+        SetPool([anna], borrowable);
+        SetRestrictedCaller(
+            [GroupId], borrowable.Select(c => c.Id).Append(anna.Id).Where(id => !hidden.Contains(id)).ToList());
+
+        // Act
+        var result = await Find();
+
+        // Assert: all visible ones fit under the cap; a cut before the visibility would have dropped the last five.
+        var borrowedIds = result.Eligible.Where(c => c.IsBorrowed).Select(c => c.ClientId).ToList();
+        borrowedIds.ShouldBe(borrowable.Skip(hiddenCount).Select(c => c.Id), ignoreOrder: true);
+        result.Eligible.Count(c => !c.IsBorrowed).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task MoreVisibleBorrowablePeopleThanTheCap_KeepsTheLowestIds()
+    {
+        // Arrange
+        const int surplus = 3;
+        var borrowable = Enumerable.Range(0, RecoveryBuildConstants.CrossGroupPoolCap + surplus)
+            .Select(index => Member(Guid.NewGuid(), $"Sibling {index}"))
+            .ToArray();
+        SetPool([], borrowable);
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Eligible.Select(c => c.ClientId).ShouldBe(
+            borrowable.Select(c => c.Id).OrderBy(id => id).Take(RecoveryBuildConstants.CrossGroupPoolCap), ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task InAScenario_ABorrowedPersonWithACollidingHomeShiftInTheRealPlan_IsExcluded()
+    {
+        // Arrange: the scenario holds no row of the sibling; the real plan reports the collision with the home shift.
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([anna], [sibling]);
+        _checker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Is<Guid?>(token => token == null), Arg.Any<CancellationToken>())
+            .Returns(call => new PreCommitCheckResult(call.Arg<IReadOnlyList<PlannedWorkRow>>()
+                .Select(row => Conflict(row.ClientId, ScheduleValidationType.Error, HomeShiftCollision))
+                .ToList()));
+
+        // Act
+        var result = await FindInScenario();
+
+        // Assert: only the borrowed person is checked on the real plan, and that finding excludes them.
+        result.Eligible.Select(c => c.ClientId).ShouldBe([anna.Id]);
+        var excluded = result.Excluded.ShouldHaveSingleItem();
+        excluded.ClientId.ShouldBe(sibling.Id);
+        excluded.Reason.ShouldBe(HomeShiftCollision);
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == sibling.Id),
+            Arg.Is<Guid?>(token => token == null), Arg.Any<CancellationToken>());
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 2), Arg.Is<Guid?>(token => token == ScenarioToken),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnTheRealPlan_TheCheckRunsOnce()
+    {
+        // Arrange
+        SetPool([Member(Guid.NewGuid(), "Anna")], [Member(Guid.NewGuid(), "Sibling")]);
+
+        // Act
+        await Find();
+
+        // Assert
+        await _checker.Received(1).CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InAScenario_AWarningOfBothPlans_CountsOnce()
+    {
+        // Arrange: the scenario and the real plan report the same warning for the borrowed person.
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([], [sibling]);
+        SetConflicts(Conflict(sibling.Id, ScheduleValidationType.Warning, "schedule.error-list.overtime"));
+
+        // Act
+        var result = await FindInScenario();
+
+        // Assert
+        result.Eligible.ShouldHaveSingleItem().SoftConflicts.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task InAScenario_ABorrowedPersonAbsentInTheRealPlan_IsExcluded_AndAMemberIsJudgedByTheScenario()
+    {
+        // Arrange: both have an absence in the real plan only. The scenario owns the day of its member.
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([anna], [sibling]);
+        ScheduleEntriesStub.Serve(_scheduleEntries, criteria => criteria.AnalyseToken == ScenarioToken, []);
+        ScheduleEntriesStub.Serve(
+            _scheduleEntries, criteria => criteria.AnalyseToken == null,
+            [BreakCell(sibling.Id, SickAbsenceId), BreakCell(anna.Id, SickAbsenceId)]);
+
+        // Act
+        var result = await FindInScenario();
+
+        // Assert
+        result.Eligible.Select(c => c.ClientId).ShouldBe([anna.Id]);
+        result.Excluded.ShouldHaveSingleItem().ClientId.ShouldBe(sibling.Id);
+        await _scheduleEntries.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(criteria =>
+                criteria.AnalyseToken == null && criteria.ClientIds != null && criteria.ClientIds.SequenceEqual(new[] { sibling.Id })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AbsentAndUnavailablePeople_NeverReachTheConflictCheck()
+    {
+        // Arrange
+        var absent = Member(Guid.NewGuid(), "Absent");
+        var unavailable = Member(Guid.NewGuid(), "Unavailable");
+        var free = Member(Guid.NewGuid(), "Free");
+        SetMembers(absent, unavailable, free);
+        SetOnLeave(BreakCell(absent.Id, SickAbsenceId));
+        SetAvailability(Available(unavailable.Id, 10));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Excluded.Count.ShouldBe(2);
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == free.Id),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AContractDayOff_IsMarkedAndRankedBehindTheWorkingMember_NotExcluded()
+    {
+        // Arrange: the slot lies on a Tuesday; Anna's contract has Tuesdays off, Bea works.
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var bea = Member(Guid.NewGuid(), "Bea");
+        SetMembers(anna, bea);
+        _contracts[anna.Id] = ContractWithoutTuesday();
+        _contracts[bea.Id] = new EffectiveContractData();
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Select(c => (c.ClientId, c.IsContractDayOff)).ShouldBe([(bea.Id, false), (anna.Id, true)]);
+    }
+
+    [Test]
+    public async Task APersonOnCall_IsNotMarkedWithTheContractDayOff()
+    {
+        // Arrange
+        var anna = Member(Guid.NewGuid(), "Anna");
+        SetMembers(anna);
+        _contracts[anna.Id] = ContractWithoutTuesday();
+        SetOnLeave(BreakCell(anna.Id, OnCallAbsenceId));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        var candidate = result.Eligible.ShouldHaveSingleItem();
+        candidate.IsOnCall.ShouldBeTrue();
+        candidate.IsContractDayOff.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task APersonWithoutContractData_FollowsTheDefaultWeek()
+    {
+        // Arrange: no contract data at all; the default week works Monday to Friday.
+        var anna = Member(Guid.NewGuid(), "Anna");
+        SetMembers(anna);
+        var saturday = new DateOnly(2026, 3, 14);
+
+        // Act
+        var onTuesday = await Find();
+        var onSaturday = await _handler.Handle(
+            new FindReplacementQuery(ShiftId, saturday, Start, End, GroupId, null, false), CancellationToken.None);
+
+        // Assert
+        onTuesday.Eligible.ShouldHaveSingleItem().IsContractDayOff.ShouldBeFalse();
+        onSaturday.Eligible.ShouldHaveSingleItem().IsContractDayOff.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task TheRank_PutsTheOwnGroupFirst_ThenOnCall_ThenTheContractDayOff()
+    {
+        // Arrange: every combination of borrowed and on call, plus a member with the day off by contract.
+        var memberOnCall = Member(Guid.NewGuid(), "D member on call");
+        var memberFree = Member(Guid.NewGuid(), "C member free");
+        var memberDayOff = Member(Guid.NewGuid(), "A member day off");
+        var borrowedOnCall = Member(Guid.NewGuid(), "B borrowed on call");
+        var borrowedFree = Member(Guid.NewGuid(), "A borrowed free");
+        SetPool([memberFree, memberDayOff, memberOnCall], [borrowedFree, borrowedOnCall]);
+        _contracts[memberDayOff.Id] = ContractWithoutTuesday();
+        SetOnLeave(BreakCell(memberOnCall.Id, OnCallAbsenceId), BreakCell(borrowedOnCall.Id, OnCallAbsenceId));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Eligible.Select(c => c.ClientId).ShouldBe(
+            [memberOnCall.Id, memberFree.Id, memberDayOff.Id, borrowedOnCall.Id, borrowedFree.Id]);
+    }
+
+    [Test]
+    public async Task OnlyOnePerson_IsJudged_WhenTheQueryNamesOne()
+    {
+        // Arrange
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([anna], [sibling]);
+
+        // Act
+        var result = await _handler.Handle(
+            new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, false, OnlyClientId: sibling.Id),
+            CancellationToken.None);
+
+        // Assert
+        var candidate = result.Eligible.ShouldHaveSingleItem();
+        candidate.ClientId.ShouldBe(sibling.Id);
+        candidate.IsBorrowed.ShouldBeTrue();
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0].ClientId == sibling.Id),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InAScenario_TwoLevelGapsOfABorrowedPerson_BothCount_AndNeitherCountsTwice()
+    {
+        // Arrange: the scenario and the real plan both report the same two gaps for the borrowed person.
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        SetPool([], [sibling]);
+        SetConflicts(
+            LevelConflict(sibling.Id, ScheduleValidationType.Warning, levelDelta: 1),
+            LevelConflict(sibling.Id, ScheduleValidationType.Warning, levelDelta: 2));
+
+        // Act
+        var result = await FindInScenario();
+
+        // Assert
+        var candidate = result.Eligible.ShouldHaveSingleItem();
+        candidate.LevelShortfall.ShouldBe(3);
+        candidate.SoftConflicts.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task OnlyOnePerson_BeyondTheCap_IsNotJudged()
+    {
+        // Arrange: one borrowable person more than the cap; the query names the one the full list cuts off.
+        var borrowable = Enumerable.Range(0, RecoveryBuildConstants.CrossGroupPoolCap + 1)
+            .Select(index => Member(Guid.NewGuid(), $"Sibling {index}"))
+            .OrderBy(c => c.Id)
+            .ToArray();
+        SetPool([], borrowable);
+
+        // Act
+        var result = await _handler.Handle(
+            new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, false, OnlyClientId: borrowable[^1].Id),
+            CancellationToken.None);
+
+        // Assert
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task SkillPath_NamesBorrowedPeopleAndContractDaysOff()
+    {
+        // Arrange
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+        var absentSibling = Member(Guid.NewGuid(), "Absent sibling");
+        SetPool([anna], [sibling, absentSibling]);
+        _contracts[anna.Id] = ContractWithoutTuesday();
+        SetOnLeave(BreakCell(absentSibling.Id, SickAbsenceId));
+        var skill = SkillDispatchingToRealHandler();
+
+        // Act
+        var result = await skill.ExecuteAsync(SkillContext(), SkillParams(GroupId));
+
+        // Assert
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("Candidates").EnumerateArray()
+            .Select(c => (
+                c.GetProperty("ClientId").GetGuid(),
+                c.GetProperty("Borrowed").GetBoolean(),
+                c.GetProperty("ContractDayOff").GetBoolean()))
+            .ShouldBe([(anna.Id, false, true), (sibling.Id, true, false)]);
+        data.GetProperty("Excluded").EnumerateArray().Single().GetProperty("Borrowed").GetBoolean().ShouldBeTrue();
+        result.Message.ShouldContain("1 of the eligible are borrowed");
+        result.Message.ShouldContain("1 have that weekday off by contract");
+    }
 }
