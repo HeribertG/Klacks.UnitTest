@@ -67,7 +67,7 @@ public class HolisticHarmonizerSkippedRuleWarningTests
     public void ToResponse_WithoutSkippedRules_HasNoWarning()
     {
         var bitmap = new HarmonyBitmap([], [], new Cell[0, 0]);
-        var result = new Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations.HolisticHarmonizerRunResult(bitmap, bitmap, [], 0, 0, "x", null, null);
+        var result = new Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations.HolisticHarmonizerRunResult(bitmap, bitmap, [], 0, 0, "x");
 
         var response = HolisticHarmonizerResponseMapper.ToResponse(Guid.NewGuid(), result);
 
