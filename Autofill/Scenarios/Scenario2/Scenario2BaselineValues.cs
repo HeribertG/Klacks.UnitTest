@@ -29,11 +29,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// decision-12 changes (hour-based unescalatable package rest, fairness trade). The carry-in
 /// scenario is the one the rest guarantee helps most: the top-rank hours ROSE (floor 616 to 648 h)
 /// and the purity improved, while the package edges pay the splintering price like everywhere else.
-/// Since the SpecFirstRed cleanup (decision 11) these pins carry the whole regression protection for
-/// the four measurements A4, A5, A7 and A8 used to state. Two things those assertions checked and no
-/// pin covers stay documented as targets in SPEC.md: the package-length MODE (five days must be the
-/// single most frequent length) and the rank-scoped shift-kind spread of ranks 1 to 4, since
-/// <see cref="AutofillBaselineTestBase.Baseline_ShiftKindSpreadDidNotGrow"/> measures all employees.
+/// In the regular run these pins carry the whole regression protection for the four measurements of
+/// A4, A5, A7 and A8. The specification targets themselves — the package-length MODE and the
+/// rank-scoped shift-kind spread of ranks 1 to 4 included — run since 2026-11-10 as [Explicit] tests of
+/// the category <see cref="AutofillTestCategories.SpecTarget"/>, only when selected.
 /// </para>
 /// </summary>
 public static class Scenario2BaselineValues

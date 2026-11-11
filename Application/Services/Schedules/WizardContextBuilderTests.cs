@@ -6,6 +6,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Associations;
@@ -31,6 +32,7 @@ public class WizardContextBuilderTests
     private IEligibilityMatrixBuilder _eligibilityBuilder = null!;
     private WizardContextBuilder _sut = null!;
     private IClientRepository _clientRepository = null!;
+    private IMembershipWindowReader _membershipReader = null!;
 
     [SetUp]
     public void Setup()
@@ -58,11 +60,11 @@ public class WizardContextBuilderTests
                 MaxWeeklyHours = 50,
             });
 
-        var membershipReader = Substitute.For<IMembershipWindowReader>();
-        membershipReader
+        _membershipReader = Substitute.For<IMembershipWindowReader>();
+        _membershipReader
             .GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)new Dictionary<Guid, MembershipWindow>());
-        var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider, membershipReader);
+        var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider, _membershipReader);
         _eligibilityBuilder = Substitute.For<IEligibilityMatrixBuilder>();
         _eligibilityBuilder
             .BuildAsync(
@@ -363,6 +365,30 @@ public class WizardContextBuilderTests
     }
 
     [Test]
+    public async Task BuildContextAsync_RepeatedAgentId_PlansTheAgentOnce_AtTheFirstOccurrence()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [first] = 10,
+            [second] = 40,
+        });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(
+                new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 20),
+                new[] { second, first, second, first }, null, null, AgentOrderIsUserDefined: true),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(new[] { second.ToString(), first.ToString() });
+        result.ContractDays.Count().ShouldBe(2);
+        await _hardBuilder.Received().BuildAsync(
+            Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { second, first })),
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<DateOnly?>());
+    }
+
+    [Test]
     public async Task BuildContextAsync_EqualGuaranteedHours_ReshapeIsStable()
     {
         var firstId = Guid.NewGuid();
@@ -403,7 +429,7 @@ public class WizardContextBuilderTests
             [highHoursPerson] = 40,
         });
         var agentIds = new[] { standIn, lowHoursPerson, highHoursPerson };
-        _clientRepository.GetStandInIdsAsync(agentIds, Arg.Any<CancellationToken>()).Returns(new HashSet<Guid> { standIn });
+        _clientRepository.GetStandInIdsAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(agentIds)), Arg.Any<CancellationToken>()).Returns(new HashSet<Guid> { standIn });
 
         var result = await _sut.BuildContextAsync(
             new WizardContextRequest(new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 20), agentIds, null, null, AgentOrderIsUserDefined: true),
@@ -428,7 +454,7 @@ public class WizardContextBuilderTests
             [personWithHours] = 20,
         });
         var agentIds = new[] { standInWithHours, standIn, personWithoutHours, personWithHours };
-        _clientRepository.GetStandInIdsAsync(agentIds, Arg.Any<CancellationToken>())
+        _clientRepository.GetStandInIdsAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(agentIds)), Arg.Any<CancellationToken>())
             .Returns(new HashSet<Guid> { standInWithHours, standIn });
 
         var result = await _sut.BuildContextAsync(
@@ -442,22 +468,123 @@ public class WizardContextBuilderTests
         result.Agents.Select(a => a.IsStandIn).ShouldBe(new[] { false, false, true, true });
     }
 
-    private void SetupContractsWithGuaranteedHours(IReadOnlyDictionary<Guid, decimal> guaranteedHoursPerAgent)
+    [Test]
+    public async Task AutoOrder_NoGuarantee_SortsByFullTimeDesc_Stable()
     {
-        var contracts = guaranteedHoursPerAgent.ToDictionary(
+        var smallFirst = Guid.NewGuid();
+        var largeSecond = Guid.NewGuid();
+        var midThird = Guid.NewGuid();
+        var midFourth = Guid.NewGuid();
+        var guaranteedFifth = Guid.NewGuid();
+        SetupContracts(new Dictionary<Guid, (decimal GuaranteedHours, decimal FullTime)>
+        {
+            [smallFirst] = (0, 10),
+            [largeSecond] = (0, 42),
+            [midThird] = (0, 20),
+            [midFourth] = (0, 20),
+            [guaranteedFifth] = (5, 0),
+        });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(
+                new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 20),
+                new[] { smallFirst, largeSecond, midThird, midFourth, guaranteedFifth }, null, null),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(new[]
+        {
+            guaranteedFifth.ToString(), largeSecond.ToString(), midThird.ToString(), midFourth.ToString(), smallFirst.ToString(),
+        });
+    }
+
+    private void SetupContractsWithGuaranteedHours(IReadOnlyDictionary<Guid, decimal> guaranteedHoursPerAgent)
+        => SetupContracts(guaranteedHoursPerAgent.ToDictionary(kv => kv.Key, kv => (kv.Value, 40m)));
+
+    [Test]
+    public async Task AutoOrder_Weekly40RanksAboveMonthly100_OnAOneWeekPlan_TargetsStayRaw()
+    {
+        var monthly = Guid.NewGuid();
+        var weekly = Guid.NewGuid();
+        SetupContractData(new Dictionary<Guid, EffectiveContractData>
+        {
+            [monthly] = IntervalData(PaymentInterval.Monthly, guaranteedHours: 100m),
+            [weekly] = IntervalData(PaymentInterval.Weekly, guaranteedHours: 40m),
+        });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 26), new[] { monthly, weekly }, null, null),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(new[] { weekly.ToString(), monthly.ToString() });
+        result.Agents.Single(a => a.Id == weekly.ToString()).GuaranteedHours.ShouldBe(40.0);
+        result.Agents.Single(a => a.Id == monthly.ToString()).GuaranteedHours.ShouldBe(100.0);
+    }
+
+    [Test]
+    public async Task AutoOrder_EntryInsideThePeriod_RanksByTheMemberDays()
+    {
+        var joiner = Guid.NewGuid();
+        var fullMember = Guid.NewGuid();
+        var periodFrom = new DateOnly(2026, 4, 20);
+        var periodUntil = new DateOnly(2026, 4, 26);
+        SetupContractData(new Dictionary<Guid, EffectiveContractData>
+        {
+            [joiner] = IntervalData(PaymentInterval.Monthly, guaranteedHours: 160m),
+            [fullMember] = IntervalData(PaymentInterval.Monthly, guaranteedHours: 100m),
+        });
+        _membershipReader
+            .GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)new Dictionary<Guid, MembershipWindow>
+            {
+                [joiner] = new(periodUntil.AddDays(-2), null),
+            });
+
+        var result = await _sut.BuildContextAsync(
+            new WizardContextRequest(periodFrom, periodUntil, new[] { joiner, fullMember }, null, null),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(new[] { fullMember.ToString(), joiner.ToString() });
+    }
+
+    private static EffectiveContractData IntervalData(PaymentInterval interval, decimal guaranteedHours) => new()
+    {
+        HasActiveContract = true,
+        ContractId = Guid.NewGuid(),
+        PaymentInterval = (int)interval,
+        FullTime = guaranteedHours,
+        GuaranteedHours = guaranteedHours,
+        MaxDailyHours = 10,
+        MaxWeeklyHours = 50,
+        MinPauseHours = 11,
+        MaxConsecutiveDays = 6,
+        WorkOnMonday = true,
+        WorkOnTuesday = true,
+        WorkOnWednesday = true,
+        WorkOnThursday = true,
+        WorkOnFriday = true,
+    };
+
+    private void SetupContracts(IReadOnlyDictionary<Guid, (decimal GuaranteedHours, decimal FullTime)> hoursPerAgent)
+    {
+        var contracts = hoursPerAgent.ToDictionary(
             kv => kv.Key,
             kv => new EffectiveContractData
             {
                 HasActiveContract = true,
                 ContractId = Guid.NewGuid(),
-                FullTime = 40,
-                GuaranteedHours = kv.Value,
+                FullTime = kv.Value.FullTime,
+                GuaranteedHours = kv.Value.GuaranteedHours,
                 MaxDailyHours = 10,
                 MaxWeeklyHours = 50,
                 MinPauseHours = 11,
                 MaxConsecutiveDays = 6,
             });
 
+        SetupContractData(contracts);
+    }
+
+    private void SetupContractData(Dictionary<Guid, EffectiveContractData> contracts)
+    {
         StubContractData(contracts);
 
         _shiftBuilder

@@ -369,6 +369,21 @@ public class NextPeriodSchedulingDueDetectorTests
             Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task DetectAsync_AutomaticStart_AlwaysUsesTheAutomaticRosterOrder()
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubAdmins((AdminId, AutonomyLevel.Autonomous));
+        _autoWizardJobRunner.StartAsync(Arg.Any<StartAutoWizardRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Guid.NewGuid());
+
+        await _sut.DetectAsync();
+
+        await _autoWizardJobRunner.Received(1).StartAsync(
+            Arg.Is<StartAutoWizardRequest>(request => !request.AgentOrderIsUserDefined),
+            Arg.Any<CancellationToken>());
+    }
+
     [TestCase(AutonomyLevel.Autonomous)]
     [TestCase(AutonomyLevel.FullyAutonomous)]
     public async Task DetectAsync_AutonomousOrHigher_StartsAutofillAndEmitsInfoEvent(AutonomyLevel level)

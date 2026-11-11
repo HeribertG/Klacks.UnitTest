@@ -3,7 +3,7 @@
 /// <summary>
 /// The normal autofill is open to every planner (owner rule 2026-11-07), and its chain runs in the background without a
 /// user, so the start is where group visibility applies: agents the caller may not see are dropped like unknown ids
-/// (order of the rest kept), and the job's planning group and its employees are recorded for the job access rule (IAutoWizardJobAccessGuard)
+/// (order of the rest kept, a repeated id kept once at its first position), and the job's planning group and its employees are recorded for the job access rule (IAutoWizardJobAccessGuard)
 /// before the job id is returned, so a client that joins the hub right after the start is already judged correctly.
 /// </summary>
 
@@ -36,6 +36,21 @@ public sealed class AutoWizardJobRunnerVisibilityTests : AutoWizardJobRunnerTest
         state.Status.ShouldBe(WizardJobStatusValues.Completed);
         await _wizardRunner.Received(1).StartAsync(
             Arg.Is<WizardContextRequest>(r => r.AgentIds.SequenceEqual(new[] { secondVisible, firstVisible })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RepeatedAgentIds_AreKeptOnceAtTheirFirstPosition()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var request = Request(Guid.NewGuid()) with { AgentIds = [second, first, second, HiddenAgentId, first] };
+
+        var (_, state) = await RunChainAsync(request);
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        await _wizardRunner.Received(1).StartAsync(
+            Arg.Is<WizardContextRequest>(r => r.AgentIds.SequenceEqual(new[] { second, first })),
             Arg.Any<CancellationToken>());
     }
 

@@ -336,6 +336,39 @@ public class Stage0HardConstraintCheckerTests
     }
 
     [Test]
+    public void MaxWeeklyHours_Vetoes()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent() with { MaxWeeklyHours = 30 };
+        var monday = new DateOnly(2026, 4, 20);
+        var assigned = Enumerable.Range(0, 3)
+            .Select(offset => monday.AddDays(offset))
+            .Select(date => new CoreToken(
+                WorkIds: [],
+                ShiftTypeIndex: 0,
+                Date: date,
+                TotalHours: 8m,
+                StartAt: date.ToDateTime(new TimeOnly(8, 0)),
+                EndAt: date.ToDateTime(new TimeOnly(16, 0)),
+                BlockId: Guid.NewGuid(),
+                PositionInBlock: 0,
+                IsLocked: false,
+                LocationContext: null,
+                ShiftRefId: Guid.NewGuid(),
+                AgentId: "A"))
+            .ToList();
+        var thursdaySlot = MakeShift(monday.AddDays(3), "08:00", "16:00", hours: 8);
+        var nextMondaySlot = MakeShift(monday.AddDays(7), "08:00", "16:00", hours: 8);
+
+        var verdict = sut.Check(agent, thursdaySlot, assigned, EmptyContext());
+
+        verdict.ShouldNotBeNull();
+        verdict!.Stage.ShouldBe(0);
+        verdict.RuleName.ShouldBe(Stage0RuleNames.MaxWeeklyHours);
+        sut.Check(agent, nextMondaySlot, assigned, EmptyContext()).ShouldBeNull("the next ISO week starts empty");
+    }
+
+    [Test]
     public void Check_MinPauseHours_VetoesBackToBackOvernightAndDayShift()
     {
         var sut = new Stage0HardConstraintChecker();

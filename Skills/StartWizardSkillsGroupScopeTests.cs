@@ -30,6 +30,7 @@ public class StartWizardSkillsGroupScopeTests
 
     private readonly Guid _groupId = Guid.NewGuid();
     private IGroupPlanningAgentRepository _planningAgentRepository = null!;
+    private SkillRosterOrderResolver _rosterOrderResolver = null!;
     private SkillExecutionContext _context = null!;
 
     [SetUp]
@@ -38,6 +39,10 @@ public class StartWizardSkillsGroupScopeTests
         _planningAgentRepository = Substitute.For<IGroupPlanningAgentRepository>();
         _planningAgentRepository.GetAgentIdsAsync(_groupId, PeriodFrom, PeriodUntil, Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { Guid.NewGuid() });
+        var sortPreferenceRepository = Substitute.For<IClientSortPreferenceRepository>();
+        sortPreferenceRepository.GetByUserAndGroupAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientSortPreference>());
+        _rosterOrderResolver = new SkillRosterOrderResolver(sortPreferenceRepository);
         _context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -55,7 +60,7 @@ public class StartWizardSkillsGroupScopeTests
         shiftScheduleRepository.GetShiftScheduleAsync(Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
             .Returns((new List<ShiftDayAssignment> { new() { ShiftId = Guid.NewGuid() } }, 1));
 
-        var result = await new StartWizard1Skill(runner, _planningAgentRepository, shiftScheduleRepository)
+        var result = await new StartWizard1Skill(runner, _planningAgentRepository, shiftScheduleRepository, _rosterOrderResolver)
             .ExecuteAsync(_context, Parameters());
 
         result.Success.ShouldBeTrue(result.Message);
@@ -67,7 +72,7 @@ public class StartWizardSkillsGroupScopeTests
     {
         var runner = Substitute.For<IHarmonizerJobRunner>();
 
-        var result = await new StartWizard2Skill(runner, _planningAgentRepository).ExecuteAsync(_context, Parameters());
+        var result = await new StartWizard2Skill(runner, _planningAgentRepository, _rosterOrderResolver).ExecuteAsync(_context, Parameters());
 
         result.Success.ShouldBeTrue(result.Message);
         await runner.Received(1).StartAsync(Arg.Is<HarmonizerContextRequest>(r => r.GroupId == _groupId), Arg.Any<CancellationToken>());
@@ -78,7 +83,7 @@ public class StartWizardSkillsGroupScopeTests
     {
         var runner = Substitute.For<IHolisticHarmonizerJobRunner>();
 
-        var result = await new StartWizard3Skill(runner, _planningAgentRepository).ExecuteAsync(_context, Parameters());
+        var result = await new StartWizard3Skill(runner, _planningAgentRepository, _rosterOrderResolver).ExecuteAsync(_context, Parameters());
 
         result.Success.ShouldBeTrue(result.Message);
         await runner.Received(1).StartAsync(Arg.Is<HolisticHarmonizerRunInput>(r => r.GroupId == _groupId), Arg.Any<CancellationToken>());

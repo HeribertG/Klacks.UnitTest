@@ -147,12 +147,12 @@ public class PlanMutationValidatorRestrictedTimeWindowTests
     public void Validate_SecondCrossDayMoveOfSameCell_EvaluatesAgainstActualTargetDay_Rejected()
     {
         // Two-step scenario proving the K16 veto re-anchors to the ACTUAL target day, not to a whole-day delta
-        // off the cell's stale StartAt. The restricted cell is first moved cross-day from its out-of-season home
-        // day (day0 = 1 May) onto an out-of-season intermediate day (day1 = 14 Jun) via Apply, which is a pure
-        // position swap and never re-anchors StartAt. It is then moved a SECOND time onto day2 (15 Jun, in season,
-        // overlapping the daily window). Because StartAt still points at day0, the old delta logic
-        // (StartAt + (day2 - day1)) computed 2 May -> out of season -> wrongly admitted (test RED). The correct
-        // logic anchors the slot on day2 itself -> in season -> rejected (test GREEN).
+        // off the cell's StartAt. The restricted cell is first moved cross-day from its out-of-season home
+        // day (day0 = 1 May) onto an out-of-season intermediate day (day1 = 14 Jun) via Apply. Apply re-anchors a
+        // moved cell on its new day since 2026-11-10; before that it was a pure position swap that left StartAt on
+        // day0, and the old delta logic (StartAt + (day2 - day1)) then computed 2 May -> out of season -> wrongly
+        // admitted. It is then moved a SECOND time onto day2 (15 Jun, in season, overlapping the daily window). The
+        // veto anchors the slot on day2 itself -> in season -> rejected, whatever the cell's StartAt says.
         var rows = new List<BitmapAgent> { Agent("A"), Agent("B") };
         var days = new List<DateOnly> { OutSeason, IntermediateOutSeason, TargetInSeason };
         var cells = new Cell[2, 3];
@@ -166,8 +166,7 @@ public class PlanMutationValidatorRestrictedTimeWindowTests
 
         var validator = Validator(SummerWindow());
 
-        // Step 1: move the restricted cell cross-day from (0,0) to (1,1). Both cells are work (coverage-neutral);
-        // Apply is a raw position swap, so StartAt stays anchored to day0.
+        // Step 1: move the restricted cell cross-day from (0,0) to (1,1). Both cells are work (coverage-neutral).
         PlanMutationValidator.Apply(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "step1"));
         bitmap.GetCell(1, 1).ShiftRefId.ShouldBe(RestrictedShift);
 

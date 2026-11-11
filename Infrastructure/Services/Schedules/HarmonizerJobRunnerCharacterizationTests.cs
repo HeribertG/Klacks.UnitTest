@@ -159,7 +159,7 @@ public class HarmonizerJobRunnerCharacterizationTests
 
         var scorer = new HarmonyScorer();
         var fitness = new HarmonyFitnessEvaluator(scorer);
-        var sortedSeed = RowSorter.Sort(BitmapBuilder.Build(_input));
+        var sortedSeed = RowSorter.Sort(BitmapBuilder.Build(_input), _input.KeepAgentOrder);
         var dto = _completedDto!;
         dto.JobId.ShouldBe(jobId);
         dto.GlobalFitnessBefore.ShouldBe(fitness.Evaluate(sortedSeed).Fitness);
@@ -455,6 +455,19 @@ public class HarmonizerJobRunnerCharacterizationTests
 
             await Task.Delay(25);
         }
+    }
+
+    [Test]
+    public async Task KeepAgentOrder_TheSeedKeepsTheRankedRowOrderOfTheInput()
+    {
+        var input = BuildInput();
+        _input = input with { Agents = [input.Agents[1], input.Agents[0]], KeepAgentOrder = true };
+        _contextBuilder.BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>()).Returns(_input);
+
+        var jobId = await RunAsync();
+
+        _resultCache.TryGet(jobId, out var original, out _, out _, out _, out _, out _).ShouldBeTrue();
+        original!.Rows.Select(r => r.Id).ShouldBe([AgentB.ToString(), AgentA.ToString()]);
     }
 
     [Test]

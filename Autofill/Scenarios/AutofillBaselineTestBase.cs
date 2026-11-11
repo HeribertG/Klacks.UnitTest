@@ -16,14 +16,13 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// These <c>Baseline_</c> tests close that gap: they pin the state the current engine actually reaches
 /// and turn red the moment it gets worse, while any improvement leaves them green.
 /// <para>
-/// Since the cleanup of 2026-08-12 (SPEC.md decision 11) they carry that job alone for four
-/// measurements: A4, A5, A7 and A8 were permanently red in every scenario and were removed, so
+/// For A4, A5, A7 and A8 of scenarios 1 to 3 they are the only guards in the regular run:
 /// <see cref="Baseline_MixedKindPackagesDidNotGrow"/>, <see cref="Baseline_ShortPackageShareDidNotGrow"/>,
 /// <see cref="Baseline_OverlongPackagesDidNotGrow"/>, <see cref="Baseline_IdealFiveTwoShareDidNotFall"/>,
-/// <see cref="Baseline_ForwardRotationRateDidNotFall"/> and <see cref="Baseline_ShiftKindSpreadDidNotGrow"/>
-/// are now the only guards on those numbers. Two readings of the removed assertions are covered by no
-/// pin and survive as targets in tests/autofill/SPEC.md only: the package-length MODE and the
-/// rank-scoped shift-kind spread, which the guard here measures over all employees instead.
+/// <see cref="Baseline_ForwardRotationRateDidNotFall"/> and <see cref="Baseline_ShiftKindSpreadDidNotGrow"/>.
+/// The four specification targets themselves were removed on 2026-08-12 (SPEC.md decision 11) and are back
+/// since 2026-11-10 as [Explicit] tests of the category <see cref="AutofillTestCategories.SpecTarget"/>, the
+/// package-length mode and the rank-scoped shift-kind spread included; they run only when selected.
 /// </para>
 /// <para>
 /// The pins are bands, not exact values. Each run is deterministic under its seed, but the seed itself

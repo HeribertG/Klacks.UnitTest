@@ -28,8 +28,9 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario3;
 /// Expectations come from the specification. Where the engine cannot meet one, the assertion pins the
 /// measurement of 2026-08-12 and names the unchanged target in its message (SPEC.md decision 11) —
 /// A17, A19 and A25 here, A6, A12 and A13 in the base class — instead of staying permanently red,
-/// which guarded nothing. A4, A5, A7 and A8 were removed entirely; their measurements are pinned by
-/// the <c>Baseline_</c> guards.
+/// which guarded nothing. A4, A5, A7 and A8 are inherited as [Explicit] specification targets
+/// (owner decision 2026-11-10, category <see cref="AutofillTestCategories.SpecTarget"/>); this class
+/// excuses the provably forced night shortening from A5 and judges A8 for early and late only.
 /// </para>
 /// <para>
 /// The inherited <c>Baseline_</c> guards read <see cref="Scenario3BaselineValues"/>, which holds real
@@ -78,6 +79,46 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
 
     /// <inheritdoc />
     protected override double TopDownToleranceHours => PinnedTopDownToleranceHours;
+
+    /// <summary>
+    /// A8 in scenario 3 judges early and late only. MA-3 and MA-4 (ranks 3 and 4) can never work nights, so the
+    /// night spread over ranks 1 to 4 cannot reach the limit; night fairness is judged cohort-wise by A25.
+    /// Whether A8 night needs a rule of its own here is an open specification question to the owner.
+    /// </summary>
+    private static readonly AutofillShiftKind[] NightFreeFairnessKinds =
+        [AutofillShiftKind.Early, AutofillShiftKind.Late];
+
+    /// <summary>
+    /// A5 adjustment of SPEC-SZENARIO3.md: the forced shortening of the night pool (see A19) is taken out of the
+    /// judgement — at most <see cref="Scenario3SpecValues.MaxForcedShortenings"/> of the shortenings the analyzer
+    /// proves, matched to their package by employee and start day.
+    /// </summary>
+    protected override IReadOnlyCollection<WorkPackage> SpecTargetExcusedPackages
+        => Metrics.Packages.ForcedShortenings
+            .OrderBy(f => f.StartDate)
+            .ThenBy(f => f.Employee, StringComparer.Ordinal)
+            .Take(Scenario3SpecValues.MaxForcedShortenings)
+            .SelectMany(f => Metrics.Packages.Items.Where(p =>
+                string.Equals(p.Employee, f.Employee, StringComparison.Ordinal) && p.StartDate == f.StartDate))
+            .ToList();
+
+    /// <inheritdoc />
+    protected override string SpecTargetPackageNote
+        => "Scenario 3 adjusts A5 by the provably forced shortening of the night pool: at most "
+            + $"{Scenario3SpecValues.MaxForcedShortenings.ToString(CultureInfo.InvariantCulture)} package listed in "
+            + "packages.forcedShortenings is excused (the analyzer lists "
+            + $"{Metrics.Packages.ForcedShortenings.Count.ToString(CultureInfo.InvariantCulture)}; A19 judges that bound). "
+            + "Packages span the month boundary and count their February days.";
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<AutofillShiftKind> SpecTargetFairnessKinds => NightFreeFairnessKinds;
+
+    /// <inheritdoc />
+    protected override string SpecTargetFairnessNote
+        => $"Rank {AutofillSpecConstants.EmployeeCount.ToString(CultureInfo.InvariantCulture)} is exempt. Night is not "
+            + $"judged: {Scenario2SpecValues.Ma3} and {Scenario2SpecValues.Ma4} lack "
+            + $"{Scenario3SpecValues.NightKeyword} for the whole period, so the night spread over ranks 1 to 4 cannot "
+            + "meet the limit; night fairness is judged cohort-wise by A25 (open specification question).";
 
     /// <summary>
     /// A19, pinned measurement 2026-08-12 evening (SPEC.md decision 13): shortened night packages
@@ -467,8 +508,7 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             + "arithmetic proves it; packages.unexplainedShortenings runs against the pinned measurement of "
             + $"2026-08-12, at most {MaxUnexplainedShortenings.ToString(CultureInfo.InvariantCulture)}, while its "
             + "specification target of 0 stays binding (SPEC.md). This is also the A5 adjustment of scenario 3 — "
-            + "the inherited A5 was removed on 2026-08-12 and its measurements are pinned by the Baseline_ guards, "
-            + "while the provable shortening is accounted here. Forced: "
+            + "the inherited A5 specification target excuses the provable shortening, which is accounted here. Forced: "
             + string.Join(ProblemSeparator, packages.ForcedShortenings.Select(f =>
                 $"{f.Employee} {f.StartDate:yyyy-MM-dd} ({f.LengthDays.ToString(CultureInfo.InvariantCulture)} d): "
                 + f.ProvableCause))

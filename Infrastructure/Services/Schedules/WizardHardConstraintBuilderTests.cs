@@ -363,6 +363,26 @@ public class WizardHardConstraintBuilderTests
         result.LockedWorks.Single(w => w.WorkId == child.Id.ToString()).TotalHours.ShouldBe(0m);
     }
 
+    [Test]
+    public async Task BuildAsync_ExistingWorkBlocker_CarriesItsWorkTime_AContainerChildOfTheSameAgentNone()
+    {
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 22);
+        var container = LockedWork(agent, date, null, new TimeOnly(8, 0), new TimeOnly(16, 0), 8m);
+        container.LockLevel = WorkLockLevel.None;
+        var child = LockedWork(agent, date, container.Id, new TimeOnly(9, 0), new TimeOnly(12, 0), 3m);
+        child.LockLevel = WorkLockLevel.None;
+        _context.Work.AddRange(container, child);
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, date, date, analyseToken: null, CancellationToken.None);
+
+        result.ExistingWorkBlockers.Single(b => b.StartAt.Hour == 8).Hours.ShouldBe(8m);
+        result.ExistingWorkBlockers.Single(b => b.StartAt.Hour == 9).Hours.ShouldBe(0m,
+            "the container already counts the child's time toward the weekly cap");
+    }
+
     private static Work LockedWork(Guid agent, DateOnly date, Guid? parentWorkId, TimeOnly start, TimeOnly end, decimal hours) => new()
     {
         Id = Guid.NewGuid(),

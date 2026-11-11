@@ -224,6 +224,43 @@ public class BatchEvaluatorTests
         memory.SameDayForbiddenSwapKeys().ShouldContain(new ForbiddenSwapKey(0, 1, 2));
     }
 
+    /// <summary>
+    /// A cross-day step re-anchors both moved cells on their new day; when the batch is rolled back (here: the score
+    /// drops) the rollback must restore StartAt and EndAt of both cells exactly, not leave them shifted.
+    /// </summary>
+    [Test]
+    public void Evaluate_RolledBackCrossDayStep_RestoresStartAndEndExactly()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 4);
+        var cellA = WorkCell(CellSymbol.Early, 0);
+        var cellB = WorkCell(CellSymbol.Late, 3);
+        bitmap.SetCell(0, 0, cellA);
+        bitmap.SetCell(1, 3, cellB);
+        var evaluator = new BatchEvaluator(
+            new PlanMutationValidator(new DomainAwareReplaceValidator(null)), new DroppingFitness());
+        var batch = new MutationBatch(
+            Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [new PlanCellSwap(0, 0, 1, 3, "cross-day")]);
+
+        var result = evaluator.Evaluate(bitmap, batch);
+
+        result.Result.ShouldBe(BatchAcceptance.WouldDegrade);
+        bitmap.GetCell(0, 0).ShouldBe(cellA);
+        bitmap.GetCell(1, 3).ShouldBe(cellB);
+    }
+
+    /// <summary>Scores the first evaluation high and every later one low, so any applied batch degrades.</summary>
+    private sealed class DroppingFitness : IBitmapFitnessEvaluator
+    {
+        private bool _evaluated;
+
+        public FitnessResult Evaluate(HarmonyBitmap bitmap)
+        {
+            var fitness = _evaluated ? 0.0 : 1.0;
+            _evaluated = true;
+            return new FitnessResult(fitness, []);
+        }
+    }
+
     private static Cell WorkCell(CellSymbol symbol, int day)
     {
         var start = Day0.AddDays(day).ToDateTime(symbol == CellSymbol.Early ? new TimeOnly(6, 0) : new TimeOnly(14, 0));

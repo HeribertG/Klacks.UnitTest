@@ -10,7 +10,7 @@ using Shouldly;
 namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 
 /// <summary>
-/// Assertions A1, A2, A3, A6 and A9 of the clean-start scenario, shared by the specification run (180
+/// Assertions A1 to A9 of the clean-start scenario, shared by the specification run (180
 /// guaranteed hours) and the calibration variant 1b (150 guaranteed hours). The scenario is built and
 /// run exactly once per fixture in <see cref="BuildAndRunScenarioOnce"/>; every assertion then reads
 /// the cached measurement, so one test method per assertion id yields a complete pass/fail table
@@ -25,14 +25,12 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// goal conflicts.
 /// </para>
 /// <para>
-/// A4, A5, A7 and A8 were REMOVED here on 2026-08-12 (SPEC.md decision 11). They were permanently
-/// red, and a red test guards nothing: an engine rewrite could have halved any of the four values
-/// without a single test noticing. Their measurements are pinned instead by the <c>Baseline_</c>
-/// guards of <see cref="AutofillBaselineTestBase"/> — mixedTypeCount for A4, shortPackageShare,
-/// packagesOverIdealLength and idealShare for A5, forwardRate for A7, shiftKindSpread for A8 — and
-/// their specification targets stay binding in tests/autofill/SPEC.md. Two readings are covered by no
-/// pin and only survive as targets there: the package-length MODE of A5 and the rank-scoped spread of
-/// A8, which the baseline guard measures over all employees instead.
+/// A4, A5, A7 and A8 were removed on 2026-08-12 (SPEC.md decision 11) and are back since 2026-11-10
+/// (owner decision) as specification targets with the binding values, the A5 mode and the rank-scoped
+/// A8 spread included; the judgements live in <see cref="AutofillSpecTargetAssertions"/>. They are
+/// expected red, so they carry [Explicit] and the category <see cref="AutofillTestCategories.SpecTarget"/>
+/// and never run in the regular suite. The regression floor on the same measurements stays with the
+/// <c>Baseline_</c> guards of <see cref="AutofillBaselineTestBase"/>.
 /// </para>
 /// </summary>
 public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
@@ -61,6 +59,13 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     private const string ShareFormat = "0.###";
 
     private const string DateFormat = "yyyy-MM-dd";
+
+    private const string CleanStartPackageNote =
+        "Clean start: the previous month is empty, so every package lies inside the period and none is excused.";
+
+    /// <summary>A8 judges every shift kind in scenario 1 and variant 1b.</summary>
+    private static readonly AutofillShiftKind[] FairnessKinds =
+        [AutofillShiftKind.Early, AutofillShiftKind.Late, AutofillShiftKind.Night];
 
     private AutofillScenarioDefinition _definition = null!;
 
@@ -223,6 +228,36 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
             + $"nothing and stays a target only. Failures: {Join(problems)}. Measured: "
             + FormatHoursPerEmployee());
     }
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A4_ShiftKindStaysConstantInsideAPackage()
+        => AutofillSpecTargetAssertions.AssertA4(Metrics, Definition);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A5_PackageLengthsFollowTheFiveTwoIdeal()
+        => AutofillSpecTargetAssertions.AssertA5(Metrics, Definition, [], CleanStartPackageNote);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A7_RotationFollowsEarlyLateNight()
+        => AutofillSpecTargetAssertions.AssertA7(Metrics, Definition);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A8_ShiftKindsAreSpreadEvenlyOverTheAssertedRanks()
+        => AutofillSpecTargetAssertions.AssertA8(
+            Metrics,
+            HighestAssertedRank,
+            FairnessKinds,
+            $"Ranks after rank {HighestAssertedRank.ToString(CultureInfo.InvariantCulture)} are exempt as SPEC.md states "
+            + "for this variant (scenario 1: rank 5, because A6 leaves it the remainder; variant 1b: none, all five "
+            + "ranks are judged).");
 
     [Test]
     public void A9_TwoRunsWithTheSameSeedProduceTheSamePlan()

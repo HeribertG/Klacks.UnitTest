@@ -8,7 +8,9 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario3;
 /// <see cref="int.MaxValue"/>), so the inherited <c>Baseline_</c> guards ran green without asserting
 /// anything. The SpecFirstRed cleanup of 2026-08-12 (SPEC.md decision 11) removed the permanently red
 /// A4, A5, A7 and A8 of this scenario, which made the inert pins the only thing left watching those
-/// measurements — nothing. They are therefore replaced by the values the engine actually reaches.
+/// measurements — nothing. They are therefore replaced by the values the engine actually reaches. Since
+/// 2026-11-10 the four specification targets are back as [Explicit] tests of the category
+/// <see cref="AutofillTestCategories.SpecTarget"/>; in the regular run these pins remain the only guard.
 /// <para>
 /// UNLIKE scenario 1, 1b and 2 these are NOT band edges. Scenario 3 deliberately measures no seed band
 /// (the family already needs eight evolution runs per suite execution; the band seeds would add six

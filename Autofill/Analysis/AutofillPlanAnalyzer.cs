@@ -355,6 +355,34 @@ public static class AutofillPlanAnalyzer
         => packages.Items.Count(p => p.LengthDays > maxLength);
 
     /// <summary>
+    /// Package count per length bucket over the given packages, with exactly the buckets of
+    /// <see cref="PackageMetrics.LengthHistogram"/>: "1".."6" and "7+". Exposed so an assertion can
+    /// judge a filtered package list, for instance one without a provably forced shortening.
+    /// </summary>
+    /// <param name="packages">Packages to count</param>
+    public static IReadOnlyDictionary<string, int> LengthHistogramOf(IReadOnlyList<WorkPackage> packages)
+        => BuildLengthHistogram(packages);
+
+    /// <summary>
+    /// The length buckets that hold at least as many packages as the bucket of
+    /// <paramref name="expectedLength"/>. Empty exactly when that bucket is the single most frequent
+    /// length — the A5 mode reading of SPEC.md decision 11. A histogram without any package returns
+    /// every other bucket, so an empty plan never passes as peaking anywhere.
+    /// </summary>
+    /// <param name="histogram">Package count per length bucket</param>
+    /// <param name="expectedLength">Length that must be the single mode; a named bucket, 1 to 6</param>
+    public static IReadOnlyList<KeyValuePair<string, int>> LengthModeRivals(
+        IReadOnlyDictionary<string, int> histogram, int expectedLength)
+    {
+        var expectedBucket = expectedLength.ToString(CultureInfo.InvariantCulture);
+        histogram.TryGetValue(expectedBucket, out var expectedCount);
+        return histogram
+            .Where(entry => !string.Equals(entry.Key, expectedBucket, StringComparison.Ordinal))
+            .Where(entry => entry.Value >= expectedCount)
+            .ToList();
+    }
+
+    /// <summary>
     /// Gini coefficient of a set of counts: 0 means every employee holds the same number, 1 means one
     /// employee holds everything. Returns 0 for an empty set and for a set that sums to zero.
     /// </summary>

@@ -8,12 +8,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// package purity, package length, forward rotation and shift-kind fairness are not reached by the
 /// engine, and these pins exist so that state cannot quietly get worse while the engine is rebuilt.
 /// <para>
-/// Since the SpecFirstRed cleanup of 2026-08-12 (SPEC.md decision 11) these pins carry the whole
-/// regression protection for the four measurements A4, A5, A7 and A8 used to state — those spec-first
-/// assertions were removed because a red test guards nothing. Two things they checked are NOT covered
-/// here and are only documented as targets in SPEC.md: the package-length MODE (five days must be the
-/// single most frequent length) and the rank-scoped shift-kind spread of ranks 1 to 4, since
-/// <see cref="AutofillBaselineTestBase.Baseline_ShiftKindSpreadDidNotGrow"/> measures all employees.
+/// In the regular run these pins carry the whole regression protection for the four measurements of
+/// A4, A5, A7 and A8. The specification targets themselves — the package-length MODE and the
+/// rank-scoped shift-kind spread of ranks 1 to 4 included — run since 2026-11-10 as [Explicit] tests of
+/// the category <see cref="AutofillTestCategories.SpecTarget"/>, only when selected.
 /// </para>
 /// <para>
 /// Each constant is a band edge, not a single measurement — the worst of what the engine produced

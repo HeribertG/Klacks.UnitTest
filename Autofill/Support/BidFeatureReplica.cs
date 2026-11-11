@@ -47,8 +47,6 @@ public static class BidFeatureReplica
 
     private const double HoursPerBlockDay = 8.0;
 
-    private const double FallbackWeeklyCap = 50.0;
-
     private const double NeverWorkedDays = 30.0;
 
     private const int EarlyIndex = 0;
@@ -80,8 +78,8 @@ public static class BidFeatureReplica
         var effectiveBlockLength = startsNewBlock ? 0 : state.CurrentBlockLength;
         var consumedThisBlock = effectiveBlockLength * HoursPerBlockDay;
         var blockHunger = Math.Max(0, BlockSaturationHours - consumedThisBlock);
-        var weeklyCap = agent.MaxWeeklyHours > 0 ? agent.MaxWeeklyHours : FallbackWeeklyCap;
-        var weeklyLoad = (agent.CurrentHours + state.HoursAssignedThisRun) / weeklyCap;
+        var weeklyCap = WeeklyHoursGuard.CapOf(agent, context);
+        var weeklyLoad = weeklyCap > 0 ? (agent.CurrentHours + state.HoursAssignedThisRun) / weeklyCap : 0.0;
         var slotTypeIndex = ShiftTypeInference.FromSpanString(slot.StartTime, slot.EndTime);
 
         return new Dictionary<string, double>(StringComparer.Ordinal)

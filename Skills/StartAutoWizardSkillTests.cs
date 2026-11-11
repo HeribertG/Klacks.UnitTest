@@ -3,11 +3,14 @@
 /// <summary>
 /// Unit tests for StartAutoWizardSkill - parameter validation, group lookup by id or name, calendar-week
 /// resolution, the up-front notice when the holistic harmonization cannot run, and agent/shift
-/// auto-resolution. The actual AutoWizardJobRunner is fully mocked.
+/// auto-resolution, and the roster order handed to the run (the chat user's saved order, the automatic order for an
+/// external agent). The actual AutoWizardJobRunner is fully mocked; the roster order runs through the real
+/// SkillRosterOrderResolver.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
@@ -36,6 +39,7 @@ public class StartAutoWizardSkillTests
     private IGroupScopeGuard _groupScopeGuard = null!;
     private ICompanyClock _companyClock = null!;
     private IHolisticHarmonizerReadinessCheck _readinessCheck = null!;
+    private IClientSortPreferenceRepository _sortPreferenceRepository = null!;
     private StartAutoWizardSkill _skill = null!;
     private SkillExecutionContext _context = null!;
 
@@ -53,10 +57,13 @@ public class StartAutoWizardSkillTests
         _companyClock.GetTodayDateAsync(Arg.Any<CancellationToken>()).Returns(new DateOnly(2026, 9, 29));
         _readinessCheck = Substitute.For<IHolisticHarmonizerReadinessCheck>();
         _readinessCheck.CheckAsync(Arg.Any<CancellationToken>()).Returns(HolisticHarmonizerReadiness.Ready());
+        _sortPreferenceRepository = Substitute.For<IClientSortPreferenceRepository>();
+        _sortPreferenceRepository.GetByUserAndGroupAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientSortPreference>());
 
         _skill = new StartAutoWizardSkill(
             _runner, _groupRepository, _planningAgentRepository, _shiftScheduleRepository,
-            _groupScopeGuard, _companyClock, _readinessCheck);
+            _groupScopeGuard, _companyClock, _readinessCheck, new SkillRosterOrderResolver(_sortPreferenceRepository));
         _context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -200,6 +207,67 @@ public class StartAutoWizardSkillTests
                 r.AgentIds.Count == 1 &&
                 r.ShiftIds!.Count == 1),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ChatUserWithSavedOrder_HandsThatOrderToTheRunAsUserDefined()
+    {
+        var (groupId, first, second) = ArrangeTwoAgentGroup();
+        StubSavedOrder(groupId, second, first);
+
+        var result = await _skill.ExecuteAsync(_context, TwoAgentGroupParameters(groupId));
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _runner.Received(1).StartAsync(
+            Arg.Is<StartAutoWizardRequest>(r =>
+                r.AgentIds.SequenceEqual(new[] { second, first }) && r.AgentOrderIsUserDefined),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ExternalAgent_HandsTheAutomaticOrderToTheRunDespiteASavedOrder()
+    {
+        var (groupId, first, second) = ArrangeTwoAgentGroup();
+        StubSavedOrder(groupId, second, first);
+        var externalAgent = _context with { ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Write };
+
+        var result = await _skill.ExecuteAsync(externalAgent, TwoAgentGroupParameters(groupId));
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _runner.Received(1).StartAsync(
+            Arg.Is<StartAutoWizardRequest>(r =>
+                r.AgentIds.SequenceEqual(new[] { first, second }) && !r.AgentOrderIsUserDefined),
+            Arg.Any<CancellationToken>());
+    }
+
+    private (Guid GroupId, Guid First, Guid Second) ArrangeTwoAgentGroup()
+    {
+        var groupId = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Bern" });
+        _planningAgentRepository.GetAgentIdsAsync(
+            groupId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { first, second });
+        _shiftScheduleRepository.GetShiftScheduleAsync(Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
+            .Returns((new List<ShiftDayAssignment> { new() { ShiftId = Guid.NewGuid() } }, 1));
+        _runner.StartAsync(Arg.Any<StartAutoWizardRequest>(), Arg.Any<CancellationToken>()).Returns(Guid.NewGuid());
+        return (groupId, first, second);
+    }
+
+    private static Dictionary<string, object> TwoAgentGroupParameters(Guid groupId) => new()
+    {
+        { "groupId", groupId.ToString() },
+        { "periodFrom", "2026-05-01" },
+        { "periodUntil", "2026-05-31" }
+    };
+
+    private void StubSavedOrder(Guid groupId, params Guid[] clientIds)
+    {
+        _sortPreferenceRepository.GetByUserAndGroupAsync(_context.UserId.ToString(), groupId, Arg.Any<CancellationToken>())
+            .Returns(clientIds
+                .Select((clientId, index) => new ClientSortPreference { GroupId = groupId, ClientId = clientId, SortOrder = index })
+                .ToList());
     }
 
     private (Guid GroupId, Guid JobId) ArrangeRunnableGroup(string groupName)

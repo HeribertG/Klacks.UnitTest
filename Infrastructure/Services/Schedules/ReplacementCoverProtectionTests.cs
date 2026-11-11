@@ -242,6 +242,7 @@ public class ReplacementCoverProtectionTests
         var substituteBlocker = result.ExistingWorkBlockers.Single(b => b.AgentId == _substitute.ToString());
         substituteBlocker.StartAt.ShouldBe(Day.ToDateTime(new TimeOnly(6, 0)));
         substituteBlocker.EndAt.ShouldBe(Day.ToDateTime(new TimeOnly(10, 0)));
+        substituteBlocker.Hours.ShouldBe(4m, "the substitute works the replaced hours, which count toward the weekly cap");
         result.ExistingWorkBlockers.ShouldNotContain(b => b.AgentId == _absent.ToString() && b.Date == Day);
         result.ExistingWorkBlockers.ShouldNotContain(b => b.AgentId == _absent.ToString() && b.Date == Day.AddDays(1),
             "a corrected work is fixed (locked work), not a movable blocker");

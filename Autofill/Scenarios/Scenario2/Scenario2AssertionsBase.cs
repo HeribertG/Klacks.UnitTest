@@ -11,7 +11,7 @@ using Shouldly;
 namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 
 /// <summary>
-/// Assertions A1, A2, A3, A6, A9 to A14 of the carry-in family, shared by scenario 2 (the plain month
+/// Assertions A1 to A14 of the carry-in family, shared by scenario 2 (the plain month
 /// transition) and scenario 3 (the same fixture plus keyword restrictions, whose specification
 /// inherits them unchanged onto its main run L1). Extracted verbatim from <see cref="Scenario2Tests"/>
 /// on 2026-08-08.
@@ -23,16 +23,15 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// about the algorithm.
 /// </para>
 /// <para>
-/// A4, A5, A7 and A8 were REMOVED here on 2026-08-12 (SPEC.md decision 11). They were permanently
-/// red, and a red test guards nothing: an engine rewrite could have halved any of the four values
-/// without a single test noticing. Their measurements are pinned instead by the <c>Baseline_</c>
-/// guards of <see cref="AutofillBaselineTestBase"/> — mixedTypeCount for A4, shortPackageShare,
-/// packagesOverIdealLength and idealShare for A5, forwardRate for A7, shiftKindSpread for A8 — and
-/// their specification targets stay binding in tests/autofill/SPEC.md. Two readings are covered by no
-/// pin and only survive as targets there: the package-length MODE of A5 and the rank-scoped spread of
-/// A8, which the baseline guard measures over all employees instead. A6 and A13 remained but now
-/// judge a pinned measurement rather than the specification value; each states both on itself. A12
-/// asserts the specification value again since the hour-based rest reading of decision 12d.
+/// A4, A5, A7 and A8 were removed on 2026-08-12 (SPEC.md decision 11) and are back since 2026-11-10
+/// (owner decision) as specification targets with the binding values; the judgements live in
+/// <see cref="AutofillSpecTargetAssertions"/>. They are expected red, so they carry [Explicit] and the
+/// category <see cref="AutofillTestCategories.SpecTarget"/> and never run in the regular suite; the
+/// regression floor on the same measurements stays with the <c>Baseline_</c> guards of
+/// <see cref="AutofillBaselineTestBase"/>. Scenario 3 adjusts two of them through
+/// <see cref="SpecTargetExcusedPackages"/> and <see cref="SpecTargetFairnessKinds"/>. A6 and A13 judge a
+/// pinned measurement rather than the specification value; each states both on itself. A12 asserts the
+/// specification value again since the hour-based rest reading of decision 12d.
 /// </para>
 /// <para>
 /// A15 (recovery comparison run) is deliberately not implemented in any deriving fixture. Decision 5
@@ -83,6 +82,31 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     /// carry-in family" was a measurement artifact.
     /// </summary>
     private const int MaxBoundaryRotationMisses = 0;
+
+    private const string BoundaryPackageNote =
+        "Packages span the month boundary, so a package continued from February counts its February days; packages "
+        + "already closed before the period are not listed.";
+
+    /// <summary>A8 judges every shift kind unless a scenario narrows it.</summary>
+    private static readonly AutofillShiftKind[] AllFairnessKinds =
+        [AutofillShiftKind.Early, AutofillShiftKind.Late, AutofillShiftKind.Night];
+
+    /// <summary>
+    /// Packages the A5 specification target takes out of its judgement. None in scenario 2; scenario 3
+    /// excuses the provably forced night shortening (SPEC-SZENARIO3.md: A5 adjusted, see A19).
+    /// </summary>
+    protected virtual IReadOnlyCollection<WorkPackage> SpecTargetExcusedPackages => [];
+
+    /// <summary>Scenario-specific reading of A5, quoted in its message.</summary>
+    protected virtual string SpecTargetPackageNote => BoundaryPackageNote;
+
+    /// <summary>Shift kinds the A8 specification target judges; all three in scenario 2.</summary>
+    protected virtual IReadOnlyList<AutofillShiftKind> SpecTargetFairnessKinds => AllFairnessKinds;
+
+    /// <summary>Scenario-specific reading of A8, quoted in its message.</summary>
+    protected virtual string SpecTargetFairnessNote =>
+        $"Rank {AutofillSpecConstants.EmployeeCount.ToString(CultureInfo.InvariantCulture)} is exempt because A6 "
+        + "leaves it the remainder.";
 
     /// <summary>The scenario of the run the assertions read; guards its own fixture validity.</summary>
     protected abstract AutofillScenarioDefinition Definition { get; }
@@ -202,6 +226,31 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
             + $"{Scenario2Diagnostics.DescribeHours(hours.PerEmployee)}. The February hours are deliberately kept "
             + "out of CurrentHours so this stays comparable to scenario 1. " + Describe(problems));
     }
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A4_ShiftKindStaysConstantInsideAPackage()
+        => AutofillSpecTargetAssertions.AssertA4(Metrics, Definition);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A5_PackageLengthsFollowTheFiveTwoIdeal()
+        => AutofillSpecTargetAssertions.AssertA5(Metrics, Definition, SpecTargetExcusedPackages, SpecTargetPackageNote);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A7_RotationRunsForward()
+        => AutofillSpecTargetAssertions.AssertA7(Metrics, Definition);
+
+    [Test]
+    [Explicit(AutofillTestCategories.SpecTargetExplicitReason)]
+    [Category(AutofillTestCategories.SpecTarget)]
+    public void A8_ShiftKindsAreSpreadEvenlyOverTheTopRanks()
+        => AutofillSpecTargetAssertions.AssertA8(
+            Metrics, AutofillSpecConstants.TopRankUpperBound, SpecTargetFairnessKinds, SpecTargetFairnessNote);
 
     [Test]
     public void A9_TwoRunsWithTheSameSeedProduceTheSamePlan()

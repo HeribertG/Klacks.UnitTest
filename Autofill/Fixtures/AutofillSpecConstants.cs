@@ -104,9 +104,9 @@ public static class AutofillSpecConstants
 
     /// <summary>
     /// Weekly hours cap. Generous against the 5 x 8 h = 40 h rhythm and identical to the production
-    /// default. Wizard 1 never enforces it as a constraint, but the fuzzy bidding agent divides the
-    /// hours assigned so far by this value to derive its WeeklyLoad feature, so raising it would
-    /// silently change the seeding behaviour instead of relaxing a limit.
+    /// default. Wizard 1 enforces it as a hard weekly cap (WeeklyHoursGuard), and the fuzzy bidding agent
+    /// divides the hours assigned so far by this value to derive its WeeklyLoad feature, so raising it
+    /// would also silently change the seeding behaviour, not only relax a limit.
     /// </summary>
     public const double MaxWeeklyHours = 50;
 

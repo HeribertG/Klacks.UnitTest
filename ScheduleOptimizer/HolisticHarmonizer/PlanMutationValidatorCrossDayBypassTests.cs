@@ -10,19 +10,22 @@ using Shouldly;
 namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer;
 
 /// <summary>
-/// Grill 2026-06-19 defect H3: PlanMutationValidator delegates same-day swaps to the full
-/// DomainAwareReplaceValidator hard gate (MinPause/MaxConsecutiveDays/MaxWeeklyHours/keyword), but its
-/// cross-day branch checks only coverage-neutrality + qualification — it never calls Diagnose. So a
-/// cross-day swap that pushes an agent over MaxWeeklyHours is admitted, while the equivalent same-day
-/// swap is correctly rejected. This is a CHARACTERIZATION test: it asserts the current (defective)
-/// behaviour so the bypass is pinned. When H3 is fixed (cross-day delegates to Diagnose), the cross-day
-/// assertion must be flipped to expect a rejection. Both cells use the SAME ISO week (2026-01-05/06).
+/// Grill 2026-06-19 defect H3, fixed 2026-11-10: PlanMutationValidator delegates same-day swaps to the full
+/// DomainAwareReplaceValidator hard gate (MinPause/MaxConsecutiveDays/MaxWeeklyHours/keyword). Its cross-day branch used
+/// to check only coverage-neutrality, qualification, day restrictions, rest days and planning rules, so a cross-day swap
+/// pushing an agent over MaxWeeklyHours, under the minimum pause or over MaxConsecutiveDays was admitted. The branch now
+/// judges the end state of the swap (applied to a copy, cells re-anchored on their target day) with the same per-row
+/// rules, so both paths reject the same violations. The weekly-hours cells use the SAME ISO week (2026-01-05/06).
 /// </summary>
 [TestFixture]
 public class PlanMutationValidatorCrossDayBypassTests
 {
     private static readonly DateOnly Monday = new(2026, 1, 5);   // ISO week 2
     private static readonly DateOnly Tuesday = new(2026, 1, 6);  // ISO week 2
+
+    private const string WeeklyHoursRule = "MaxWeeklyHours";
+    private const string MinPauseRule = "MinPauseHours";
+    private const string ConsecutiveDaysRule = "MaxConsecutiveDays";
 
     private static BitmapAgent Agent(string id, decimal maxWeekly) =>
         new(id, id, TargetHours: 0m, PreferredShiftSymbols: new HashSet<CellSymbol>(), MaxWeeklyHours: maxWeekly);
@@ -59,22 +62,89 @@ public class PlanMutationValidatorCrossDayBypassTests
 
         rejection.ShouldNotBeNull("the same-day path delegates to DomainAwareReplaceValidator, which must " +
             "reject a swap pushing agent A to 21h over the 16h weekly cap");
-        rejection!.Detail.ShouldContain("MaxWeeklyHours");
+        rejection!.Detail.ShouldContain(WeeklyHoursRule);
     }
 
     [Test]
-    public void CrossDaySwap_PushingAgentOverWeeklyCap_IsAdmitted_DocumentingTheBypass()
+    public void CrossDaySwap_PushingAgentOverWeeklyCap_IsRejected()
     {
         // Cross-day work<->work swap: (A, Mon 4h) <-> (B, Tue 9h). Coverage-neutral (both work).
         // After the swap A would hold Mon 9h + Tue 9h = 18h > 16h cap — the SAME violation the same-day
-        // case above rejects. The cross-day branch never calls Diagnose, so it is admitted (returns null).
+        // case above rejects.
         var swap = new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test");
 
         var rejection = Validator().Validate(BuildBitmap(), swap);
 
-        rejection.ShouldBeNull("DEFECT H3 (grill 2026-06-19): the cross-day branch admits a swap that " +
-            "pushes agent A to 18h over the 16h weekly cap because it only checks coverage + qualification, " +
-            "never the per-row hard constraints the same-day path enforces. Flip this assertion when H3 is fixed.");
+        rejection.ShouldNotBeNull("a cross-day swap pushing agent A to 18h over the 16h weekly cap breaks a hard rule");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        rejection.Detail.ShouldContain(WeeklyHoursRule);
+    }
+
+    /// <summary>
+    /// A works late on Monday and Tuesday (14:00-22:00), B early on Thursday (06:00-14:00). The cross-day swap hands A
+    /// B's early on Tuesday: re-anchored on Tuesday it starts at 06:00, 8 h after A's Monday late - below the 11 h minimum.
+    /// Without re-anchoring the moved cell would still start on Thursday and the pause would look like 56 h.
+    /// </summary>
+    [Test]
+    public void CrossDay_MinPauseViolation_IsRejected()
+    {
+        var days = new List<DateOnly> { Monday, Monday.AddDays(1), Monday.AddDays(2), Monday.AddDays(3) };
+        var cells = new Cell[2, 4];
+        cells[0, 0] = Timed(CellSymbol.Late, days[0], new TimeOnly(14, 0), new TimeOnly(22, 0));
+        cells[0, 1] = Timed(CellSymbol.Late, days[1], new TimeOnly(14, 0), new TimeOnly(22, 0));
+        cells[0, 2] = Cell.Free();
+        cells[0, 3] = Cell.Free();
+        cells[1, 0] = Cell.Free();
+        cells[1, 1] = Cell.Free();
+        cells[1, 2] = Cell.Free();
+        cells[1, 3] = Timed(CellSymbol.Early, days[3], new TimeOnly(6, 0), new TimeOnly(14, 0));
+        var agentA = Agent("A", 0m) with { MinPauseHours = 11m };
+        var bitmap = new HarmonyBitmap([agentA, Agent("B", 0m)], days, cells);
+
+        var rejection = Validator().Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 1, RowB: 1, DayB: 3, Reason: "test"));
+
+        rejection.ShouldNotBeNull("A would start at 06:00 on Tuesday, only 8 h after Monday's late ends at 22:00");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        rejection.Detail.ShouldContain(MinPauseRule);
+    }
+
+    /// <summary>
+    /// A works early on day 0 and a block of three earlies on days 2-4 (cap 3). The cross-day swap hands A a night on day
+    /// 0: it spills into the morning of day 1 and bridges the free day, so the run becomes five days.
+    /// </summary>
+    [Test]
+    public void CrossDay_NightBeforeBlock_ExceedsMaxConsecutive_IsRejected()
+    {
+        var days = Enumerable.Range(0, 7).Select(offset => Monday.AddDays(offset)).ToList();
+        var cells = new Cell[2, 7];
+        for (var day = 0; day < days.Count; day++)
+        {
+            cells[0, day] = Cell.Free();
+            cells[1, day] = Cell.Free();
+        }
+
+        foreach (var day in new[] { 0, 2, 3, 4 })
+        {
+            cells[0, day] = Timed(CellSymbol.Early, days[day], new TimeOnly(6, 0), new TimeOnly(14, 0));
+        }
+
+        cells[1, 5] = Timed(CellSymbol.Night, days[5], new TimeOnly(22, 0), new TimeOnly(6, 0));
+        var agentA = Agent("A", 0m) with { MaxConsecutiveDays = 3 };
+        var bitmap = new HarmonyBitmap([agentA, Agent("B", 0m)], days, cells);
+
+        var rejection = Validator().Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 5, Reason: "test"));
+
+        rejection.ShouldNotBeNull("the night on day 0 occupies day 1 and joins the block of days 2-4: five days, cap three");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        rejection.Detail.ShouldContain(ConsecutiveDaysRule);
+    }
+
+    /// <summary>Work cell on <paramref name="day"/>; an end at or before the start lies on the following day.</summary>
+    private static Cell Timed(CellSymbol symbol, DateOnly day, TimeOnly start, TimeOnly end)
+    {
+        var startAt = day.ToDateTime(start);
+        var endAt = end <= start ? day.AddDays(1).ToDateTime(end) : day.ToDateTime(end);
+        return new Cell(symbol, Guid.NewGuid(), [Guid.NewGuid()], false, startAt, endAt, 8m);
     }
 
     private static Cell Shift(CellSymbol symbol, Guid? shiftId = null) =>

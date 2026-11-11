@@ -3,6 +3,7 @@
 using Shouldly;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
+using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Controller;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.ScheduleOptimizer.Harmonizer.Conductor;
@@ -396,6 +397,78 @@ public class DomainAwareReplaceValidatorTests
 
         validator.IsValid(bitmap, new ReplaceMove(0, 1, 14)).ShouldBeTrue();
     }
+
+    [Test]
+    public void Replace_ExceedingDailyCap_IsRejected()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: DailyCapAgent(10m));
+        bitmap.SetCell(0, 1, WorkCell(Day0.AddDays(1), hours: 12m));
+
+        var reason = new DomainAwareReplaceValidator(null).Diagnose(bitmap, new ReplaceMove(0, 1, 1));
+
+        reason.ShouldNotBeNull();
+        reason.ShouldContain(Stage0RuleNames.MaxDailyHours);
+    }
+
+    [Test]
+    public void Replace_AtDailyCap_IsAdmitted()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: DailyCapAgent(10m));
+        bitmap.SetCell(0, 1, WorkCell(Day0.AddDays(1), hours: 10m));
+
+        new DomainAwareReplaceValidator(null).Diagnose(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeNull();
+    }
+
+    [Test]
+    public void ZeroDailyCap_MeansUnconstrained()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: DailyCapAgent(0m));
+        bitmap.SetCell(0, 1, WorkCell(Day0.AddDays(1), hours: 12m));
+
+        new DomainAwareReplaceValidator(null).Diagnose(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeNull();
+    }
+
+    [Test]
+    public void BreakHoursDoNotCountTowardDailyCap()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: DailyCapAgent(10m));
+        bitmap.SetCell(1, 1, new Cell(CellSymbol.Break, null, [Guid.NewGuid()], true, default, default, 12m));
+        bitmap.SetCell(1, 2, WorkCell(Day0.AddDays(2), hours: 12m));
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.DiagnoseCellInPlace(bitmap, 1, 1).ShouldBeNull();
+        validator.DiagnoseCellInPlace(bitmap, 1, 2).ShouldNotBeNull().ShouldContain(Stage0RuleNames.MaxDailyHours);
+    }
+
+    [TestCase(12, 12, true)]
+    [TestCase(8, 10, false)]
+    public void ContractDayCap_OverridesTheAgentCap_LikeWizard1(decimal dayCap, decimal incomingHours, bool admitted)
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: DailyCapAgent(10m));
+        bitmap.SetCell(0, 1, WorkCell(Day0.AddDays(1), incomingHours));
+        var availability = new Dictionary<(string AgentId, DateOnly Date), DayAvailability>
+        {
+            [("agent-1", Day0.AddDays(1))] = DayAvailability.AlwaysAvailable with { MaxDailyHours = dayCap },
+        };
+
+        var reason = new DomainAwareReplaceValidator(availability).Diagnose(bitmap, new ReplaceMove(0, 1, 1));
+
+        if (admitted)
+        {
+            reason.ShouldBeNull();
+        }
+        else
+        {
+            reason.ShouldNotBeNull().ShouldContain(Stage0RuleNames.MaxDailyHours);
+        }
+    }
+
+    private static Func<string, int, BitmapAgent> DailyCapAgent(decimal receiverCap) =>
+        (id, idx) => new BitmapAgent(id, id, 100m, new HashSet<CellSymbol>(), MaxDailyHours: idx == 1 ? receiverCap : 0m);
+
+    private static Cell WorkCell(DateOnly day, decimal hours) => new(
+        CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+        day.ToDateTime(new TimeOnly(6, 0)), day.ToDateTime(new TimeOnly(6, 0)).AddHours((double)hours), hours);
 
     private static Cell NineHourCell(DateOnly day) => new(
         CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,

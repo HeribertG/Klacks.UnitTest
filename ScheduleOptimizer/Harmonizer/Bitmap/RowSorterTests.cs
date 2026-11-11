@@ -124,4 +124,45 @@ public class RowSorterTests
 
         sorted.Rows.Select(r => r.Id).ShouldBe(["standin-high", "standin-low", "standin-a", "standin-b"]);
     }
+
+    [Test]
+    public void KeepIncomingOrder_KeepsUserOrder_StandInsLast()
+    {
+        var preferEarly = new HashSet<CellSymbol> { CellSymbol.Early };
+        var agents = new List<BitmapAgent>
+        {
+            new("standin", "Stand-in", 200m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("low", "Low", 10m, new HashSet<CellSymbol>()),
+            new("high", "High", 200m, preferEarly),
+            new("mid", "Mid", 100m, new HashSet<CellSymbol>()),
+        };
+        var assignments = new List<BitmapAssignment>
+        {
+            new("high", Day0, CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false),
+        };
+        var bitmap = BitmapBuilder.Build(new BitmapInput(agents, Day0, Day0.AddDays(2), assignments));
+
+        var sorted = RowSorter.Sort(bitmap, keepIncomingOrder: true);
+
+        sorted.Rows.Select(r => r.Id).ShouldBe(["low", "high", "mid", "standin"]);
+        sorted.GetCell(1, 0).Symbol.ShouldBe(CellSymbol.Early);
+    }
+
+    [Test]
+    public void KeepIncomingOrder_IsStable_WithEqualTargetHours()
+    {
+        var agents = new List<BitmapAgent>
+        {
+            new("zeta", "Z", 100m, new HashSet<CellSymbol>()),
+            new("standin-b", "Stand-in B", 100m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("alpha", "A", 100m, new HashSet<CellSymbol>()),
+            new("standin-a", "Stand-in A", 100m, new HashSet<CellSymbol>(), IsStandIn: true),
+            new("mid", "M", 100m, new HashSet<CellSymbol>()),
+        };
+        var bitmap = BitmapBuilder.Build(new BitmapInput(agents, Day0, Day0.AddDays(2), []));
+
+        var sorted = RowSorter.Sort(bitmap, keepIncomingOrder: true);
+
+        sorted.Rows.Select(r => r.Id).ShouldBe(["zeta", "alpha", "mid", "standin-b", "standin-a"]);
+    }
 }

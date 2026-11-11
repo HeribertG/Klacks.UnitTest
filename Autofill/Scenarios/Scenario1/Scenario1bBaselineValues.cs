@@ -8,10 +8,9 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// two clean-start pins: a change that only looks harmless because scenario 1 is structurally
 /// undersupplied will show up here first.
 /// <para>
-/// Since the SpecFirstRed cleanup of 2026-08-12 (SPEC.md decision 11) these pins carry the whole
-/// regression protection for the four measurements A4, A5, A7 and A8 used to state. The two things
-/// they checked and no pin covers — the package-length MODE and the rank-scoped shift-kind spread —
-/// are documented as targets in SPEC.md; see <see cref="Scenario1BaselineValues"/>.
+/// In the regular run these pins carry the whole regression protection for the four measurements of
+/// A4, A5, A7 and A8; the specification targets run as [Explicit] tests of the category
+/// <see cref="AutofillTestCategories.SpecTarget"/>, see <see cref="Scenario1BaselineValues"/>.
 /// </para>
 /// <para>
 /// Each constant is a band edge, not a single measurement — the worst of what the engine produced
