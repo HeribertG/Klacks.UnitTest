@@ -6,7 +6,9 @@
 /// <see cref="LocalRepairEngine"/>, records the absence (Break), and materialises each reassignment delta
 /// as a Replacement WorkChange on the matching cloned work. Locked / uncoverable slots are reported. The
 /// snapshot builder, scenario service, conflict checker and mediator are substituted; the engine and the
-/// CompliancePartitionService (wired over the substituted checker and override authorizer) are real.
+/// CompliancePartitionService (wired over the substituted checker and override authorizer) are real. The engine
+/// runs behind a recording substitute, so a test can read the snapshot each repair received. The company clock
+/// stands late on the absence day: a swap chain takes no work of a day before today from its holder.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -53,6 +55,7 @@ public class CoverAbsenceCommandHandlerTests
     private static readonly Guid WorkId = Guid.NewGuid();
     private static readonly Guid ClonedWorkId = Guid.NewGuid();
     private static readonly DateOnly Date = new(2026, 3, 10);
+    private static readonly DateTimeOffset LateOnTheAbsenceDay = new(2026, 3, 10, 23, 0, 0, TimeSpan.Zero);
     private const string GeneratedName = "generated name";
     private const string ItalianUser = "it";
 
@@ -74,6 +77,7 @@ public class CoverAbsenceCommandHandlerTests
     private CoverAbsenceCommandHandler _handler = null!;
     private ICoverMoveFactsReader _coverFacts = null!;
     private IWorkHandOverService _handOver = null!;
+    private IRecoveryEngine _engine = null!;
 
     private const string TransactionBegin = "tx-begin";
     private const string TransactionCommit = "tx-commit";
@@ -145,7 +149,12 @@ public class CoverAbsenceCommandHandlerTests
 
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        _companyClock = new FixedCompanyClock(LateOnTheAbsenceDay, TimeZoneInfo.Utc);
+
+        var realEngine = new LocalRepairEngine();
+        _engine = Substitute.For<IRecoveryEngine>();
+        _engine.Repair(Arg.Any<RecoverySnapshot>(), Arg.Any<AbsenceEvent>(), Arg.Any<Ruleset>())
+            .Returns(call => realEngine.Repair(call.Arg<RecoverySnapshot>(), call.Arg<AbsenceEvent>(), call.Arg<Ruleset>()));
 
         _visibilityGuard = Substitute.For<IClientVisibilityGuard>();
         _visibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
@@ -179,11 +188,17 @@ public class CoverAbsenceCommandHandlerTests
         _handOver.TransferAsync(Arg.Any<Work>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _handler = new CoverAbsenceCommandHandler(
-            _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
+            _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, _engine,
             partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard,
             _groupVisibilityGuard, _nameGenerator,
             _recorder, NewMaterializer(), NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
+
+    private IReadOnlyList<RecoverySnapshot> RepairSnapshots()
+        => _engine.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IRecoveryEngine.Repair))
+            .Select(call => (RecoverySnapshot)call.GetArguments()[0]!)
+            .ToList();
 
     private AbsenceCoverMaterializer NewMaterializer()
     {
@@ -1212,12 +1227,17 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
-    public async Task ReplacementOutsideTheCallersVisibility_IsNotWritten_AndReportedAsNoEligibleCandidate()
+    public async Task ReplacementOutsideTheCallersVisibility_NeverReachesTheEngine_AndTheSlotHasNoEligibleCandidate()
     {
+        // Arrange: the only candidate is one the caller cannot see.
         SetVisibleAgents(id => id != CandidateId);
 
+        // Act
         var outcome = await Cover();
 
+        // Assert: the engine repaired once, on a pool without the hidden candidate, so there was no cover to drop.
+        var snapshot = RepairSnapshots().ShouldHaveSingleItem();
+        snapshot.Agents.Select(a => a.Id).ShouldBe([ClientId]);
         outcome.Covered.ShouldBeEmpty();
         outcome.Uncovered.Count.ShouldBe(1);
         outcome.Uncovered[0].Reason.ShouldBe("no eligible candidate");
@@ -1225,6 +1245,35 @@ public class CoverAbsenceCommandHandlerTests
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
         await _scenarioService.DidNotReceive().AddScenarioMembershipAsync(
             Arg.Any<Guid>(), CandidateId, Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplacementOutsideTheCallersVisibility_IsPassedOver_ForTheNextVisibleCandidate()
+    {
+        // Arrange: the hidden candidate sorts first and would win the tie; a visible one stands behind it.
+        var hiddenId = new Guid("00000000-0000-0000-0000-000000000001");
+        var visibleId = new Guid("ffffffff-ffff-ffff-ffff-fffffffffff1");
+        UseSnapshot(new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(hiddenId, "Hidden")
+            .Agent(visibleId, "Visible")
+            .Work(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .Build());
+        SetVisibleAgents(id => id != hiddenId);
+
+        // Act
+        var outcome = await Cover();
+
+        // Assert
+        outcome.Covered.ShouldHaveSingleItem().ReplacementClientId.ShouldBe(visibleId);
+        outcome.Uncovered.ShouldBeEmpty();
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.ReplaceClientId == visibleId && c.Resource.WorkId == ClonedWorkId),
+            Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(
+            Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.ReplaceClientId == hiddenId), Arg.Any<CancellationToken>());
     }
 
     [Test]

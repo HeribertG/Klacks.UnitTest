@@ -3,7 +3,10 @@
 /// <summary>
 /// An accepted alternative becomes the replacement of exactly its slot in the scenario: the existing replacement
 /// WorkChange is rewritten through PutCommand (period hours, locks, notifications), the old stand-in's untouched proposal
-/// row, swap relocation and temporary membership go with it, recorded answers stay. Everything else is a no-op.
+/// row, swap relocation and temporary membership go with it, recorded answers stay. Everything else is a no-op. A swap
+/// chain is taken back as far as it reaches (works handed on on other days, the works their receivers handed on in turn),
+/// a work that went away for an own absence stays, and a chain whose works cannot be told apart refuses the switch. The
+/// repository substitutes answer the range reads like the database: only works inside the asked range come back.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -14,6 +17,7 @@ using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Mediator;
+using RulesetDefaults = Klacks.ScheduleRecovery.Model.RulesetDefaults;
 
 namespace Klacks.UnitTest.Application.Services.Schedules.Recovery;
 
@@ -42,17 +46,28 @@ public class ScenarioReplacementSwitcherTests
     private ScenarioReplacementSwitcher _switcher = null!;
     private AnalyseScenario _scenario = null!;
 
+    private const int Reach = RulesetDefaults.ReliefReachDays;
+    private const string ChainRefusal = "swap chain";
+    private readonly Dictionary<Guid, List<Work>> _movedFrom = [];
+    private readonly List<ReplacementRequest> _book = [];
+
     [SetUp]
     public void SetUp()
     {
+        _movedFrom.Clear();
+        _book.Clear();
         _workChangeRepository = Substitute.For<IWorkChangeRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _workRepository.ListMovedByScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Work>());
+        _workRepository.ListMovedByScenarioAsync(
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<Work>());
         _coverMaterializer = Substitute.For<IAbsenceCoverMaterializer>();
         _coverMaterializer.PassOnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(MovedWorkHandOverResult.Done);
         _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(MovedWorkHandOverResult.Done);
         _requestRepository = Substitute.For<IReplacementRequestRepository>();
+        _requestRepository.ListLiveByTokenAsync(_token, Arg.Any<CancellationToken>()).Returns(_book);
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _mediator = Substitute.For<IMediator>();
@@ -73,6 +88,10 @@ public class ScenarioReplacementSwitcherTests
             .Returns([]);
         _workChangeRepository
             .ListReplacementsWrittenByScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _workChangeRepository
+            .ListReplacementsWrittenByScenarioAsync(
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns([]);
         _workChangeRepository
             .ListNonReplacementChangesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -280,7 +299,7 @@ public class ScenarioReplacementSwitcherTests
         await _coverMaterializer.Received(1).ReturnMovedWorkAsync(_token, hop.Id, _oldStandInId, Arg.Any<CancellationToken>());
     }
 
-    private Work GivenMovedWork(Guid movedFromId, Guid ownerId, Guid? shiftId = null)
+    private Work GivenMovedWork(Guid movedFromId, Guid ownerId, Guid? shiftId = null, DateOnly? day = null)
     {
         var work = new Work
         {
@@ -288,13 +307,412 @@ public class ScenarioReplacementSwitcherTests
             ClientId = ownerId,
             MovedFromClientId = movedFromId,
             ShiftId = shiftId ?? _cloneShiftId,
-            CurrentDate = Day,
+            CurrentDate = day ?? Day,
             StartTime = Start,
             EndTime = End,
             AnalyseToken = _token,
         };
-        _workRepository.ListMovedByScenarioAsync(_token, movedFromId, Day, Arg.Any<CancellationToken>()).Returns(new List<Work> { work });
+        if (!_movedFrom.TryGetValue(movedFromId, out var works))
+        {
+            works = [];
+            _movedFrom[movedFromId] = works;
+        }
+
+        works.Add(work);
+        _workRepository.ListMovedByScenarioAsync(_token, movedFromId, Day, Arg.Any<CancellationToken>())
+            .Returns(_ => works.Where(moved => moved.CurrentDate == Day).ToList());
+        _workRepository.ListMovedByScenarioAsync(
+                _token, movedFromId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => works
+                .Where(moved => moved.CurrentDate >= call.ArgAt<DateOnly>(2) && moved.CurrentDate <= call.ArgAt<DateOnly>(3))
+                .ToList());
         return work;
+    }
+
+    private WorkChange GivenRelocation(Guid ownerId, Guid receiverId, DateOnly day)
+    {
+        var relocation = Change(ownerId, receiverId, Guid.NewGuid());
+        relocation.Work!.CurrentDate = day;
+        GivenWritten(ownerId, relocation);
+        return relocation;
+    }
+
+    private void GivenOwnAbsence(Guid absentId, DateOnly day, Guid? workId, Guid shiftId)
+        => _book.Add(new ReplacementRequest
+        {
+            Id = Guid.NewGuid(),
+            AbsentClientId = absentId,
+            CandidateClientId = Guid.NewGuid(),
+            ShiftId = shiftId,
+            Date = day,
+            WorkId = workId,
+            Outcome = ReplacementRequestOutcome.Proposed,
+            AnalyseToken = _token,
+        });
+
+    private Task ShouldReturn(Work work, Guid toClientId)
+        => _coverMaterializer.Received(1).ReturnMovedWorkAsync(_token, work.Id, toClientId, Arg.Any<CancellationToken>());
+
+    private Task ShouldNotReturn(Work work)
+        => _coverMaterializer.DidNotReceive().ReturnMovedWorkAsync(
+            Arg.Any<Guid>(), work.Id, Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+
+    [TestCase(-Reach)]
+    [TestCase(3)]
+    [TestCase(Reach)]
+    public async Task AMovedWorkHandedOnOnAnotherDayOfTheReach_ReturnsToTheOldStandIn(int dayOffset)
+    {
+        // Arrange
+        GivenSlotChange();
+        var relief = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(dayOffset));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(relief, _oldStandInId);
+    }
+
+    [TestCase(-Reach - 1)]
+    [TestCase(Reach + 1)]
+    public async Task AMovedWorkOutsideTheReach_IsNotTouched(int dayOffset)
+    {
+        // Arrange
+        GivenSlotChange();
+        var farAway = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(dayOffset));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldNotReturn(farAway);
+    }
+
+    [Test]
+    public async Task AMovedSlot_GivesAWorkOfAnotherDayBackToo()
+    {
+        // Arrange
+        GivenMovedWork(_absentId, _oldStandInId);
+        var relief = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(2));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(relief, _oldStandInId);
+    }
+
+    [Test]
+    public async Task ARecoveryReplacementOnAnotherDay_IsUndone_AndAManualOneStays()
+    {
+        // Arrange
+        GivenSlotChange();
+        var otherDay = Day.AddDays(3);
+        var relocation = Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid());
+        relocation.Work!.CurrentDate = otherDay;
+        var manual = Change(_oldStandInId, Guid.NewGuid(), Guid.NewGuid());
+        manual.Work!.CurrentDate = otherDay;
+        manual.Description = "planner note";
+        GivenWritten(_oldStandInId, relocation, manual);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _mediator.Received(1).Send(
+            Arg.Is<DeleteCommand<WorkChangeResource>>(c => c.Id == relocation.Id), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(
+            Arg.Is<DeleteCommand<WorkChangeResource>>(c => c.Id == manual.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InAChainOfThree_TheWorkTheReceiverHandedOn_ReturnsAfterTheFirstOne()
+    {
+        // Arrange: the old stand-in handed a work to the receiver, who handed an own work on to the chain end.
+        var receiverId = Guid.NewGuid();
+        var chainEndId = Guid.NewGuid();
+        GivenSlotChange();
+        var first = GivenMovedWork(_oldStandInId, receiverId, day: Day.AddDays(2));
+        var second = GivenMovedWork(receiverId, chainEndId, day: Day.AddDays(4));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert: the receiver is only free for their own work once the first one is gone.
+        Received.InOrder(() =>
+        {
+            _coverMaterializer.ReturnMovedWorkAsync(_token, first.Id, _oldStandInId, Arg.Any<CancellationToken>());
+            _coverMaterializer.ReturnMovedWorkAsync(_token, second.Id, receiverId, Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task InAChainOfThree_AReplacedFirstMove_AndAMovedSecondMove_BothReturn()
+    {
+        // Arrange
+        var receiverId = Guid.NewGuid();
+        GivenSlotChange();
+        var first = GivenRelocation(_oldStandInId, receiverId, Day.AddDays(1));
+        var second = GivenMovedWork(receiverId, Guid.NewGuid(), day: Day.AddDays(-2));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _mediator.Received(1).Send(
+            Arg.Is<DeleteCommand<WorkChangeResource>>(c => c.Id == first.Id), Arg.Any<CancellationToken>());
+        await ShouldReturn(second, receiverId);
+    }
+
+    [Test]
+    public async Task ASwapOnTheDayOfTheSlot_ReturnsWhatItsReceiverHandedOnToo()
+    {
+        // Arrange
+        var receiverId = Guid.NewGuid();
+        GivenMovedWork(_absentId, _oldStandInId);
+        var first = GivenMovedWork(_oldStandInId, receiverId);
+        var second = GivenMovedWork(receiverId, Guid.NewGuid());
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(first, _oldStandInId);
+        await ShouldReturn(second, receiverId);
+    }
+
+    [Test]
+    public async Task TheUndo_StopsAtTheChainLengthOfTheEngine()
+    {
+        // Arrange: a fourth move the engine never builds; whoever wrote it, the switch leaves it alone.
+        var receiverId = Guid.NewGuid();
+        var chainEndId = Guid.NewGuid();
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, receiverId, day: Day.AddDays(1));
+        var second = GivenMovedWork(receiverId, chainEndId, day: Day.AddDays(2));
+        var beyond = GivenMovedWork(chainEndId, Guid.NewGuid(), day: Day.AddDays(3));
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(second, receiverId);
+        await ShouldNotReturn(beyond);
+    }
+
+    [Test]
+    public async Task AWorkThatWentAwayForAnOwnAbsence_Stays_WhileAHandedOnWorkReturns()
+    {
+        // Arrange: the old stand-in is absent themselves two days later; the request book lists that slot by its work.
+        GivenSlotChange();
+        var ownAbsenceDay = Day.AddDays(2);
+        var coveredForThem = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: ownAbsenceDay);
+        var handedOn = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(3));
+        GivenOwnAbsence(_oldStandInId, ownAbsenceDay, coveredForThem.Id, Guid.NewGuid());
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldNotReturn(coveredForThem);
+        await ShouldReturn(handedOn, _oldStandInId);
+    }
+
+    [Test]
+    public async Task AWorkOfAnOwnAbsence_IsAlsoKnownByShiftAndDay_WhenTheBookHasNoWork()
+    {
+        // Arrange: the row carries no work id; the work sits on the scenario clone of the row's root shift.
+        GivenSlotChange();
+        var ownAbsenceDay = Day.AddDays(2);
+        var coveredForThem = GivenMovedWork(_oldStandInId, Guid.NewGuid(), _cloneShiftId, ownAbsenceDay);
+        GivenOwnAbsence(_oldStandInId, ownAbsenceDay, null, _rootShiftId);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldNotReturn(coveredForThem);
+    }
+
+    [Test]
+    public async Task ARecoveryReplacementForAnOwnAbsence_Stays()
+    {
+        // Arrange
+        GivenSlotChange();
+        var ownAbsenceDay = Day.AddDays(-1);
+        var coverOfThem = GivenRelocation(_oldStandInId, Guid.NewGuid(), ownAbsenceDay);
+        GivenOwnAbsence(_oldStandInId, ownAbsenceDay, coverOfThem.Work!.Id, Guid.NewGuid());
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheAbsenceOfSomebodyElse_OrOfAnotherDay_ProtectsNothing()
+    {
+        // Arrange: neither row names this work, this shift on this day or this person.
+        GivenSlotChange();
+        var reliefDay = Day.AddDays(2);
+        var relief = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: reliefDay);
+        GivenOwnAbsence(Guid.NewGuid(), reliefDay, relief.Id, _rootShiftId);
+        GivenOwnAbsence(_oldStandInId, reliefDay.AddDays(1), null, _rootShiftId);
+        GivenOwnAbsence(_oldStandInId, reliefDay, Guid.NewGuid(), Guid.NewGuid());
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(relief, _oldStandInId);
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task AnOldStandInWithAnotherCover_AndAWorkHandedOnOnAnotherDay_RefusesTheSwitch(
+        bool standsInElsewhere, bool holdsAMovedWork)
+    {
+        // Arrange: it is not clear which of the two covers the work was handed on for.
+        GivenSlotChange();
+        var relief = GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(2));
+        var proposal = OldStandInRow(ReplacementRequestOutcome.Proposed);
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>())
+            .Returns(standsInElsewhere);
+        _workRepository.HoldsMovedWorkInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>())
+            .Returns(holdsAMovedWork);
+
+        // Act
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        // Assert: nothing of the chain was taken back before the refusal.
+        refused.Message.ShouldContain(ChainRefusal);
+        await ShouldNotReturn(relief);
+        await _mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+        _requestRepository.DidNotReceive().Remove(proposal);
+        await _scenarioService.DidNotReceiveWithAnyArgs().RemoveScenarioMembershipsAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AnOldStandInWithAnotherCover_StillGetsASwapOfTheSlotsDayBack()
+    {
+        // Arrange: on the day of the slot the work returns as soon as its person is free at its time.
+        GivenSlotChange();
+        var hop = GivenMovedWork(_oldStandInId, Guid.NewGuid());
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>()).Returns(true);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(hop, _oldStandInId);
+    }
+
+    [Test]
+    public async Task AReceiverWithAnotherCover_WhoHandedAWorkOn_RefusesTheSwitch()
+    {
+        // Arrange
+        var receiverId = Guid.NewGuid();
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, receiverId, day: Day.AddDays(2));
+        var second = GivenMovedWork(receiverId, Guid.NewGuid(), day: Day.AddDays(4));
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, receiverId, Arg.Any<CancellationToken>()).Returns(true);
+
+        // Act
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        // Assert
+        refused.Message.ShouldContain(ChainRefusal);
+        await ShouldNotReturn(second);
+    }
+
+    [Test]
+    public async Task AWorkOfAnotherDayThatSomethingHolds_RefusesTheSwitch()
+    {
+        // Arrange
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(2));
+        _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(MovedWorkHandOverResult.Held);
+
+        // Act
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        // Assert
+        refused.Message.ShouldContain(ChainRefusal);
+    }
+
+    [Test]
+    public async Task AWorkOfAnotherDayThatCannotBeRecalculated_RefusesTheSwitch()
+    {
+        // Arrange
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, Guid.NewGuid(), day: Day.AddDays(2));
+        _coverMaterializer.ReturnMovedWorkAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(MovedWorkHandOverResult.RecalculationFailed);
+
+        // Act
+        var refused = await Should.ThrowAsync<ConflictException>(() => Apply(Row()));
+
+        // Assert
+        refused.Message.ShouldContain("could not be recalculated");
+    }
+
+    [Test]
+    public async Task TheReceiverOfAReturnedWork_LosesTheTemporaryMembershipOfThatDay()
+    {
+        // Arrange
+        var borrowedId = Guid.NewGuid();
+        var reliefDay = Day.AddDays(2);
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, borrowedId, day: reliefDay);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, borrowedId, reliefDay, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task TheReceiverOfAReturnedWork_KeepsTheMembership_WhileTheyHoldSomethingOfTheScenario(
+        bool standsInElsewhere, bool holdsAMovedWork)
+    {
+        // Arrange
+        var borrowedId = Guid.NewGuid();
+        GivenSlotChange();
+        var relief = GivenMovedWork(_oldStandInId, borrowedId, day: Day.AddDays(2));
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, borrowedId, Arg.Any<CancellationToken>())
+            .Returns(standsInElsewhere);
+        _workRepository.HoldsMovedWorkInScenarioAsync(_token, borrowedId, Arg.Any<CancellationToken>())
+            .Returns(holdsAMovedWork);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(relief, _oldStandInId);
+        await _scenarioService.DidNotReceive().RemoveScenarioMembershipsAsync(
+            Arg.Any<Guid>(), borrowedId, Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheChainEndOfThree_LosesTheMembershipOfTheDayOfItsWork()
+    {
+        // Arrange
+        var receiverId = Guid.NewGuid();
+        var borrowedId = Guid.NewGuid();
+        var lastDay = Day.AddDays(4);
+        GivenSlotChange();
+        GivenMovedWork(_oldStandInId, receiverId, day: Day.AddDays(2));
+        GivenMovedWork(receiverId, borrowedId, day: lastDay);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, borrowedId, lastDay, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -712,9 +1130,18 @@ public class ScenarioReplacementSwitcherTests
     }
 
     private void GivenWritten(Guid clientId, params WorkChange[] changes)
-        => _workChangeRepository
+    {
+        _workChangeRepository
             .ListReplacementsWrittenByScenarioAsync(_token, clientId, Day, Arg.Any<CancellationToken>())
-            .Returns(changes.ToList());
+            .Returns(changes.Where(change => change.Work!.CurrentDate == Day).ToList());
+        _workChangeRepository
+            .ListReplacementsWrittenByScenarioAsync(
+                _token, clientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => changes
+                .Where(change => change.Work!.CurrentDate >= call.ArgAt<DateOnly>(2)
+                    && change.Work.CurrentDate <= call.ArgAt<DateOnly>(3))
+                .ToList());
+    }
 
     private void GivenChanges(Guid clientId, params WorkChange[] changes)
         => _workChangeRepository

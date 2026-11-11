@@ -111,6 +111,14 @@ internal sealed class SnapshotBuilder
         return this;
     }
 
+    private DateOnly? _firstMovableDay;
+
+    public SnapshotBuilder FirstMovableDay(DateOnly date)
+    {
+        _firstMovableDay = date;
+        return this;
+    }
+
     public SnapshotBuilder Work(
         Guid agentId,
         DateOnly date,
@@ -228,6 +236,7 @@ internal sealed class SnapshotBuilder
             kv => (IReadOnlyList<RecoveryWork>)kv.Value);
         return new RecoverySnapshot(
             _days, _agents, works, _availability, _ineligible, _nonCritical, _receivingGroupId,
-            _absences.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<AbsenceWindow>)kv.Value));
+            _absences.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<AbsenceWindow>)kv.Value),
+            _firstMovableDay);
     }
 }
