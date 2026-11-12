@@ -3,7 +3,7 @@
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Candidates;
-using Klacks.ScheduleOptimizer.HolisticHarmonizer.Llm;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using NUnit.Framework;
 using Shouldly;
 

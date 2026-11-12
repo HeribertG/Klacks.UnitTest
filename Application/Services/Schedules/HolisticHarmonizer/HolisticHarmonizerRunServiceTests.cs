@@ -135,5 +135,5 @@ public sealed class HolisticHarmonizerRunServiceTests
     }
 
     private static HolisticHarmonizerRunInput BuildInput()
-        => new(PeriodFrom, PeriodUntil, [Guid.NewGuid()], AnalyseToken: Guid.NewGuid(), Language: "de");
+        => new(PeriodFrom, PeriodUntil, [Guid.NewGuid()], AnalyseToken: Guid.NewGuid());
 }

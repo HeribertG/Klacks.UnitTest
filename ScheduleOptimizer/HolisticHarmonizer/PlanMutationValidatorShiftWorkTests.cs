@@ -12,7 +12,7 @@ using Shouldly;
 namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer;
 
 /// <summary>
-/// Stage 3 respects the shift-work flag on both of its paths: a cross-day swap and an LLM batch may not hand a late
+/// Stage 3 respects the shift-work flag on both of its paths: a cross-day swap and a multi-step batch may not hand a late
 /// duty to an agent without shift work. In a batch the offending step stops the batch, the valid prefix stays eligible.
 /// </summary>
 [TestFixture]

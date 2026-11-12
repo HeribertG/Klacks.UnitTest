@@ -38,7 +38,7 @@ public class HolisticHarmonizerSkippedRuleWarningTests
         var oracle = PlanRuleEvaluatorFactory.Create(input.Rules!.Rules, context);
 
         var result = await engine.RunAsync(
-            new HolisticHarmonizerRunInput(input.StartDate, input.EndDate, input.Agents.Select(_ => Guid.NewGuid()).ToList(), null, "de"),
+            new HolisticHarmonizerRunInput(input.StartDate, input.EndDate, input.Agents.Select(_ => Guid.NewGuid()).ToList(), null),
             progress: null,
             CancellationToken.None);
         var response = HolisticHarmonizerResponseMapper.ToResponse(Guid.NewGuid(), result);

@@ -18,7 +18,7 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Pipeline;
 /// order, column = day, F early / S late / . free) is written to the test output.
 /// Not covered: Wizard 3's cross-day swaps (the deterministic stage 3 proposes same-day swaps only; the cross-day end-state
 /// check is covered by PlanMutationValidatorCrossDayBypassTests and PlanMutationValidatorDailyHoursTests), breaks, locked
-/// works, boundary days, keyword wishes, planning rules, stand-ins, the LLM mode of Wizard 3 and the database apply paths.
+/// works, boundary days, keyword wishes, planning rules, stand-ins and the database apply paths.
 /// </summary>
 [TestFixture]
 public class AutofillChainTests
