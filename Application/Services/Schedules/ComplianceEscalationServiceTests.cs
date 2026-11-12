@@ -84,6 +84,31 @@ public class ComplianceEscalationServiceTests
     }
 
     [Test]
+    public async Task SeveralWarningsOfOneRule_AreAllEscalated_WithOneModeLookupPerRule()
+    {
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.MinRestHours).Returns(RuleEnforcementMode.Block);
+        var conflicts = new List<ScheduleValidationNotificationDto>
+        {
+            Warning(ScheduleValidationKeys.RestViolation),
+            Warning(ScheduleValidationKeys.Overtime),
+            Warning(ScheduleValidationKeys.RestViolation),
+            Warning(ScheduleValidationKeys.Overtime),
+        };
+
+        await _service.EscalateBlockedViolationsAsync(conflicts);
+
+        conflicts.Select(conflict => conflict.Type).ShouldBe(
+        [
+            ScheduleValidationType.Error,
+            ScheduleValidationType.Warning,
+            ScheduleValidationType.Error,
+            ScheduleValidationType.Warning,
+        ]);
+        await _enforcementResolver.Received(1).GetModeAsync(ComplianceRuleNames.MinRestHours);
+        await _enforcementResolver.Received(1).GetModeAsync(ComplianceRuleNames.MaxDailyHours);
+    }
+
+    [Test]
     public async Task WarnMode_LeavesWarningUntouched()
     {
         var conflicts = new List<ScheduleValidationNotificationDto> { Warning(ScheduleValidationKeys.RestViolation) };
