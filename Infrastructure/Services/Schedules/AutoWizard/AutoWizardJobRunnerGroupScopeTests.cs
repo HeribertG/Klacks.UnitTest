@@ -1,10 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Every stage of the AutoWizard chain plans for the group of the start request: Wizard 1, the Harmonizer and the Holistic
-/// Harmonizer receive its GroupId, so all three close the days outside an employee's period in that group. Without it the
-/// planner placed temporary workers outside their group period (the apply then dropped them and left holes) and the
-/// harmonizers moved regular duties onto them on such days, unfiltered. The report contexts of the run (remaining rule
+/// Every stage of the AutoWizard chain plans for the group of the start request: Wizard 1 and the Holistic Harmonizer
+/// receive its GroupId, so both close the days outside an employee's period in that group. Without it the planner placed
+/// temporary workers outside their group period (the apply then dropped them and left holes) and the harmonizers moved
+/// regular duties onto them on such days, unfiltered. The report contexts of the run (remaining rule
 /// violations, qualification gaps) read the same group.
 /// </summary>
 
@@ -31,8 +31,6 @@ public class AutoWizardJobRunnerGroupScopeTests : AutoWizardJobRunnerTestHarness
         state.Status.ShouldBe(WizardJobStatusValues.Completed);
         await _wizardRunner.Received(1).StartAsync(
             Arg.Is<WizardContextRequest>(r => r.GroupId == groupId), Arg.Any<CancellationToken>());
-        await _harmonizerRunner.Received(1).StartAsync(
-            Arg.Is<HarmonizerContextRequest>(r => r.GroupId == groupId), Arg.Any<CancellationToken>());
         await _holisticRunner.Received(1).StartAsync(
             Arg.Is<HolisticHarmonizerRunInput>(r => r.GroupId == groupId), Arg.Any<CancellationToken>());
     }

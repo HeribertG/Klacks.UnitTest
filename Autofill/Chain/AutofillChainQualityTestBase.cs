@@ -11,8 +11,9 @@ using Klacks.UnitTest.Autofill.Support;
 namespace Klacks.UnitTest.Autofill.Chain;
 
 /// <summary>
-/// Measures the plan quality of one autofill scenario after every stage of the chain Wizard 1 -> Wizard 2 (Harmonizer)
-/// -> Wizard 3 (deterministic). Wizard 1 runs once per fixture with exactly the scenario suite's input and
+/// Measures the plan quality of one autofill scenario after every stage of the production chain Wizard 1 -> Wizard 3
+/// (deterministic, protected), and of Wizard 2 (Harmonizer) on the same Wizard 1 plan, which production no longer runs in
+/// the chain. Wizard 1 runs once per fixture with exactly the scenario suite's input and
 /// configuration, and its plan must be slot for slot the suite's stored run1 plan, otherwise the fixture stops. Wizard 2
 /// and Wizard 3 run twice from that plan (<see cref="ChainStageRunner"/>) to prove they are reproducible. All three
 /// plans are measured with the suite's <see cref="AutofillPlanAnalyzer"/> on the same definition (previous month and
@@ -33,9 +34,11 @@ public abstract class AutofillChainQualityTestBase
     private const string ArtifactFolder = "chain";
     private const string ArtifactSuffix = ".chain.";
     private const string SummaryFileSuffix = ".chain.summary.txt";
+    private const string ProtectionFileSuffix = ".chain.protection.txt";
+    private const string ProbeSelfCheckFileSuffix = ".swap-chain-selfcheck.txt";
     private const string Wizard1Label = "w1";
     private const string Wizard2Label = "w2";
-    private const string Wizard3Label = "w3";
+    private const string Wizard3Label = ChainStageRunner.ProductionLabel;
     private const string SuiteRunLabel = "run1";
     private const string SuiteRunFileSuffix = ".run1.metrics.json";
     private const string ProblemSeparator = "; ";
@@ -111,6 +114,55 @@ public abstract class AutofillChainQualityTestBase
         _summaryPath = Path.Combine(AutofillRepositoryPaths.ArtifactDirectory(ArtifactFolder), ChainName + SummaryFileSuffix);
         File.WriteAllText(_summaryPath, _summary);
         TestContext.Out.WriteLine(_summary);
+
+        WriteProtectionComparison(wizard1);
+        WriteProbeSelfCheck(wizard1);
+    }
+
+    /// <summary>
+    /// Runs the positive control of the swap-chain probe on the Wizard 1 plan and writes its line next to the chain
+    /// summary. A measurement aid only: nothing is asserted, and a control that cannot run is written as such.
+    /// </summary>
+    /// <param name="wizard1">The Wizard 1 plan the control opens slots in</param>
+    private void WriteProbeSelfCheck(CoreScenario wizard1)
+    {
+        var path = Path.Combine(AutofillRepositoryPaths.ArtifactDirectory(ArtifactFolder), ChainName + ProbeSelfCheckFileSuffix);
+        try
+        {
+            File.WriteAllLines(
+                path, SwapChainProbeSelfCheck.Run(wizard1, _definition.Context).Select(line => ChainName + ": " + line));
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(path, $"{ChainName}: the swap-chain probe self-check could not run: {exception}");
+        }
+    }
+
+    /// <summary>
+    /// Runs Wizard 3 once more from the Wizard 2 plan, as the former chain did, and writes the comparison with the
+    /// production chain next to the chain summary. It is a measurement only: nothing in it is asserted, and a comparison that cannot be taken is
+    /// written as such instead of failing the fixture.
+    /// </summary>
+    /// <param name="wizard1">The Wizard 1 plan the changed assignments are counted against</param>
+    private void WriteProtectionComparison(CoreScenario wizard1)
+    {
+        var path = Path.Combine(AutofillRepositoryPaths.ArtifactDirectory(ArtifactFolder), ChainName + ProtectionFileSuffix);
+        try
+        {
+            var runs = ChainStageRunner.RunProtectionComparison(
+                _definition, ChainBitmapInputFactory.WorksOf(wizard1, _definition), _run);
+            var stages = _stages
+                .Concat(runs.Skip(1).Select(run => Measure(wizard1, ChainPlanConverter.ScenarioOf(run.Works), run.Label)))
+                .ToList();
+            File.WriteAllText(
+                path,
+                ChainSummaryTable.Render(ChainName, _definition, stages, JudgedRankCount, JudgedKindsNote, _run)
+                + ChainProtectionSummary.Render(runs));
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(path, $"{ChainName}: the protection comparison could not be taken: {exception}");
+        }
     }
 
     [Test]

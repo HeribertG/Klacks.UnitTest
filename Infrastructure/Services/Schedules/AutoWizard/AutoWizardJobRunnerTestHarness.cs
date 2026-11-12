@@ -3,6 +3,8 @@
 /// <summary>
 /// Shared harness for driving the real AutoWizardJobRunner through a whole chain: substituted stage runners, apply
 /// services and autofill presence tracker, real registries and result caches, and InMemory-backed terminal state caches.
+/// The chain is Wizard 1 followed by Wizard 3; the Harmonizer apply service stays registered in the runner's scopes so a
+/// test can prove that the chain never applies a Wizard 2 result.
 /// </summary>
 
 using Klacks.Api.Application.Commands.AnalyseScenarios;
@@ -42,18 +44,17 @@ public abstract class AutoWizardJobRunnerTestHarness
     protected static readonly DateOnly PeriodFrom = new(2026, 11, 2);
     protected static readonly DateOnly PeriodUntil = new(2026, 11, 8);
 
+    protected const string WizardScenarioDescription = "planned";
+
     protected readonly Guid _wizardStageJobId = Guid.NewGuid();
-    protected readonly Guid _harmonizerStageJobId = Guid.NewGuid();
     protected readonly Guid _holisticStageJobId = Guid.NewGuid();
     protected readonly Guid _wizardScenarioId = Guid.NewGuid();
-    protected readonly Guid _harmonizerScenarioId = Guid.NewGuid();
     protected readonly Guid _holisticScenarioId = Guid.NewGuid();
     protected readonly Guid _presenceRunId = Guid.NewGuid();
 
     protected IAutoWizardHubNotifier _hubNotifier = null!;
     protected IAutofillRunPresenceTracker _presenceTracker = null!;
     protected IWizardJobRunner _wizardRunner = null!;
-    protected IHarmonizerJobRunner _harmonizerRunner = null!;
     protected IHolisticHarmonizerJobRunner _holisticRunner = null!;
     protected IWizardApplyService _wizardApply = null!;
     protected IHarmonizerApplyService _harmonizerApply = null!;
@@ -67,7 +68,6 @@ public abstract class AutoWizardJobRunnerTestHarness
     protected IEligibilityMatrixBuilder _matrixBuilder = null!;
     protected IPlanningRuleSetLoader _ruleSetLoader = null!;
     protected WizardResultCache _wizardResults = null!;
-    protected HarmonizerResultCache _harmonizerResults = null!;
     protected AutoWizardJobRunner _runner = null!;
     protected AutoWizardJobScopes _jobScopes = null!;
 
@@ -81,21 +81,15 @@ public abstract class AutoWizardJobRunnerTestHarness
 
         _wizardRunner = Substitute.For<IWizardJobRunner>();
         _wizardRunner.StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>()).Returns(_wizardStageJobId);
-        _harmonizerRunner = Substitute.For<IHarmonizerJobRunner>();
-        _harmonizerRunner.StartAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>()).Returns(_harmonizerStageJobId);
         _holisticRunner = Substitute.For<IHolisticHarmonizerJobRunner>();
         _holisticRunner.StartAsync(Arg.Any<HolisticHarmonizerRunInput>(), Arg.Any<CancellationToken>()).Returns(_holisticStageJobId);
 
         var wizardResults = new WizardResultCache();
         wizardResults.Store(_wizardStageJobId, new CoreScenario(), analyseToken: null);
-        var harmonizerResults = new HarmonizerResultCache();
-        var emptyBitmap = new HarmonyBitmap([], [], new Cell[0, 0]);
-        harmonizerResults.Store(_harmonizerStageJobId, emptyBitmap, emptyBitmap, sourceAnalyseToken: null);
 
         _scenarios = new Dictionary<Guid, AnalyseScenario>
         {
-            [_wizardScenarioId] = new() { Id = _wizardScenarioId, Name = "AutoWizard-Wizard" },
-            [_harmonizerScenarioId] = new() { Id = _harmonizerScenarioId, Name = "AutoWizard-Harmonizer", Description = "harmonized" },
+            [_wizardScenarioId] = new() { Id = _wizardScenarioId, Name = "AutoWizard-Wizard", Description = WizardScenarioDescription },
             [_holisticScenarioId] = new() { Id = _holisticScenarioId, Name = "AutoWizard-Holistic" }
         };
 
@@ -104,9 +98,6 @@ public abstract class AutoWizardJobRunnerTestHarness
                 _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
             .Returns((Resource(_wizardScenarioId), new WizardApplyOutcome([], [], [], false)));
         _harmonizerApply = Substitute.For<IHarmonizerApplyService>();
-        _harmonizerApply.ApplyAsScenarioAsync(
-                _harmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
-            .Returns((Resource(_harmonizerScenarioId), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
         _holisticApply = Substitute.For<IHolisticHarmonizerApplyService>();
         _holisticApply.ApplyAsScenarioAsync(
                 _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -132,7 +123,6 @@ public abstract class AutoWizardJobRunnerTestHarness
         _contextBuilder = contextBuilder;
         _matrixBuilder = matrixBuilder;
         _wizardResults = wizardResults;
-        _harmonizerResults = harmonizerResults;
         RebuildRunner();
     }
 
@@ -168,9 +158,6 @@ public abstract class AutoWizardJobRunnerTestHarness
             _wizardRunner,
             new WizardJobRegistry(),
             _wizardResults,
-            _harmonizerRunner,
-            new HarmonizerJobRegistry(),
-            _harmonizerResults,
             _holisticRunner,
             new HolisticHarmonizerJobRegistry(),
             JobTerminalStateCacheTestFactory.Create<HolisticHarmonizerRunResponse>(),

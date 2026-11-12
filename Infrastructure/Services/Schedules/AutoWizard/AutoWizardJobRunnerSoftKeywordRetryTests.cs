@@ -16,10 +16,8 @@ using Klacks.Api.Application.DTOs.Schedules.KeywordWishes;
 using Klacks.Api.Application.DTOs.Schedules.Summary;
 using Klacks.Api.Application.DTOs.Schedules.Wizard;
 using Klacks.Api.Application.Interfaces.Schedules;
-using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using Klacks.Api.Domain.Enums;
-using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,10 +31,8 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
     private const string AgentName = "Anna Muster";
 
     private readonly Guid _softWizardStageJobId = Guid.NewGuid();
-    private readonly Guid _softHarmonizerStageJobId = Guid.NewGuid();
     private readonly Guid _softHolisticStageJobId = Guid.NewGuid();
     private readonly Guid _softWizardScenarioId = Guid.NewGuid();
-    private readonly Guid _softHarmonizerScenarioId = Guid.NewGuid();
     private readonly Guid _softHolisticScenarioId = Guid.NewGuid();
     private readonly Guid _strictFinalToken = Guid.NewGuid();
     private readonly Guid _softFinalToken = Guid.NewGuid();
@@ -53,25 +49,17 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
 
         _wizardRunner.StartAsync(Arg.Is<WizardContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
             .Returns(_softWizardStageJobId);
-        _harmonizerRunner.StartAsync(Arg.Is<HarmonizerContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
-            .Returns(_softHarmonizerStageJobId);
         _holisticRunner.StartAsync(Arg.Is<HolisticHarmonizerRunInput>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
             .Returns(_softHolisticStageJobId);
 
         _wizardResults.Store(_softWizardStageJobId, new CoreScenario { KeywordMode = KeywordMode.Soft }, analyseToken: null);
-        var emptyBitmap = new HarmonyBitmap([], [], new Cell[0, 0]);
-        _harmonizerResults.Store(_softHarmonizerStageJobId, emptyBitmap, emptyBitmap, sourceAnalyseToken: null);
 
         _scenarios[_softWizardScenarioId] = new() { Id = _softWizardScenarioId, Name = "Soft-Wizard" };
-        _scenarios[_softHarmonizerScenarioId] = new() { Id = _softHarmonizerScenarioId, Name = "Soft-Harmonizer" };
         _scenarios[_softHolisticScenarioId] = new() { Id = _softHolisticScenarioId, Name = "Soft-Holistic" };
 
         _wizardApply.ApplyAsScenarioAsync(
                 _softWizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
             .Returns((Resource(_softWizardScenarioId), new WizardApplyOutcome([], [], [], false)));
-        _harmonizerApply.ApplyAsScenarioAsync(
-                _softHarmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
-            .Returns((Resource(_softHarmonizerScenarioId), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
         _holisticApply.ApplyAsScenarioAsync(
                 _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns((ResourceWithToken(_holisticScenarioId, _strictFinalToken), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
@@ -113,14 +101,11 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         _scenarios[_softHolisticScenarioId].Description.ShouldNotBeNull().ShouldContain("soft-keyword alternative");
 
         var deleted = DeletedScenarioIds();
-        deleted.ShouldBe(
-            [_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId],
-            ignoreOrder: true);
+        deleted.ShouldBe([_wizardScenarioId, _softWizardScenarioId], ignoreOrder: true);
 
         await _wizardRunner.Received(1).StartAsync(
             Arg.Is<WizardContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>());
-        await _harmonizerRunner.Received(1).StartAsync(
-            Arg.Is<HarmonizerContextRequest>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>());
+        await _harmonizerApply.DidNotReceiveWithAnyArgs().ApplyAsScenarioAsync(default, default, default, default, default, default, default);
         await _holisticRunner.Received(1).StartAsync(
             Arg.Is<HolisticHarmonizerRunInput>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>());
     }
@@ -148,7 +133,7 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         _scenarios[_softHolisticScenarioId].SoftKeywordPlan.ShouldBeFalse();
         _scenarios[_softHolisticScenarioId].Description.ShouldNotBeNull().ShouldContain("without breaking any schedule-command wish");
         DeletedScenarioIds().ShouldBe(
-            [_wizardScenarioId, _harmonizerScenarioId, _holisticScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId],
+            [_wizardScenarioId, _holisticScenarioId, _softWizardScenarioId],
             ignoreOrder: true);
     }
 
@@ -173,7 +158,7 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         result.SoftAlternative.ShouldBeNull();
         result.Summary.ShouldNotBeNull().FilledSlots.ShouldBe(StrictFilled);
         DeletedScenarioIds().ShouldBe(
-            [_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId, _softHolisticScenarioId],
+            [_wizardScenarioId, _softWizardScenarioId, _softHolisticScenarioId],
             ignoreOrder: true);
     }
 
@@ -190,7 +175,7 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.NotBetter);
         _scenarios[_softHolisticScenarioId].SoftKeywordPlan.ShouldBeFalse();
         DeletedScenarioIds().ShouldBe(
-            [_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId, _softHarmonizerScenarioId, _softHolisticScenarioId],
+            [_wizardScenarioId, _softWizardScenarioId, _softHolisticScenarioId],
             ignoreOrder: true);
     }
 
@@ -230,12 +215,12 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
     }
 
     [Test]
-    public async Task FailingSoftChain_KeepsTheStrictResult_AndRemovesTheSoftScenarios()
+    public async Task SoftChainFailingBeforeItsFirstScenario_KeepsTheStrictResult()
     {
-        _harmonizerApply.ApplyAsScenarioAsync(
-                _softHarmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
-            .Returns<(AnalyseScenarioResource, IReadOnlyList<Guid>, ScenarioComplianceReport?)>(
-                _ => throw new InvalidOperationException("soft harmonizer apply failed"));
+        _wizardApply.ApplyAsScenarioAsync(
+                _softWizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
+            .Returns<(AnalyseScenarioResource, WizardApplyOutcome)>(
+                _ => throw new InvalidOperationException("soft wizard apply failed"));
 
         var (_, state) = await RunChainAsync(SoftRetryRequest());
 
@@ -244,7 +229,7 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         result.FinalScenarioId.ShouldBe(_holisticScenarioId);
         result.SoftAlternative.ShouldBeNull();
         result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Failed);
-        DeletedScenarioIds().ShouldBe([_wizardScenarioId, _harmonizerScenarioId, _softWizardScenarioId], ignoreOrder: true);
+        DeletedScenarioIds().ShouldBe([_wizardScenarioId]);
     }
 
     [Test]
@@ -268,7 +253,31 @@ public sealed class AutoWizardJobRunnerSoftKeywordRetryTests : AutoWizardJobRunn
         result.FinalScenarioId.ShouldBe(_holisticScenarioId);
         result.SoftAlternative.ShouldBeNull();
         result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Failed);
-        DeletedScenarioIds().ShouldBe([_wizardScenarioId, _harmonizerScenarioId], ignoreOrder: true);
+        DeletedScenarioIds().ShouldBe([_wizardScenarioId]);
+    }
+
+    [Test]
+    public async Task CancelDuringTheSoftStageThree_RemovesTheSoftStageOneScenario_AndKeepsTheStrictResult()
+    {
+        var softStageThreeStarted = new TaskCompletionSource();
+        _holisticRunner.StartAsync(Arg.Is<HolisticHarmonizerRunInput>(r => r.KeywordMode == KeywordMode.Soft), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                softStageThreeStarted.TrySetResult();
+                return BlockUntilCancelledAsync(call.ArgAt<CancellationToken>(1));
+            });
+
+        var jobId = await _runner.StartAsync(SoftRetryRequest(), CancellationToken.None);
+        await softStageThreeStarted.Task.WaitAsync(ChainTimeout);
+        _runner.TryCancel(jobId).ShouldBeTrue();
+        var (_, state) = await WaitForChainAsync(jobId);
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        var result = state.Result.ShouldNotBeNull();
+        result.FinalScenarioId.ShouldBe(_holisticScenarioId);
+        result.SoftAlternative.ShouldBeNull();
+        result.SoftKeywordRetryOutcome.ShouldBe(AutoWizardSoftKeywordRetryOutcomes.Failed);
+        DeletedScenarioIds().ShouldBe([_wizardScenarioId, _softWizardScenarioId], ignoreOrder: true);
     }
 
     private static StartAutoWizardRequest SoftRetryRequest() => Request(Guid.NewGuid()) with { SoftKeywordRetry = true };

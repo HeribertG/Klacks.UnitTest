@@ -13,7 +13,7 @@ namespace Klacks.UnitTest.Application.Services.Schedules.AutoWizard;
 [TestFixture]
 public sealed class AutoWizardStageOutcomePlannerTests
 {
-    private static readonly string[] AllStages = ["Wizard", "Harmonizer", "HolisticHarmonizer"];
+    private static readonly string[] AllStages = ["Wizard", "HolisticHarmonizer"];
 
     private static AutoWizardStageScenario Stage(string name)
         => new(name, Guid.NewGuid(), Guid.NewGuid(), $"Auto {name}");
@@ -22,12 +22,11 @@ public sealed class AutoWizardStageOutcomePlannerTests
     public void OnSuccess_OnlyTheFinalScenarioSurvives()
     {
         var wizard = Stage("Wizard");
-        var harmonizer = Stage("Harmonizer");
         var holistic = Stage("HolisticHarmonizer");
 
-        var toDelete = AutoWizardStageOutcomePlanner.ScenariosToDeleteOnSuccess([wizard, harmonizer, holistic]);
+        var toDelete = AutoWizardStageOutcomePlanner.ScenariosToDeleteOnSuccess([wizard, holistic]);
 
-        toDelete.ShouldBe(new[] { wizard.ScenarioId, harmonizer.ScenarioId });
+        toDelete.ShouldBe(new[] { wizard.ScenarioId });
     }
 
     [Test]
@@ -46,17 +45,14 @@ public sealed class AutoWizardStageOutcomePlannerTests
     public void OnFailure_TheLastResultIsKeptAsPartial()
     {
         var wizard = Stage("Wizard");
-        var harmonizer = Stage("Harmonizer");
 
         var failure = AutoWizardStageOutcomePlanner.BuildFailure(
-            Guid.NewGuid(), [wizard, harmonizer], AllStages, "model unreachable");
+            Guid.NewGuid(), [wizard], AllStages, "engine crashed");
 
-        // Two stages produced a scenario, so the third is where it stopped.
         failure.FailedStage.ShouldBe("HolisticHarmonizer");
-        failure.PartialScenarioId.ShouldBe(harmonizer.ScenarioId);
-        failure.PartialScenarioName.ShouldBe(harmonizer.Name);
-        AutoWizardStageOutcomePlanner.ScenariosToDeleteOnFailure([wizard, harmonizer])
-            .ShouldBe(new[] { wizard.ScenarioId });
+        failure.PartialScenarioId.ShouldBe(wizard.ScenarioId);
+        failure.PartialScenarioName.ShouldBe(wizard.Name);
+        AutoWizardStageOutcomePlanner.ScenariosToDeleteOnFailure([wizard]).ShouldBeEmpty();
     }
 
     [Test]
@@ -74,7 +70,7 @@ public sealed class AutoWizardStageOutcomePlannerTests
     [Test]
     public void OnFailure_AfterTheLastStage_StaysOnThatStage()
     {
-        var all = new[] { Stage("Wizard"), Stage("Harmonizer"), Stage("HolisticHarmonizer") };
+        var all = new[] { Stage("Wizard"), Stage("HolisticHarmonizer") };
 
         var failure = AutoWizardStageOutcomePlanner.BuildFailure(
             Guid.NewGuid(), all, AllStages, "gap report failed");
@@ -86,15 +82,15 @@ public sealed class AutoWizardStageOutcomePlannerTests
     [Test]
     public void StatusReason_NamesTheStageAndThePartialResult()
     {
-        var harmonizer = Stage("Harmonizer");
+        var wizard = Stage("Wizard");
         var failure = AutoWizardStageOutcomePlanner.BuildFailure(
-            Guid.NewGuid(), [Stage("Wizard"), harmonizer], AllStages, "model unreachable");
+            Guid.NewGuid(), [wizard], AllStages, "engine crashed");
 
         var reason = AutoWizardStageOutcomePlanner.BuildStatusReason(failure);
 
         reason.ShouldContain("HolisticHarmonizer");
-        reason.ShouldContain("model unreachable");
-        reason.ShouldContain(harmonizer.Name);
+        reason.ShouldContain("engine crashed");
+        reason.ShouldContain(wizard.Name);
     }
 
     [Test]
@@ -114,24 +110,24 @@ public sealed class AutoWizardStageOutcomePlannerTests
     {
         AutoWizardStageOutcomePlanner
             .HolisticStageFallbackReason("engine crashed")
-            .ShouldBe("the stage failed and the harmonized plan of stage 2 is kept: engine crashed");
+            .ShouldBe("the stage failed and the plan of stage 1 is kept: engine crashed");
     }
 
     [Test]
     public void PartialResult_PointsAtTheKeptScenario()
     {
-        var harmonizer = Stage("Harmonizer");
+        var wizard = Stage("Wizard");
         var jobId = Guid.NewGuid();
         var failure = AutoWizardStageOutcomePlanner.BuildFailure(
-            jobId, [Stage("Wizard"), harmonizer], AllStages, "engine crashed");
+            jobId, [wizard], AllStages, "engine crashed");
 
         var partial = AutoWizardStageOutcomePlanner.BuildPartialResult(failure, elapsedMs: 1234);
 
         partial.ShouldNotBeNull();
         partial.JobId.ShouldBe(jobId);
-        partial.FinalScenarioId.ShouldBe(harmonizer.ScenarioId);
-        partial.FinalScenarioToken.ShouldBe(harmonizer.Token);
-        partial.FinalScenarioName.ShouldBe(harmonizer.Name);
+        partial.FinalScenarioId.ShouldBe(wizard.ScenarioId);
+        partial.FinalScenarioToken.ShouldBe(wizard.Token);
+        partial.FinalScenarioName.ShouldBe(wizard.Name);
         partial.ElapsedMs.ShouldBe(1234);
         partial.HarmonizationSkipped.ShouldBeFalse();
     }

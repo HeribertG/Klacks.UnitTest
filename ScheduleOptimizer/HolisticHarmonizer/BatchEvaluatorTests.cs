@@ -28,7 +28,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps: [new PlanCellSwap(0, 0, 1, 0, "test swap on locked cell")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
@@ -51,7 +51,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day work↔free")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
@@ -69,7 +69,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day free↔free")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
@@ -92,7 +92,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day work↔work")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
@@ -115,7 +115,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps:
             [
                 new PlanCellSwap(0, 0, 1, 0, "swap valid pair"),
@@ -156,7 +156,7 @@ public class BatchEvaluatorTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             "consolidate_block",
-            LlmIteration: 0,
+            Iteration: 0,
             Steps: [new PlanCellSwap(0, 0, 1, 0, "valid hard, but committee blocks")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
@@ -188,7 +188,7 @@ public class BatchEvaluatorTests
         var expectedScoreAfter = fitness.Evaluate(probe).Fitness;
         expectedScoreAfter.ShouldBeLessThan(scoreBefore, "precondition: the swap must degrade the score");
 
-        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [step]);
+        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", Iteration: 0, Steps: [step]);
 
         var result = BuildEvaluator().Evaluate(bitmap, batch);
 
@@ -212,7 +212,7 @@ public class BatchEvaluatorTests
             bitmap.SetCell(1, d, WorkCell(CellSymbol.Late, d));
         }
         var step = new PlanCellSwap(1, 2, 0, 2, "breaks both homogeneous blocks");
-        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [step]);
+        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", Iteration: 0, Steps: [step]);
 
         var result = BuildEvaluator().Evaluate(bitmap, batch);
 
@@ -220,6 +220,35 @@ public class BatchEvaluatorTests
         result.ScoreAfter.ShouldBeLessThan(result.ScoreBefore);
         result.RevertedSteps.ShouldBe([step]);
         result.RevertedSteps.Select(ForbiddenSwapKey.From).ShouldContain(new ForbiddenSwapKey(0, 1, 2));
+    }
+
+    [Test]
+    public void Evaluate_StepBreakingTheProtection_IsRejectedAndRolledBack()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 5);
+        for (var d = 0; d < 5; d++)
+        {
+            bitmap.SetCell(0, d, WorkCell(CellSymbol.Early, d));
+            bitmap.SetCell(1, d, WorkCell(CellSymbol.Late, d));
+        }
+        var early = bitmap.GetCell(0, 2);
+        var late = bitmap.GetCell(1, 2);
+        var step = new PlanCellSwap(0, 2, 1, 2, "mixes both pure packages");
+        var evaluator = new BatchEvaluator(
+            new PlanMutationValidator(new DomainAwareReplaceValidator(null)),
+            new HarmonyFitnessEvaluator(new HarmonyScorer()),
+            committee: null,
+            protection: new BundleProtection());
+        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", Iteration: 0, Steps: [step]);
+
+        var result = evaluator.Evaluate(bitmap, batch);
+
+        result.Result.ShouldBe(BatchAcceptance.Rejected);
+        result.AppliedSteps.ShouldBeEmpty();
+        result.Rejections[^1].Reason.ShouldBe(PlanMutationRejectionReason.ProtectionBroken);
+        result.ScoreAfter.ShouldBe(result.ScoreBefore);
+        bitmap.GetCell(0, 2).ShouldBeSameAs(early);
+        bitmap.GetCell(1, 2).ShouldBeSameAs(late);
     }
 
     /// <summary>
@@ -237,7 +266,7 @@ public class BatchEvaluatorTests
         var evaluator = new BatchEvaluator(
             new PlanMutationValidator(new DomainAwareReplaceValidator(null)), new DroppingFitness());
         var batch = new MutationBatch(
-            Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [new PlanCellSwap(0, 0, 1, 3, "cross-day")]);
+            Guid.NewGuid(), "consolidate_block", Iteration: 0, Steps: [new PlanCellSwap(0, 0, 1, 3, "cross-day")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
 

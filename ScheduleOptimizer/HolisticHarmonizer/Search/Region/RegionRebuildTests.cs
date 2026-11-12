@@ -23,7 +23,7 @@ namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer.Search.Region;
 [TestFixture]
 public sealed class RegionRebuildTests
 {
-    private static readonly string[] ClassicPlan =
+    internal static readonly string[] ClassicPlan =
     [
         "EEELLL__NN___LNNNN______EEEE",
         "___ENNN____EEELLL__LLLL__NNN",

@@ -142,5 +142,5 @@ public static class Stage3ControlArm
         => evaluation.Result is BatchAcceptance.Accepted or BatchAcceptance.PartiallyAccepted;
 
     private static MutationBatch Batch(params PlanCellSwap[] steps)
-        => new(Guid.NewGuid(), ControlIntent, LlmIteration: 0, Steps: steps);
+        => new(Guid.NewGuid(), ControlIntent, Iteration: 0, Steps: steps);
 }

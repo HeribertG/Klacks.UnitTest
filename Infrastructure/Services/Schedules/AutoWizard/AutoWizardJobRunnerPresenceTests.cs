@@ -3,10 +3,10 @@
 /// <summary>
 /// Pins the autofill presence of an AutoWizard run: recorded before the start returns, under the group the run's
 /// scenarios will belong to, never for a refused start, and ended only after the intermediate scenarios are deleted -
-/// on failure and on cancel as well, where the intermediates are deleted with a live token.
+/// on failure and on cancel as well. A cancel in stage 3 leaves no intermediate: the Wizard 1 scenario is the partial
+/// result and stays.
 /// </summary>
 
-using Klacks.Api.Application.Commands.AnalyseScenarios;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
 using Klacks.Api.Application.Exceptions;
@@ -68,7 +68,7 @@ public sealed class AutoWizardJobRunnerPresenceTests : AutoWizardJobRunnerTestHa
         await WaitForPresenceEndAsync();
 
         state.Status.ShouldBe(WizardJobStatusValues.Completed);
-        deletedWhenEnded.ShouldBe(2);
+        deletedWhenEnded.ShouldBe(1);
         await _presenceTracker.Received(1).EndAsync(_presenceRunId);
     }
 
@@ -86,7 +86,7 @@ public sealed class AutoWizardJobRunnerPresenceTests : AutoWizardJobRunnerTestHa
     }
 
     [Test]
-    public async Task CancelledChain_RemovesItsIntermediatesWithALiveToken_AndEndsThePresence()
+    public async Task CancelledChainInStageThree_KeepsTheWizardScenario_AndEndsThePresence()
     {
         _holisticRunner.StartAsync(Arg.Any<HolisticHarmonizerRunInput>(), Arg.Any<CancellationToken>())
             .Returns(call => BlockUntilCancelledAsync(call.ArgAt<CancellationToken>(1)));
@@ -98,9 +98,7 @@ public sealed class AutoWizardJobRunnerPresenceTests : AutoWizardJobRunnerTestHa
         await WaitForPresenceEndAsync();
 
         state.Status.ShouldBe(WizardJobStatusValues.Failed);
-        await _mediator.Received(1).Send(
-            Arg.Is<DeleteAnalyseScenarioCommand>(command => command.ScenarioId == _wizardScenarioId),
-            Arg.Is<CancellationToken>(token => !token.IsCancellationRequested));
+        DeletedScenarioIds().ShouldBeEmpty();
         await _presenceTracker.Received(1).EndAsync(_presenceRunId);
     }
 }

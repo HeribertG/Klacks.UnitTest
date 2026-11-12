@@ -13,7 +13,9 @@ namespace Klacks.UnitTest.Autofill.Chain;
 /// hours = guaranteed hours (the bitmap spans exactly the period), weekly, daily, consecutive-day, pause and weekly
 /// rest-day caps from the same agent values Wizard 1 reads (production feeds both sides from one contract), the weekday
 /// flags as day availability, the previous-month works as boundary assignments, and the eligibility ban list as
-/// ineligible (agent, shift, date) triples. A scenario input the factory cannot carry over fails loudly instead of being
+/// ineligible (agent, shift, date) triples, the schedule commands as FREE days, required or forbidden shift symbols and
+/// keyword days (<see cref="ChainKeywordDays"/>) and the shift preferences as preferred symbols and blacklisted shifts
+/// (<see cref="ChainShiftPreferences"/>). A scenario input the factory cannot carry over fails loudly instead of being
 /// dropped, so a measurement never runs on a silently weaker rule set.
 /// </summary>
 public static class ChainBitmapInputFactory
@@ -88,8 +90,6 @@ public static class ChainBitmapInputFactory
         var context = definition.Context;
         var unmapped = new List<string>();
         AddWhenPresent(unmapped, nameof(context.ContractDays), context.ContractDays.Count);
-        AddWhenPresent(unmapped, nameof(context.ScheduleCommands), context.ScheduleCommands.Count);
-        AddWhenPresent(unmapped, nameof(context.ShiftPreferences), context.ShiftPreferences.Count);
         AddWhenPresent(unmapped, nameof(context.BreakBlockers), context.BreakBlockers.Count);
         AddWhenPresent(unmapped, nameof(context.LockedWorks), context.LockedWorks.Count);
         AddWhenPresent(unmapped, nameof(context.ExistingWorkBlockers), context.ExistingWorkBlockers.Count);
@@ -113,31 +113,48 @@ public static class ChainBitmapInputFactory
     }
 
     private static List<BitmapAgent> AgentsOf(CoreWizardContext context)
-        => context.Agents
+    {
+        var preferred = ChainShiftPreferences.PreferredSymbols(context);
+        var blacklisted = ChainShiftPreferences.BlacklistedShifts(context);
+        return context.Agents
             .Select(agent => new BitmapAgent(
                 Id: agent.Id,
                 DisplayName: agent.Id,
                 TargetHours: (decimal)agent.GuaranteedHours,
-                PreferredShiftSymbols: new HashSet<CellSymbol>(),
+                PreferredShiftSymbols: preferred.TryGetValue(agent.Id, out var symbols) ? symbols : new HashSet<CellSymbol>(),
                 MaxWeeklyHours: (decimal)agent.MaxWeeklyHours,
                 MaxConsecutiveDays: agent.MaxConsecutiveDays,
                 MinPauseHours: (decimal)agent.MinRestHours,
+                BlacklistedShiftIds: blacklisted.GetValueOrDefault(agent.Id),
                 MinRestDays: agent.MinRestDays,
                 PerformsShiftWork: agent.PerformsShiftWork,
                 MaxDailyHours: (decimal)agent.MaxDailyHours))
             .ToList();
+    }
 
     private static Dictionary<(string AgentId, DateOnly Date), DayAvailability> AvailabilityOf(CoreWizardContext context)
     {
         var availability = new Dictionary<(string AgentId, DateOnly Date), DayAvailability>();
+        var keywordDays = ChainKeywordDays.Of(context);
         foreach (var agent in context.Agents)
         {
             for (var day = context.PeriodFrom; day <= context.PeriodUntil; day = day.AddDays(1))
             {
+                var worksOnDay = agent.WorksOnWeekday(day.DayOfWeek);
+                keywordDays.TryGetValue((agent.Id, day), out var keywordDay);
+                if (keywordDay is not null && !worksOnDay)
+                {
+                    keywordDay = keywordDay.WithoutPositiveWish();
+                }
+
+                var (isFree, required, forbidden) = ChainKeywordDays.RestrictionOf(keywordDay);
                 availability[(agent.Id, day)] = new DayAvailability(
-                    WorksOnDay: agent.WorksOnWeekday(day.DayOfWeek),
-                    HasFreeCommand: false,
+                    WorksOnDay: worksOnDay,
+                    HasFreeCommand: isFree,
                     HasBreakBlocker: false,
+                    RequiredSymbol: required,
+                    ForbiddenSymbol: forbidden,
+                    Keywords: keywordDay,
                     MaxDailyHours: (decimal)agent.MaxDailyHours);
             }
         }

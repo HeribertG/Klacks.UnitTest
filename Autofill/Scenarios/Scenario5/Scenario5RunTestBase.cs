@@ -80,6 +80,7 @@ public abstract class Scenario5RunTestBase : Scenario5AssertionsBase
             artifactName,
             Scenario5GaParameters.MeasuredReferenceRunMs);
         WriteDiagnosis(artifactName, _definition, _run);
+        SwapChainProbeReporter.Write(Scenario5SpecConstants.ScenarioName, artifactName, _definition, _run);
     }
 
     /// <summary>Registers a scenario that was already assembled and run elsewhere, for example a replanning run.</summary>

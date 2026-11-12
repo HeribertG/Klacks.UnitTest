@@ -78,7 +78,7 @@ public class PlanMutationValidatorShiftWorkTests
         var batch = new MutationBatch(
             Guid.NewGuid(),
             Intent,
-            LlmIteration: 0,
+            Iteration: 0,
             Steps:
             [
                 new PlanCellSwap(ShiftWorkerRow, 0, EarlyOnlyRow, 0, "early to the early-only agent"),

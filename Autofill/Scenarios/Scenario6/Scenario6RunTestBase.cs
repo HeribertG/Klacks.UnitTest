@@ -118,6 +118,7 @@ public abstract class Scenario6RunTestBase : Scenario6AssertionsBase
 
         RewriteFirstRunArtifactWithTheDiff(_definition, _run, _diff, artifactName);
         WriteDiagnosis(artifactName, _definition, _run, _diff);
+        SwapChainProbeReporter.Write(Scenario6SpecConstants.ScenarioName, artifactName, _definition, _run);
     }
 
     /// <summary>

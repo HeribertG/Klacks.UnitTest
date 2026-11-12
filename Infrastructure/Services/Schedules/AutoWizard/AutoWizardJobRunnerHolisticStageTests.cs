@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Pins how the third stage (Holistic Harmonizer) ends the AutoWizard chain: it always runs; any failure of the stage
-/// falls back to the Harmonizer scenario (stage 3 only polishes) and names the failure; the outcome note lands on the
-/// kept Harmonizer scenario while only the intermediates are deleted.
+/// Pins the AutoWizard chain Wizard 1 -> Holistic Harmonizer (owner decision 2026-11-12: the Harmonizer, Wizard 2, is not
+/// part of it): stage 3 starts from the Wizard 1 scenario and always runs; any failure of the stage falls back to the
+/// Wizard 1 scenario (stage 3 only polishes) and names the failure; the outcome note lands on the kept Wizard 1 scenario
+/// while only the intermediates are deleted.
 /// </summary>
 
 using Klacks.Api.Application.Commands.AnalyseScenarios;
@@ -37,9 +38,26 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules.AutoWizard;
 public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarness
 {
     [Test]
-    public async Task StageThreeFails_FallsBackToTheHarmonizerScenario()
+    public async Task Chain_SkipsTheHarmonizer_AndStageThreeStartsFromTheWizardScenario()
     {
-        // Stage 3 only polishes a complete plan: its failure must not throw away the finished stage-2 plan.
+        var wizardToken = Guid.NewGuid();
+        var wizardScenario = Resource(_wizardScenarioId);
+        wizardScenario.Token = wizardToken;
+        _wizardApply.ApplyAsScenarioAsync(
+                _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
+            .Returns((wizardScenario, new WizardApplyOutcome([], [], [], false)));
+
+        var (_, state) = await RunChainAsync();
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        await _holisticRunner.Received(1).StartAsync(
+            Arg.Is<HolisticHarmonizerRunInput>(r => r.AnalyseToken == wizardToken), Arg.Any<CancellationToken>());
+        await _harmonizerApply.DidNotReceiveWithAnyArgs().ApplyAsScenarioAsync(default, default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task StageThreeFails_FallsBackToTheWizardScenario()
+    {
         _holisticApply.ApplyAsScenarioAsync(
                 _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns<(AnalyseScenarioResource, IReadOnlyList<Guid>, ScenarioComplianceReport?)>(
@@ -48,7 +66,7 @@ public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarn
         var (jobId, state) = await RunChainAsync();
 
         state.Status.ShouldBe(WizardJobStatusValues.Completed);
-        state.Result!.FinalScenarioId.ShouldBe(_harmonizerScenarioId);
+        state.Result!.FinalScenarioId.ShouldBe(_wizardScenarioId);
         state.Result.HarmonizationSkipped.ShouldBeTrue();
         state.Result.HarmonizationSkippedReason.ShouldBe(
             AutoWizardStageOutcomePlanner.HolisticStageFallbackReason("Holistic Harmonizer stage did not produce a result."));
@@ -114,7 +132,7 @@ public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarn
     }
 
     [Test]
-    public async Task FailedStageThree_NotesTheFallbackOnTheHarmonizerScenario_AndDeletesOnlyTheIntermediate()
+    public async Task FailedStageThree_NotesTheFallbackOnTheWizardScenario_AndDeletesNothing()
     {
         _holisticApply.ApplyAsScenarioAsync(
                 _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -123,10 +141,10 @@ public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarn
 
         var (_, state) = await RunChainAsync();
 
-        await _scenarioRepository.Received(1).Put(Arg.Is<AnalyseScenario>(s => s.Id == _harmonizerScenarioId));
-        _scenarios[_harmonizerScenarioId].Description.ShouldBe(
-            "harmonized | " + AutoWizardStageOutcomePlanner.BuildHarmonizationSkippedNote(state.Result!.HarmonizationSkippedReason!));
-        DeletedScenarioIds().ShouldBe(new[] { _wizardScenarioId });
+        await _scenarioRepository.Received(1).Put(Arg.Is<AnalyseScenario>(s => s.Id == _wizardScenarioId));
+        _scenarios[_wizardScenarioId].Description.ShouldBe(
+            WizardScenarioDescription + " | " + AutoWizardStageOutcomePlanner.BuildHarmonizationSkippedNote(state.Result!.HarmonizationSkippedReason!));
+        DeletedScenarioIds().ShouldBeEmpty();
     }
 
     [Test]
@@ -137,9 +155,6 @@ public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarn
         await _wizardApply.Received(1).ApplyAsScenarioAsync(
             _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(),
             ScenarioNameKind.AutoPlan, RequestLanguage);
-        await _harmonizerApply.Received(1).ApplyAsScenarioAsync(
-            _harmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(),
-            ScenarioNameKind.AutoHarmonizer, RequestLanguage, Arg.Any<bool>(), Arg.Any<bool>());
         await _holisticApply.Received(1).ApplyAsScenarioAsync(
             _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(),
             ScenarioNameKind.Auto, RequestLanguage, Arg.Any<bool>(), Arg.Any<bool>());
@@ -154,6 +169,6 @@ public class AutoWizardJobRunnerHolisticStageTests : AutoWizardJobRunnerTestHarn
         state.Result!.FinalScenarioId.ShouldBe(_holisticScenarioId);
         state.Result.HarmonizationSkipped.ShouldBeFalse();
         await _scenarioRepository.DidNotReceiveWithAnyArgs().Put(default!);
-        DeletedScenarioIds().ShouldBe(new[] { _wizardScenarioId, _harmonizerScenarioId }, ignoreOrder: true);
+        DeletedScenarioIds().ShouldBe(new[] { _wizardScenarioId });
     }
 }
