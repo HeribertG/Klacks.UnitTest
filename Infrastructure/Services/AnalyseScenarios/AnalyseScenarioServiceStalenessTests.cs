@@ -6,7 +6,9 @@
 /// scenario was accepted in between, an entry was edited or deleted. Changes outside the scope (other group, outside the
 /// range, scenario rows) and changes the accept leaves in place (locked works and their children, rows on a sealed day)
 /// do not count, because the accept does not overwrite them.
-/// A scenario built on another scenario compares with the earliest creation along its SourceToken chain.
+/// A scenario built on another scenario compares with the earliest creation along its SourceToken chain, and the same walk
+/// flags RootIsRealPlanCover when the root of the chain (the scenario without a source) is an absence cover, or when the root
+/// cannot be reached (cycle, missing source): fail closed.
 /// The "created" instant is taken between two save batches, so baseline rows are older and later changes newer.
 /// </summary>
 
@@ -306,6 +308,77 @@ public class AnalyseScenarioServiceStalenessTests
         var staleness = await _service.FindRealPlanChangesSinceCreationAsync(child, CancellationToken.None);
 
         staleness.ShouldNotBeNull();
+        staleness.RootIsRealPlanCover.ShouldBeTrue("a chain without a reachable root fails closed");
+    }
+
+    [Test]
+    public async Task StaleCoverOnTheRealPlan_IsFlaggedAsRealPlanCoverRoot()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var cover = await MarkScenarioCreatedAsync();
+        cover.Origin = AnalyseScenarioOrigin.AbsenceCover;
+
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(cover, CancellationToken.None);
+
+        staleness.ShouldNotBeNull();
+        staleness.RootIsRealPlanCover.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task StaleScenarioBuiltOnARealPlanCover_IsFlaggedThroughTheChain()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var rootCover = await AddPersistedScenarioAsync(sourceToken: null, AnalyseScenarioOrigin.AbsenceCover);
+        var middle = await AddPersistedScenarioAsync(rootCover.Token);
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+        await Task.Delay(ClockGapMilliseconds);
+        var child = NewScenario(DateTime.UtcNow, middle.Token);
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(child, CancellationToken.None);
+
+        staleness.ShouldNotBeNull("the child carries the root cover's snapshot, older than the edit");
+        staleness.RootIsRealPlanCover.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task StaleCoverBuiltOnAnAutofillScenario_IsNotFlagged()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var autofill = await AddPersistedScenarioAsync(sourceToken: null);
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+        await Task.Delay(ClockGapMilliseconds);
+        var cover = NewScenario(DateTime.UtcNow, autofill.Token);
+        cover.Origin = AnalyseScenarioOrigin.AbsenceCover;
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(cover, CancellationToken.None);
+
+        staleness.ShouldNotBeNull();
+        staleness.RootIsRealPlanCover.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task StaleScenarioWhoseSourceRowIsMissing_IsFlagged_FailClosed()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var scenario = await MarkScenarioCreatedAsync();
+        scenario.SourceToken = Guid.NewGuid();
+
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
+
+        staleness.ShouldNotBeNull();
+        staleness.RootIsRealPlanCover.ShouldBeTrue();
     }
 
     [Test]
@@ -326,10 +399,12 @@ public class AnalyseScenarioServiceStalenessTests
         return scenario;
     }
 
-    private async Task<AnalyseScenario> AddPersistedScenarioAsync(Guid? sourceToken)
+    private async Task<AnalyseScenario> AddPersistedScenarioAsync(
+        Guid? sourceToken, AnalyseScenarioOrigin origin = AnalyseScenarioOrigin.Other)
     {
         await Task.Delay(ClockGapMilliseconds);
         var scenario = NewScenario(null, sourceToken);
+        scenario.Origin = origin;
         _context.AnalyseScenarios.Add(scenario);
         await _context.SaveChangesAsync();
         await Task.Delay(ClockGapMilliseconds);

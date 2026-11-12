@@ -14,6 +14,7 @@ using FluentValidation.Results;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Exports;
 using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
@@ -255,6 +256,39 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The period cannot be closed: 3 service(s) are not confirmed yet. Confirm each service after it has ended, then close the period.\",\"unsealedWorkCount\":3,\"works\":[{{\"workId\":\"{FixedId}\",\"clientId\":\"{FixedClientId}\",\"clientName\":\"Elsa Muster\",\"date\":\"2027-03-10\",\"startTime\":\"08:00:00\",\"endTime\":\"16:00:00\",\"shiftName\":\"Early\"}}],\"errorCode\":\"{UnsealedWorksException.ErrorCode}\"}}",
             LogLevel.Warning,
             "ConflictException caught by middleware: The period cannot be closed: 3 service(s) are not confirmed yet. Confirm each service after it has ended, then close the period.",
+            true);
+
+        yield return new MappingCase(
+            "ScenarioStaleException (overridable)",
+            () => new ScenarioStaleException(new ScenarioStaleness(2, new DateTime(2027, 3, 10, 8, 0, 0, DateTimeKind.Utc), [])),
+            409,
+            JsonContentType,
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The original plan was changed after this scenario was created (2 changed entries in the scenario's scope, last change 2027-03-10T08:00:00.0000000Z UTC). Accepting it overwrites those changes; accept with overrideStale to do so anyway.\",\"changedEntryCount\":2,\"lastChangeUtc\":\"2027-03-10T08:00:00Z\",\"acceptedScenarioNames\":[],\"overridable\":true,\"errorCode\":\"{ScenarioStaleException.ErrorCode}\"}}",
+            LogLevel.Warning,
+            "ConflictException caught by middleware: The original plan was changed after this scenario was created (2 changed entries in the scenario's scope, last change 2027-03-10T08:00:00.0000000Z UTC). Accepting it overwrites those changes; accept with overrideStale to do so anyway.",
+            true);
+
+        yield return new MappingCase(
+            "ScenarioStaleException (cover, not overridable)",
+            () => ScenarioStaleException.NotOverridable(
+                new ScenarioStaleness(2, new DateTime(2027, 3, 10, 8, 0, 0, DateTimeKind.Utc), ["Cover A"]),
+                new CoverRedoPreset(FixedClientId, FixedId, new DateOnly(2027, 3, 10), new DateOnly(2027, 3, 11))),
+            409,
+            JsonContentType,
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"The original plan was changed after the absence cover this scenario starts from was created (2 changed entries in the scenario's scope, last change 2027-03-10T08:00:00.0000000Z UTC; scenarios accepted since: Cover A). A cover built on the original plan, and every scenario built on it, cannot overwrite those changes; discard it and cover the absence again.\",\"changedEntryCount\":2,\"lastChangeUtc\":\"2027-03-10T08:00:00Z\",\"acceptedScenarioNames\":[\"Cover A\"],\"overridable\":false,\"coverClientId\":\"{FixedClientId}\",\"coverAbsenceId\":\"{FixedId}\",\"coverFromDate\":\"2027-03-10\",\"coverUntilDate\":\"2027-03-11\",\"errorCode\":\"{ScenarioStaleException.ErrorCode}\"}}",
+            LogLevel.Warning,
+            "ConflictException caught by middleware: The original plan was changed after the absence cover this scenario starts from was created (2 changed entries in the scenario's scope, last change 2027-03-10T08:00:00.0000000Z UTC; scenarios accepted since: Cover A). A cover built on the original plan, and every scenario built on it, cannot overwrite those changes; discard it and cover the absence again.",
+            true);
+
+        yield return new MappingCase(
+            "ScenarioDropsRealAbsenceException",
+            () => new ScenarioDropsRealAbsenceException(
+                3, [new DroppedRealAbsence(FixedClientId, "Elsa Muster", new DateOnly(2027, 3, 10), FixedId)]),
+            409,
+            JsonContentType,
+            $"{{\"title\":\"Conflict\",\"status\":409,\"detail\":\"Accepting this scenario would delete 3 real absence(s) it does not contain. Recalculate the scenario on the current plan; no override accepts it.\",\"droppedAbsenceCount\":3,\"droppedAbsences\":[{{\"clientId\":\"{FixedClientId}\",\"clientName\":\"Elsa Muster\",\"date\":\"2027-03-10\",\"absenceId\":\"{FixedId}\"}}],\"overridable\":false,\"errorCode\":\"{ScenarioDropsRealAbsenceException.ErrorCode}\"}}",
+            LogLevel.Warning,
+            "ConflictException caught by middleware: Accepting this scenario would delete 3 real absence(s) it does not contain. Recalculate the scenario on the current plan; no override accepts it.",
             true);
 
         yield return new MappingCase(

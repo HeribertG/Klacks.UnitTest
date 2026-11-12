@@ -300,6 +300,38 @@ public class NextPeriodAutoCommitServiceTests
     }
 
     [Test]
+    public async Task CommitCompletedChain_ScenarioDropsARealAbsence_SkipsTheScenarioLikeAStaleOne()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ScenarioDropsRealAbsenceException(
+                1, new[] { new DroppedRealAbsence(Guid.NewGuid(), "Elsa Muster", PeriodStart, Guid.NewGuid()) }));
+
+        await CommitAsync();
+
+        var blocked = CapturedBlockedEvent();
+        Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.Conflict));
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_StaleScenario_SkipsTheScenario()
+    {
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ScenarioStaleException(
+                new ScenarioStaleness(2, new DateTime(2026, 1, 20, 8, 0, 0, DateTimeKind.Utc), Array.Empty<string>())));
+
+        await CommitAsync();
+
+        var blocked = CapturedBlockedEvent();
+        Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.Conflict));
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task CommitCompletedChain_EveryOutcome_WritesALedgerRow()
     {
         StubCompliance(new PeriodIssueDto { ClientId = Guid.NewGuid(), Code = "MAX_HOURS" });
