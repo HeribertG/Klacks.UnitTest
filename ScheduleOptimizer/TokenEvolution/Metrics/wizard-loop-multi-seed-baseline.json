@@ -5,14 +5,14 @@
     "CoverageStdDev": 0,
     "TargetReachedMean": 0.52,
     "TargetReachedStdDev": 0.1095445115010332,
-    "SlotGiniMean": 0.06365591397849461,
-    "SlotGiniStdDev": 0.01620769348939077,
+    "SlotGiniMean": 0.14193548387096774,
+    "SlotGiniStdDev": 0,
     "ShiftTypeEntropyMean": 1.4443029779780239,
     "ShiftTypeEntropyStdDev": 0.09821805965341211,
     "MaxConsecutiveBlockLenMean": 5,
     "MaxConsecutiveBlockLenMax": 5,
-    "RosterFidelityInversionMean": 0.36,
-    "RosterFidelityInversionStdDev": 0.2073644135332772
+    "RosterFidelityInversionMean": 0.5,
+    "RosterFidelityInversionStdDev": 0
   },
   "HeterogeneousMix": {
     "RunCount": 5,

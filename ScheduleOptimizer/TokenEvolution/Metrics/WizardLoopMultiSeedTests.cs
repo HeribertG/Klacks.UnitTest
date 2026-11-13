@@ -27,12 +27,14 @@ public sealed class WizardLoopMultiSeedTests
 
     private const double CoverageMeanMinDelta = -0.02;
     private const double TargetReachedMeanMinDelta = -0.10;
+    // BernFiveFullTimeHomogeneous Gini baseline re-pinned 0.064 -> 0.142 on 2026-11-12: the stage-1 judge prefers the wheel run by rank order; accepted by the owner.
     private const double GiniMeanMaxDelta = 0.05;
     private const double EntropyMeanMinDelta = -0.10;
     private const int MaxBlockMaxAllowed = 7;
     // Re-pinned 0.05 -> 0.10 on 2026-08-12 (SPEC.md decision 13): the unescalatable hour-based
     // package rest moved the HeterogeneousMix inversion mean from 0.20 to 0.30; the accepted price of
     // the rest guarantee, to be won back by the package-aware repair stage.
+    // BernFiveFullTimeHomogeneous rank-fidelity baseline re-pinned 0.36 -> 0.50 on 2026-11-13: the metric counts surplus hours (184 vs 180) as deviation; with the wheel run ranks 1-4 get 24-48 h more in total, accepted by the owner.
     private const double RosterFidelityMeanMaxDelta = 0.10;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
