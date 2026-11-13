@@ -2,9 +2,10 @@
 
 /// <summary>
 /// SkillRerankOptions decides whether a skill pass pays for the cross-encoder (~1.6 s per turn, eval 2026-10-24).
-/// Always reranks (the shipped default), Never keeps the vector order with cosine scores, Adaptive reranks only when
+/// Always reranks, Never (the shipped default since 2026-11-13) keeps the vector order with cosine scores, Adaptive reranks only when
 /// the cosine gap between the first two candidates is below the threshold. Recipe passes are always reranked: their
-/// match threshold is calibrated on the cross-encoder's scale.
+/// match threshold is calibrated on the cross-encoder's scale. A forced pass (correction turns) is reranked in every
+/// mode, because the correction clarification reads score gaps on the cross-encoder's scale.
 /// </summary>
 
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
@@ -60,6 +61,19 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
         await _reranker.DidNotReceiveWithAnyArgs().ScoreAsync(default!, default!, default);
         result.Candidates.Select(c => c.Entry.SourceId).ShouldBe(["s0", "s1", "s2"]);
         result.Candidates[0].Score.ShouldBe(0.99, tolerance: 1e-4);
+    }
+
+    [TestCase(SkillRerankMode.Never)]
+    [TestCase(SkillRerankMode.Adaptive)]
+    public async Task ForcedPass_ReranksInEveryMode_AndIsNeverExplored(SkillRerankMode mode)
+    {
+        var result = await RetrieveAsync(
+            mode, ClearField, threshold: LiveThreshold(Threshold, exploration: 1.0), forceSkillRerank: true);
+
+        await _reranker.ReceivedWithAnyArgs(1).ScoreAsync(default!, default!, default);
+        result.Candidates[0].Entry.SourceId.ShouldBe("s2");
+        result.SkillRerank!.Reranked.ShouldBeTrue();
+        result.SkillRerank.Explored.ShouldBeFalse();
     }
 
     [Test]
@@ -147,8 +161,10 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
     [TestCase("NEVER", SkillRerankMode.Never)]
     [TestCase("bogus", SkillRerankMode.Always)]
     [TestCase("7", SkillRerankMode.Always)]
-    [TestCase(null, SkillRerankMode.Always)]
-    public void FromConfiguration_UnknownValuesFallBackToAlways(string? configured, SkillRerankMode expected)
+    [TestCase(null, SkillRerankMode.Never)]
+    [TestCase("", SkillRerankMode.Never)]
+    [TestCase("  ", SkillRerankMode.Never)]
+    public void FromConfiguration_MissingIsNever_UnknownFallsBackToAlways(string? configured, SkillRerankMode expected)
     {
         SkillRerankOptions.FromConfiguration(configured, Threshold).Mode.ShouldBe(expected);
     }
@@ -164,7 +180,7 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
 
     private Task<RetrievalResult> RetrieveAsync(
         SkillRerankMode mode, double[] cosines, KnowledgeEntryKind kind = KnowledgeEntryKind.Skill,
-        ISkillRerankThreshold? threshold = null)
+        ISkillRerankThreshold? threshold = null, bool forceSkillRerank = false)
     {
         var pool = cosines
             .Select((cosine, i) => new KnowledgeEntry
@@ -183,6 +199,7 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
         var service = new KnowledgeRetrievalService(
             _embeddings, _reranker, _repo, skillRerank: new SkillRerankOptions(mode, Threshold), threshold: threshold);
 
-        return service.RetrieveAsync("q", [], true, 20, currentRoute: null, CancellationToken.None, kind);
+        return service.RetrieveAsync(
+            "q", [], true, 20, currentRoute: null, CancellationToken.None, kind, forceSkillRerank: forceSkillRerank);
     }
 }

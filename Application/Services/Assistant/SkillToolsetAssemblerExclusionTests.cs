@@ -70,7 +70,8 @@ public class SkillToolsetAssemblerExclusionTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<bool>())
             .Returns(new RetrievalResult([Candidate(WrongSkill, 0.9), Candidate(RightSkill, 0.8)]));
 
         _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();
@@ -162,6 +163,22 @@ public class SkillToolsetAssemblerExclusionTests
 
         result.Functions.ShouldNotContain(f => f.Name == WrongSkill);
         result.Functions.ShouldContain(f => f.Name == RightSkill);
+    }
+
+    [Test]
+    public async Task CorrectionTurn_ForcesTheCrossEncoder_OrdinaryTurnDoesNot()
+    {
+        await Assemble([WrongSkill], null);
+        await Assemble(null, null);
+
+        await _retrieval.Received(1).RetrieveAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), true);
+        await _retrieval.Received(1).RetrieveAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), false);
     }
 
     [Test]
