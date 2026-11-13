@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Tests for AnalyseScenarioService, focused on the DateTime.Kind produced for
-/// GroupItem.ValidFrom/ValidUntil when a scenario membership is created from a DateOnly.
+/// GroupItem.ValidFrom/ValidUntil when a scenario membership is created from a DateOnly: a window is written as one
+/// row per day, each stamped with DateTimeKind.Utc.
 /// The GroupItem.ValidFrom/ValidUntil columns are mapped as "timestamp with time zone" in
 /// PostgreSQL, which requires DateTimeKind.Utc; DateOnly.ToDateTime(TimeOnly) alone produces
 /// DateTimeKind.Unspecified and fails at SaveChanges with an Npgsql ArgumentException.
@@ -52,10 +53,14 @@ public class AnalyseScenarioServiceTests
 
         await _service.AddScenarioMembershipAsync(token, clientId, groupId, validFrom, validUntil, CancellationToken.None);
 
-        var membership = _context.ChangeTracker.Entries<GroupItem>().Single().Entity;
-        membership.ValidFrom.ShouldNotBeNull();
-        membership.ValidUntil.ShouldNotBeNull();
-        membership.ValidFrom!.Value.Kind.ShouldBe(DateTimeKind.Utc);
-        membership.ValidUntil!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+        var memberships = _context.ChangeTracker.Entries<GroupItem>().Select(entry => entry.Entity).ToList();
+        memberships.Count.ShouldBe(validUntil.DayNumber - validFrom.DayNumber + 1, "one row per day of the window");
+        foreach (var membership in memberships)
+        {
+            membership.ValidFrom.ShouldNotBeNull();
+            membership.ValidUntil.ShouldBe(membership.ValidFrom, "a temporary membership is a single day");
+            membership.ValidFrom!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+            membership.ValidUntil!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+        }
     }
 }

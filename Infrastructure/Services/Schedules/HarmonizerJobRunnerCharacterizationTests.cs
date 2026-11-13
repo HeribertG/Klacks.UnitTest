@@ -91,6 +91,7 @@ public class HarmonizerJobRunnerCharacterizationTests
         services.AddSingleton(_matrixBuilder);
         services.AddSingleton(_sink);
         services.AddSingleton(TestScenarioTokenAccess.AllVisible());
+        services.AddSingleton(TestBorrowedAgents.None());
         _provider = services.BuildServiceProvider();
 
         _client = Substitute.For<IHarmonizerJobClient>();

@@ -16,7 +16,8 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 /// <summary>
 /// A group may mix staff and customers. The resolver hands its result straight to the bitmap builder,
 /// so a customer that slips through becomes a plannable row and the optimiser starts assigning shifts
-/// to somebody who does not work here.
+/// to somebody who does not work here. The same holds for a person who was only borrowed into the group for single
+/// days and for a membership a scenario holds: Wizard 4 plans the regular members of the group.
 /// </summary>
 [TestFixture]
 public sealed class Wizard4AgentResolverTests
@@ -111,6 +112,67 @@ public sealed class Wizard4AgentResolverTests
         var result = await _sut.ResolveAsync(GroupId, From, Until, CancellationToken.None);
 
         result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ResolveAsync_APersonBorrowedOnADayOfThePeriod_IsLeftOut()
+    {
+        var regular = await AddMemberAsync(EntityTypeEnum.Employee);
+        var guest = Guid.NewGuid();
+        _context.Client.Add(new Client { Id = guest, Type = EntityTypeEnum.Employee });
+        AddBorrowedDay(guest, From.AddDays(4));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.ResolveAsync(GroupId, From, Until, CancellationToken.None);
+
+        result.ShouldBe([regular]);
+    }
+
+    [Test]
+    public async Task ResolveAsync_AMembershipAScenarioHolds_IsLeftOut()
+    {
+        var regular = await AddMemberAsync(EntityTypeEnum.Employee);
+        var borrowedInAScenario = Guid.NewGuid();
+        _context.Client.Add(new Client { Id = borrowedInAScenario, Type = EntityTypeEnum.Employee });
+        _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            GroupId = GroupId,
+            ClientId = borrowedInAScenario,
+            AnalyseToken = Guid.NewGuid(),
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.ResolveAsync(GroupId, From, Until, CancellationToken.None);
+
+        result.ShouldBe([regular]);
+    }
+
+    [Test]
+    public async Task ResolveAsync_ARegularMemberWithBorrowedDays_IsReturnedOnce()
+    {
+        var regular = await AddMemberAsync(EntityTypeEnum.Employee);
+        AddBorrowedDay(regular, From.AddDays(4));
+        AddBorrowedDay(regular, From.AddDays(8));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.ResolveAsync(GroupId, From, Until, CancellationToken.None);
+
+        result.ShouldBe([regular]);
+    }
+
+    private void AddBorrowedDay(Guid clientId, DateOnly day)
+    {
+        var borrowedDay = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            GroupId = GroupId,
+            ClientId = clientId,
+            ValidFrom = borrowedDay,
+            ValidUntil = borrowedDay,
+            IsTemporary = true,
+        });
     }
 
     private async Task<Guid> AddMemberAsync(

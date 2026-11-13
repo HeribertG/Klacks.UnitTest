@@ -553,4 +553,121 @@ public class WizardHardConstraintBuilderTests
 
         result.ShiftPreferences.Select(p => p.ShiftRefId).ShouldBe([cloneRoot, cloneChild], ignoreOrder: true);
     }
+
+    [Test]
+    public async Task LoadForeignFixedSeatsAsync_NamesOneSeatPerFixedWorkOutsideTheRun_InTheTokenWorld()
+    {
+        var agent = Guid.NewGuid();
+        var outsider = Guid.NewGuid();
+        var shift = Guid.NewGuid();
+        var otherShift = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var day = new DateOnly(2026, 4, 21);
+        ForeignWork(outsider, shift, day, WorkLockLevel.Confirmed, token: null);
+        var moved = ForeignWork(outsider, shift, day, WorkLockLevel.None, token: null);
+        moved.MovedFromClientId = Guid.NewGuid();
+        var corrected = ForeignWork(Guid.NewGuid(), shift, day.AddDays(1), WorkLockLevel.None, token: null);
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = corrected.Id,
+            Type = WorkChangeType.CorrectionEnd,
+            StartTime = new TimeOnly(16, 0),
+            EndTime = new TimeOnly(17, 0),
+            ChangeTime = 1m,
+        });
+        ForeignWork(outsider, shift, day.AddDays(2), WorkLockLevel.None, token: null);
+        ForeignWork(agent, shift, day.AddDays(2), WorkLockLevel.Confirmed, token: null);
+        ForeignWork(outsider, otherShift, day, WorkLockLevel.Confirmed, token: null);
+        ForeignWork(outsider, shift, day, WorkLockLevel.Confirmed, token: token);
+        ForeignWork(outsider, shift, new DateOnly(2026, 4, 30), WorkLockLevel.Confirmed, token: null);
+        await _context.SaveChangesAsync();
+
+        var seats = await _sut.LoadForeignFixedSeatsAsync(
+            [agent], [shift], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), analyseToken: null, CancellationToken.None);
+
+        seats.ShouldBe([(shift, day), (shift, day), (shift, day.AddDays(1))], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task LoadForeignFixedSeatsAsync_ScenarioToken_ReadsOnlyTheScenarioWorks()
+    {
+        var shift = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var day = new DateOnly(2026, 4, 21);
+        ForeignWork(Guid.NewGuid(), shift, day, WorkLockLevel.Confirmed, token: token);
+        ForeignWork(Guid.NewGuid(), shift, day.AddDays(1), WorkLockLevel.Confirmed, token: null);
+        await _context.SaveChangesAsync();
+
+        var seats = await _sut.LoadForeignFixedSeatsAsync(
+            [Guid.NewGuid()], [shift], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), token, CancellationToken.None);
+
+        seats.ShouldBe([(shift, day)]);
+    }
+
+    [Test]
+    public async Task LoadForeignFixedSeatsAsync_StartAndEndDayAreInclusive_TheDaysAroundAreNot()
+    {
+        var shift = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        foreach (var day in new[] { from.AddDays(-1), from, until, until.AddDays(1) })
+        {
+            ForeignWork(Guid.NewGuid(), shift, day, WorkLockLevel.Confirmed, token: null);
+        }
+
+        await _context.SaveChangesAsync();
+
+        var seats = await _sut.LoadForeignFixedSeatsAsync([Guid.NewGuid()], [shift], from, until, null, CancellationToken.None);
+
+        seats.ShouldBe([(shift, from), (shift, until)], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task LoadForeignFixedSeatsAsync_SoftDeletedFixedWork_HoldsNoSeat()
+    {
+        var shift = Guid.NewGuid();
+        var day = new DateOnly(2026, 4, 21);
+        var deleted = ForeignWork(Guid.NewGuid(), shift, day, WorkLockLevel.Confirmed, token: null);
+        deleted.IsDeleted = true;
+        var deletedMoved = ForeignWork(Guid.NewGuid(), shift, day, WorkLockLevel.None, token: null);
+        deletedMoved.MovedFromClientId = Guid.NewGuid();
+        deletedMoved.IsDeleted = true;
+        await _context.SaveChangesAsync();
+
+        var seats = await _sut.LoadForeignFixedSeatsAsync(
+            [Guid.NewGuid()], [shift], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), null, CancellationToken.None);
+
+        seats.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadForeignFixedSeatsAsync_WithoutRunShifts_ReadsNothing()
+    {
+        ForeignWork(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 4, 21), WorkLockLevel.Confirmed, token: null);
+        await _context.SaveChangesAsync();
+
+        var seats = await _sut.LoadForeignFixedSeatsAsync(
+            [Guid.NewGuid()], [], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), null, CancellationToken.None);
+
+        seats.ShouldBeEmpty();
+    }
+
+    private Work ForeignWork(Guid client, Guid shift, DateOnly date, WorkLockLevel lockLevel, Guid? token)
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = client,
+            CurrentDate = date,
+            ShiftId = shift,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8m,
+            LockLevel = lockLevel,
+            AnalyseToken = token,
+        };
+        _context.Work.Add(work);
+        return work;
+    }
 }

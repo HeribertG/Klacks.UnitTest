@@ -19,7 +19,9 @@ namespace Klacks.UnitTest.ScheduleRecovery;
 /// kept in full; plus the keyword-day extraction. The relief-day tests build a whole snapshot over substituted
 /// readers: a movable work of an in-group member on a day within the relief reach of the absence is gated for a
 /// candidate who lacks its qualification, while a work nobody may take from its holder, a work of a borrowable
-/// candidate and a work outside the reach are not asked about at all.
+/// candidate and a work outside the reach are not asked about at all. Built on a source scenario, the snapshot lets the
+/// source scenario own the whole plan of the regular members of its group only: a person who merely has some other
+/// group item there (borrowed by that scenario, or borrowed into the group at some time) keeps the real absences.
 /// </summary>
 [TestFixture]
 public sealed class RecoverySnapshotBuilderIneligibleTests
@@ -189,7 +191,8 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     /// shift: the substituted matrix reports it for every slot of that shift the builder asks about, and for none else.
     /// </summary>
     private static async Task<(RecoverySnapshot Snapshot, IReadOnlySet<(string AgentId, Guid ShiftId, DateOnly Date)> Incumbents)> BuildAsync(
-        ScheduleCell reliefWork, IReadOnlySet<Guid>? clonedWorkIds = null, IReadOnlySet<Guid>? swapLockedWorkIds = null)
+        ScheduleCell reliefWork, IReadOnlySet<Guid>? clonedWorkIds = null, IReadOnlySet<Guid>? swapLockedWorkIds = null,
+        ScenarioSourceScope? source = null, IReadOnlyList<ScheduleCell>? furtherRealCells = null)
     {
         Guid[] inGroup = [Absent, Holder, Candidate];
         Guid[] everybody = [.. inGroup, Borrowable];
@@ -236,7 +239,13 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
 
         var scheduleEntriesService = Substitute.For<IScheduleEntriesService>();
         ScheduleEntriesStub.Serve(
-            scheduleEntriesService, [WorkCell(Absent, AbsenceDay, DemandShift, DemandWorkId), reliefWork]);
+            scheduleEntriesService,
+            [WorkCell(Absent, AbsenceDay, DemandShift, DemandWorkId), reliefWork, .. (furtherRealCells ?? [])]);
+        if (source is not null)
+        {
+            var sourceToken = source.Token;
+            ScheduleEntriesStub.Serve(scheduleEntriesService, criteria => criteria.AnalyseToken == sourceToken, []);
+        }
 
         var scheduleCommandRepository = Substitute.For<IScheduleCommandRepository>();
         scheduleCommandRepository.GetByClientsAndDateRangeAsync(
@@ -249,6 +258,7 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
         var groupClientService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         groupClientService.GetRealClientIdsFromGroupAndSubgroups(ReceivingGroup, Arg.Any<CancellationToken>())
             .Returns(inGroup.ToList());
+        groupClientService.GetAllClientIdsFromGroupAndSubgroups(ReceivingGroup).Returns(everybody.ToList());
 
         var keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
@@ -274,9 +284,58 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
 
         var cloned = clonedWorkIds ?? new HashSet<Guid> { DemandWorkId, ReliefWorkId };
         var snapshot = await builder.BuildAsync(
-            ReceivingGroup, Absent, [AbsenceDay], null, cloned, cloned, swapLockedWorkIds ?? new HashSet<Guid>(),
+            ReceivingGroup, Absent, [AbsenceDay], source, cloned, cloned, swapLockedWorkIds ?? new HashSet<Guid>(),
             CancellationToken.None);
         return (snapshot, incumbents);
+    }
+
+    private static ScheduleCell AbsenceCell(Guid clientId, DateOnly day)
+        => new()
+        {
+            EntryType = (int)ScheduleEntryType.Break,
+            ClientId = clientId,
+            SourceId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid(),
+            EntryDate = day.ToDateTime(TimeOnly.MinValue),
+            StartTime = TimeSpan.Zero,
+            EndTime = ShiftEnd,
+        };
+
+    private static ScenarioSourceScope SourceOverTheAbsenceDay()
+        => new(Guid.NewGuid(), AbsenceDay, AbsenceDay, ReceivingGroup, new HashSet<Guid> { DemandShift });
+
+    [Test]
+    public async Task OnASourceScenario_APersonWhoIsNoRegularMemberOfItsGroup_KeepsTheRealAbsenceOfThatDay()
+    {
+        // Arrange: Borrowable has a group item in the source group (the reader of every row lists her, as for a person
+        // the source scenario borrowed and for a former guest alike) but no regular membership, so the source scenario
+        // never cloned her absence. The source scenario holds no rows of its own on that day.
+        var reliefDay = AbsenceDay.AddDays(DaysToTheRelief);
+
+        // Act
+        var (snapshot, _) = await BuildAsync(
+            WorkCell(Holder, reliefDay, ReliefShift, ReliefWorkId),
+            source: SourceOverTheAbsenceDay(),
+            furtherRealCells: [AbsenceCell(Borrowable, AbsenceDay)]);
+
+        // Assert
+        snapshot.GetAvailability(Borrowable, AbsenceDay).HasBreakBlocker.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task OnASourceScenario_ARegularMemberOfItsGroup_GetsTheSourceScenariosPlanOfThatDay()
+    {
+        // Arrange: the source scenario owns the day for its members and holds no absence of the holder on it.
+        var reliefDay = AbsenceDay.AddDays(DaysToTheRelief);
+
+        // Act
+        var (snapshot, _) = await BuildAsync(
+            WorkCell(Holder, reliefDay, ReliefShift, ReliefWorkId),
+            source: SourceOverTheAbsenceDay(),
+            furtherRealCells: [AbsenceCell(Holder, AbsenceDay)]);
+
+        // Assert
+        snapshot.GetAvailability(Holder, AbsenceDay).HasBreakBlocker.ShouldBeFalse();
     }
 
     [Test]

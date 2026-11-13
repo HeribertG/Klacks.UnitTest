@@ -55,7 +55,7 @@ public class BulkAddAbsenceForGroupSkillTests
         {
             new() { Id = SchulungId, Name = new MultiLanguage { De = "Schulung", En = "Training" } }
         });
-        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId)
+        _memberService.GetRealClientIdsFromGroupAndSubgroups(BernGroupId, CancellationToken.None)
             .Returns(new List<Guid> { C1, C2, C3 });
         _mediator.Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkBreaksResponse());
@@ -76,6 +76,27 @@ public class BulkAddAbsenceForGroupSkillTests
         ["date"] = "2026-08-01",
         ["apply"] = apply
     };
+
+    [Test]
+    public async Task TheAbsence_GoesToTheRegularMembers_NotToEveryoneWithAGroupRow()
+    {
+        // Arrange: the reader of every group row would add a person who was only borrowed for single days.
+        var guest = Guid.NewGuid();
+        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(new List<Guid> { C1, C2, C3, guest });
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+
+        // Act
+        var result = await _skill.ExecuteAsync(Ctx(), Params(apply: false));
+
+        // Assert
+        Assert.That(result.Success, Is.True);
+        await _breakRepository.Received().GetClientIdsWithBreakOnDate(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 3 && !ids.Contains(guest)),
+            Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _memberService.DidNotReceive().GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>());
+    }
 
     [Test]
     public async Task Preview_DoesNotSendBulkCommand_AndCountsMembers()
@@ -170,7 +191,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task ReturnsError_WhenMoreThanMaxMembersWouldBeChanged()
     {
         var manyMembers = Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToList();
-        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
+        _memberService.GetRealClientIdsFromGroupAndSubgroups(BernGroupId, CancellationToken.None).Returns(manyMembers);
         _breakRepository.GetClientIdsWithBreakOnDate(
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
@@ -187,7 +208,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task AllowsApply_WhenExcessMembersAlreadyHaveTheAbsence()
     {
         var manyMembers = Enumerable.Range(0, 150).Select(_ => Guid.NewGuid()).ToList();
-        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
+        _memberService.GetRealClientIdsFromGroupAndSubgroups(BernGroupId, CancellationToken.None).Returns(manyMembers);
         var alreadyHave = manyMembers.Take(60).ToList();
         _breakRepository.GetClientIdsWithBreakOnDate(
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())

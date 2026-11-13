@@ -47,4 +47,30 @@ public class ClientValidatorTests
         client.Qualifications.Count.ShouldBe(1);
         client.Qualifications.All(q => q.QualificationId != Guid.Empty).ShouldBeTrue();
     }
+
+    [Test]
+    public void EnsureUniqueGroupItems_RemovesADoubledRegularMembership_AndLeavesBorrowedDaysAndScenarioRowsOfThatGroup()
+    {
+        var groupId = Guid.NewGuid();
+        var monday = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var friday = new DateTime(2026, 6, 5, 0, 0, 0, DateTimeKind.Utc);
+        var borrowedMonday = new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ValidFrom = monday, ValidUntil = monday, IsTemporary = true };
+        var borrowedFriday = new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ValidFrom = friday, ValidUntil = friday, IsTemporary = true };
+        var scenarioDay = new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, AnalyseToken = Guid.NewGuid(), IsTemporary = true };
+        var groupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), GroupId = groupId },
+            borrowedMonday,
+            new() { Id = Guid.NewGuid(), GroupId = groupId },
+            borrowedFriday,
+            scenarioDay,
+        };
+
+        _validator.EnsureUniqueGroupItems(groupItems);
+
+        groupItems.Count(gi => !gi.IsTemporary).ShouldBe(1);
+        groupItems.ShouldContain(borrowedMonday);
+        groupItems.ShouldContain(borrowedFriday);
+        groupItems.ShouldContain(scenarioDay);
+    }
 }

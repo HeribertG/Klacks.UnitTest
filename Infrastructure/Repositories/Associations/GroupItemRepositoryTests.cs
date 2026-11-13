@@ -4,7 +4,8 @@
 /// Unit tests for GroupItemRepository.GetByClientAndGroup: it returns only the real membership of a
 /// client in a group. A scenario membership (AnalyseToken set) may coexist with the real one for the
 /// same client and group, and must never be handed out — callers soft-delete or count what they get,
-/// which would destroy a running analysis scenario and skip the real change.
+/// which would destroy a running analysis scenario and skip the real change. The same holds for the temporary
+/// memberships of borrowed days (IsTemporary): they are no regular membership and are neither returned nor counted.
 /// GetValidityRangesAsync: the group period of an employee is the widest range over its items in the given groups, and
 /// an item without a start or without an end leaves that side open - an open-ended item must not be narrowed by a
 /// bounded one (LINQ Min/Max skip null and would otherwise do exactly that).
@@ -129,6 +130,60 @@ public class GroupItemRepositoryTests
         });
     }
 
+    [Test]
+    public async Task GetByClientAndGroup_OnlyTemporaryMembershipsOfBorrowedDaysExist_ReturnsNull()
+    {
+        AddTemporaryDay(new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        AddTemporaryDay(new DateTime(2026, 6, 5, 0, 0, 0, DateTimeKind.Utc));
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.GetByClientAndGroup(ClientId, GroupId);
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetByClientAndGroup_RegularAndTemporaryMembershipCoexist_ReturnsTheRegularOne()
+    {
+        // Arrange: without the rule the ordering would hand out the borrowed day, it starts later than the ended regular one.
+        AddTemporaryDay(new DateTime(2099, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var regularMembership = AddMembership(null);
+        regularMembership.ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        regularMembership.ValidUntil = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.GetByClientAndGroup(ClientId, GroupId);
+
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(regularMembership.Id);
+        result.IsTemporary.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task CountRealClientRowsPerGroupAsync_CountsAPersonOnce_HoweverManyDaysTheyWereBorrowed()
+    {
+        AddMembership(null);
+        AddTemporaryDay(new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        AddTemporaryDay(new DateTime(2026, 6, 5, 0, 0, 0, DateTimeKind.Utc));
+        AddMembership(AnalyseToken);
+        await _context.SaveChangesAsync();
+
+        var counts = await _repository.CountRealClientRowsPerGroupAsync([GroupId]);
+
+        counts[GroupId].ShouldBe(1);
+    }
+
+    private void AddTemporaryDay(DateTime day)
+        => _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            GroupId = GroupId,
+            ValidFrom = day,
+            ValidUntil = day,
+            IsTemporary = true
+        });
+
     private GroupItem AddMembership(Guid? analyseToken)
     {
         var item = new GroupItem
@@ -233,6 +288,24 @@ public class GroupItemRepositoryTests
         result[0].ClientId.ShouldBe(clientId);
         result[0].GroupId.ShouldBe(GroupId);
         result[0].ValidUntil.ShouldBe(new DateTime(2025, 6, 30, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task GetEndedMembershipsAsync_LeavesOutTheBorrowedDays()
+    {
+        // Arrange: a borrowed day always has an end; it is no earlier membership that could hold a start back.
+        var clientId = Guid.NewGuid();
+        var day = new DateTime(2025, 6, 2, 0, 0, 0, DateTimeKind.Utc);
+        var ended = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = GroupId, ValidUntil = new DateTime(2025, 5, 31, 0, 0, 0, DateTimeKind.Utc) };
+        var borrowedDay = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = Guid.NewGuid(), ValidFrom = day, ValidUntil = day, IsTemporary = true };
+        _context.GroupItem.AddRange(ended, borrowedDay);
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _repository.GetEndedMembershipsAsync([clientId]);
+
+        // Assert
+        result.ShouldHaveSingleItem().GroupId.ShouldBe(GroupId);
     }
 
     [Test]

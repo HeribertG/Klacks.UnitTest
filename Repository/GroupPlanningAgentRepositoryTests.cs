@@ -1,8 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Planning agents of a selected group must be the clients the schedule shows for it: members of the group
-/// and all its descendants, no customers, membership overlapping the period, no scenario memberships.
+/// Planning agents of a selected group must be the regular members among the clients the schedule shows for it:
+/// members of the group and all its descendants, no customers, membership overlapping the period, no scenario
+/// memberships and no person who was only borrowed into the group for single days.
 /// Regression for "No agents resolved for group 'Winterthur'": the skills used a root-keyed query, so any
 /// sub-group resolved to zero agents. The subtree expansion itself (a recursive SQL CTE) is covered against
 /// Postgres in Klacks.IntegrationTest; here it is modelled from an in-test parent map.
@@ -212,6 +213,56 @@ public class GroupPlanningAgentRepositoryTests
         added.ValidUntil.ShouldBe(new DateOnly(2026, 10, 25));
         employments.Single(employment => employment.ClientId == _winterthurEmployee).Employment.ValidUntil.ShouldBeNull();
     }
+
+    [Test]
+    public async Task APersonWithOnlyBorrowedDaysInTheGroup_IsNoPlanningAgentThere_ButStaysOneAtHome()
+    {
+        // Arrange: a regular member of the sibling group, borrowed into Winterthur on two days of the period.
+        var guest = AddClient(_sibling, EntityTypeEnum.Employee);
+        AddBorrowedDay(guest, _winterthur, new DateTime(2026, 10, 5, 0, 0, 0, DateTimeKind.Utc));
+        AddBorrowedDay(guest, _winterthur, new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc));
+        await _context.SaveChangesAsync();
+
+        // Act
+        var inWinterthur = await _repository.GetAgentIdsAsync(_winterthur, PeriodFrom, PeriodUntil);
+        var employmentsInWinterthur = await _repository.GetAgentEmploymentsAsync(_winterthur, PeriodFrom, PeriodUntil);
+        var atHome = await _repository.GetAgentIdsAsync(_sibling, PeriodFrom, PeriodUntil);
+
+        // Assert
+        inWinterthur.ShouldNotContain(guest);
+        inWinterthur.ShouldContain(_winterthurEmployee);
+        employmentsInWinterthur.Select(employment => employment.ClientId).ShouldNotContain(guest);
+        atHome.ShouldContain(guest);
+    }
+
+    [Test]
+    public async Task ARegularMemberWithBorrowedDaysInTheSameGroup_IsAPlanningAgentOnce()
+    {
+        // Arrange
+        var member = AddClient(_winterthur, EntityTypeEnum.Employee);
+        AddBorrowedDay(member, _winterthur, new DateTime(2026, 10, 5, 0, 0, 0, DateTimeKind.Utc));
+        AddBorrowedDay(member, _winterthur, new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc));
+        await _context.SaveChangesAsync();
+
+        // Act
+        var ids = await _repository.GetAgentIdsAsync(_winterthur, PeriodFrom, PeriodUntil);
+        var employments = await _repository.GetAgentEmploymentsAsync(_winterthur, PeriodFrom, PeriodUntil);
+
+        // Assert
+        ids.Count(id => id == member).ShouldBe(1);
+        employments.Count(employment => employment.ClientId == member).ShouldBe(1);
+    }
+
+    private void AddBorrowedDay(Guid clientId, Guid groupId, DateTime day)
+        => _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            GroupId = groupId,
+            ValidFrom = day,
+            ValidUntil = day,
+            IsTemporary = true
+        });
 
     [Test]
     public async Task Employments_OfAnUnknownGroup_AreEmpty()

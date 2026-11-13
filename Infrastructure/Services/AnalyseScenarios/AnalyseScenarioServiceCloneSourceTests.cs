@@ -5,7 +5,8 @@
 /// scenario's range the child copies the source scenario (its breaks and replacements included), outside it the real
 /// plan; every clone keeps the real root shift, so the child is accepted straight into the real plan. Also covers the
 /// source guards, the cloned temporary memberships, the root shift lookup, the rootless-shift accept guard and that the
-/// real-plan clone (no source token) still ignores scenario rows.
+/// real-plan clone (no source token) still ignores scenario rows. A person with only temporary memberships of the real
+/// plan in the group is neither in the clone scope nor in the accept scope, wherever the borrowed day lies.
 /// </summary>
 
 using Klacks.Api.Application.Exceptions;
@@ -112,6 +113,7 @@ public class AnalyseScenarioServiceCloneSourceTests
         var membership = await _context.Set<GroupItem>().SingleAsync(gi => gi.AnalyseToken == childToken && gi.ShiftId == null);
         membership.ClientId.ShouldBe(BorrowedId);
         membership.GroupId.ShouldBe(groupId);
+        membership.IsTemporary.ShouldBeTrue();
     }
 
     [Test]
@@ -237,6 +239,98 @@ public class AnalyseScenarioServiceCloneSourceTests
         (await _context.Break.CountAsync(b => !b.IsDeleted && b.AnalyseToken == null && b.ClientId == BorrowedId)).ShouldBe(1);
         (await _context.ScheduleNotes.CountAsync(n => !n.IsDeleted && n.AnalyseToken == null && n.ClientId == BorrowedId)).ShouldBe(1);
     }
+
+    [TestCase(0, Description = "borrowed on a day of the period")]
+    [TestCase(8, Description = "borrowed on a boundary day the clone reads around the period")]
+    [TestCase(20, Description = "borrowed on a day outside")]
+    public async Task APersonWithOnlyBorrowedDaysInTheGroup_IsNeitherClonedNorReplaced(int borrowedDayOffset)
+    {
+        // Arrange: her real break, note and command of a day inside the period belong to her home group.
+        var groupId = await SeedGroupWithBreakAndNoteOfTheGuestAsync();
+        AddBorrowedDay(groupId, Day.AddDays(borrowedDayOffset));
+        await _context.SaveChangesAsync();
+        var realBreakId = await _context.Break.Where(b => b.AnalyseToken == null && b.ClientId == BorrowedId).Select(b => b.Id).SingleAsync();
+        var token = Guid.NewGuid();
+
+        // Act
+        await _service.CloneScenarioDataWithMapsAsync(groupId, Day, SourceUntil, token, null, null, CancellationToken.None);
+        await _context.SaveChangesAsync();
+        var clonedBreaks = await _context.Break.CountAsync(b => b.AnalyseToken == token && b.ClientId == BorrowedId);
+        var clonedNotes = await _context.ScheduleNotes.CountAsync(n => n.AnalyseToken == token && n.ClientId == BorrowedId);
+        var clonedCommands = await _context.ScheduleCommands.CountAsync(c => c.AnalyseToken == token && c.ClientId == BorrowedId);
+        await AcceptAsync(groupId, token);
+
+        // Assert
+        clonedBreaks.ShouldBe(0);
+        clonedNotes.ShouldBe(0);
+        clonedCommands.ShouldBe(0);
+        (await RealBreaksOfTheGuestAsync()).ShouldBe(1);
+        (await RealNotesOfTheGuestAsync()).ShouldBe(1);
+        var realBreak = await _context.Break.IgnoreQueryFilters().AsNoTracking().SingleAsync(b => b.Id == realBreakId);
+        realBreak.IsDeleted.ShouldBeFalse("the accept leaves her real break alone, it does not replace it by a clone");
+    }
+
+    [TestCase(0, Description = "borrowed on a day of the period")]
+    [TestCase(20, Description = "borrowed on a day outside")]
+    public async Task APersonBorrowedBetweenCloneAndAccept_KeepsHerBreaksAndNotes(int borrowedDayOffset)
+    {
+        // Arrange: the scenario is cloned while the person is no member of the group in any way.
+        var groupId = await SeedGroupWithBreakAndNoteOfTheGuestAsync();
+        var token = Guid.NewGuid();
+        await _service.CloneScenarioDataWithMapsAsync(groupId, Day, SourceUntil, token, null, null, CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        // Another scenario is taken over in between: it borrowed her into this group.
+        AddBorrowedDay(groupId, Day.AddDays(borrowedDayOffset));
+        await _context.SaveChangesAsync();
+
+        // Act
+        await AcceptAsync(groupId, token);
+
+        // Assert: nothing of hers was cloned, so nothing of hers may be replaced.
+        (await RealBreaksOfTheGuestAsync()).ShouldBe(1);
+        (await RealNotesOfTheGuestAsync()).ShouldBe(1);
+    }
+
+    private async Task<Guid> SeedGroupWithBreakAndNoteOfTheGuestAsync()
+    {
+        var groupId = Guid.NewGuid();
+        _context.Set<GroupItem>().Add(new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ShiftId = _realShiftId });
+        _context.Set<GroupItem>().Add(new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ClientId = AbsentId });
+        AddWork(Day, token: null);
+        AddBreak(BorrowedId, InsideSourceDay, token: null);
+        _context.ScheduleNotes.Add(new ScheduleNote { Id = Guid.NewGuid(), ClientId = BorrowedId, CurrentDate = InsideSourceDay, Content = "home" });
+        _context.ScheduleCommands.Add(new ScheduleCommand { Id = Guid.NewGuid(), ClientId = BorrowedId, CurrentDate = InsideSourceDay, CommandKeyword = "FREE" });
+        await _context.SaveChangesAsync();
+        return groupId;
+    }
+
+    private void AddBorrowedDay(Guid groupId, DateOnly day)
+    {
+        var borrowedDay = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        _context.Set<GroupItem>().Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            GroupId = groupId,
+            ClientId = BorrowedId,
+            ValidFrom = borrowedDay,
+            ValidUntil = borrowedDay,
+            IsTemporary = true
+        });
+    }
+
+    private async Task AcceptAsync(Guid groupId, Guid token)
+    {
+        await _service.SoftDeleteRealScheduleDataAsync(groupId, token, Day, SourceUntil, CancellationToken.None);
+        await _service.PromoteScenarioWorksAsync(token, Day, SourceUntil, CancellationToken.None);
+        await _context.SaveChangesAsync();
+    }
+
+    private Task<int> RealBreaksOfTheGuestAsync()
+        => _context.Break.CountAsync(b => !b.IsDeleted && b.AnalyseToken == null && b.ClientId == BorrowedId);
+
+    private Task<int> RealNotesOfTheGuestAsync()
+        => _context.ScheduleNotes.CountAsync(n => !n.IsDeleted && n.AnalyseToken == null && n.ClientId == BorrowedId);
 
     [Test]
     public async Task CloneFromSource_SubBreakOfANightWorkAtTheSourceEdge_FollowsItsParentWork()

@@ -49,6 +49,7 @@ public class WizardJobRunnerCharacterizationTests
     private ServiceProvider _provider = null!;
     private IWizardContextBuilder _contextBuilder = null!;
     private IEligibilityMatrixBuilder _matrixBuilder = null!;
+    private IBorrowedAgentFilter _borrowedAgents = null!;
     private IHubContext<WizardJobHub, IWizardJobClient> _hub = null!;
     private IWizardJobClient _client = null!;
     private WizardResultCache _resultCache = null!;
@@ -84,6 +85,8 @@ public class WizardJobRunnerCharacterizationTests
         services.AddSingleton(_contextBuilder);
         services.AddSingleton(_matrixBuilder);
         services.AddSingleton(TestScenarioTokenAccess.AllVisible());
+        _borrowedAgents = TestBorrowedAgents.None();
+        services.AddSingleton(_borrowedAgents);
         _provider = services.BuildServiceProvider();
 
         _progress = new ConcurrentQueue<WizardJobProgressDto>();
@@ -381,6 +384,24 @@ public class WizardJobRunnerCharacterizationTests
         await _matrixBuilder.Received(1).BuildAsync(
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(),
             Arg.Any<IReadOnlySet<(string, Guid, DateOnly)>?>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+    }
+
+    [Test]
+    public async Task BorrowedAgentSentByTheClient_DoesNotReachTheRun()
+    {
+        _borrowedAgents.RemoveBorrowedAsync(
+                Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(call => (IReadOnlyList<Guid>)call.ArgAt<IReadOnlyList<Guid>>(0).Where(id => id != AgentB).ToList());
+
+        await RunAsync();
+
+        await _borrowedAgents.Received(1).RemoveBorrowedAsync(
+            Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { AgentA, AgentB })),
+            Arg.Is<Guid?>(groupId => groupId == null),
+            Arg.Is<Guid?>(token => token == _analyseToken),
+            Arg.Any<CancellationToken>());
+        await _contextBuilder.Received(1).BuildContextAsync(
+            Arg.Is<WizardContextRequest>(r => r.AgentIds.SequenceEqual(new[] { AgentA })), Arg.Any<CancellationToken>());
     }
 
     [Test]

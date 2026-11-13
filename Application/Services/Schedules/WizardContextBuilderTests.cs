@@ -691,6 +691,37 @@ public class WizardContextBuilderTests
             Arg.Any<CancellationToken>(), null);
     }
 
+    [Test]
+    public async Task BuildContextAsync_SeatHeldByAFixedWorkOutsideTheRun_IsNotOffered_EverythingDerivedSeesTheRest()
+    {
+        var agentId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([], [], [], [], []));
+        var seat = new CoreShift(shiftId.ToString(), "Early", "2026-04-20", "06:00", "14:00", 8, 1, 0);
+        _shiftBuilder
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<CoreShift> { seat, seat });
+        _hardBuilder
+            .LoadForeignFixedSeatsAsync(
+                Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<(Guid, DateOnly)> { (shiftId, date) });
+
+        var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date) with { AnalyseToken = token }, CancellationToken.None);
+
+        result.Shifts.Count.ShouldBe(1);
+        await _hardBuilder.Received(1).LoadForeignFixedSeatsAsync(
+            Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { agentId })),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { shiftId })),
+            date, date, token, Arg.Any<CancellationToken>());
+        await _availabilityService.Received().GetAsync(
+            Arg.Any<IReadOnlyList<Guid>>(),
+            Arg.Is<IReadOnlyList<AvailabilityShiftSlot>>(slots => slots.Count == 1),
+            Arg.Any<CancellationToken>());
+    }
+
     private static WizardContextRequest ReplanRequest(
         Guid agentId, DateOnly from, DateOnly until, DateOnly replanFrom)
         => new(

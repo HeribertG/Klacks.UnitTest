@@ -7,7 +7,8 @@
 /// A query is the whole expression around context.GroupItem or Set&lt;GroupItem&gt;(): the method chain, a wrapping call such
 /// as a filter helper that takes the chain as an argument, and a query expression that names the set in a from or join
 /// clause. It checks the token when any member access in it is named AnalyseToken or when it names one of
-/// TokenFilterHelperNames (a filter helper, or the shared predicate of GroupItemRepository). A query that starts at
+/// TokenFilterHelperNames (a filter helper, the shared predicate of GroupItemRepository, or one of the named
+/// predicates of RegularMembership, which all test the token). A query that starts at
 /// context.Group or Set&lt;Group&gt;() counts when it includes the group items without a filter on AnalyseToken or ShiftId.
 /// Known gaps, because this is syntax and not data flow: a query kept in a variable and continued in a later statement is
 /// seen only up to the variable, and a query that reaches the group items through a navigation of another root (s.GroupItems)
@@ -35,7 +36,8 @@ public static class GroupItemShiftTokenScanner
 
     private static readonly string[] ShiftMemberNames = ["Shift", "ShiftId"];
 
-    private static readonly string[] TokenFilterHelperNames = ["WhereEitherWorld", "IsRealShiftLink"];
+    private static readonly string[] TokenFilterHelperNames =
+        ["WhereEitherWorld", "IsRealShiftLink", "IsRegular", "OrTemporary", "OrTemporaryWithin"];
 
     /// <param name="source">Full text of one C# file</param>
     /// <returns>The 1-based line where each query without a token check starts, in source order</returns>
@@ -66,6 +68,15 @@ public static class GroupItemShiftTokenScanner
         lines.Sort();
         return lines;
     }
+
+    /// <param name="root">Syntax root of one C# file</param>
+    /// <returns>Each context.GroupItem or Set&lt;GroupItem&gt;() of the file with the whole query around it, in source order</returns>
+    public static IReadOnlyList<(ExpressionSyntax Set, SyntaxNode Query)> FindGroupItemQueries(SyntaxNode root)
+        => root.DescendantNodes()
+            .OfType<ExpressionSyntax>()
+            .Where(expression => IsSetOf(expression, GroupItemName))
+            .Select(set => (set, FindWholeQuery(set)))
+            .ToList();
 
     private static bool IsSetOf(ExpressionSyntax expression, string entityName) => expression switch
     {

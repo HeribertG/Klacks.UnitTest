@@ -3,7 +3,8 @@
 /// <summary>
 /// An accepted alternative becomes the replacement of exactly its slot in the scenario: the existing replacement
 /// WorkChange is rewritten through PutCommand (period hours, locks, notifications), the old stand-in's untouched proposal
-/// row, swap relocation and temporary membership go with it, recorded answers stay. Everything else is a no-op. A swap
+/// row, swap relocation and temporary membership of the day go with it (a cover on another day does not keep the
+/// membership of this day), recorded answers stay. Everything else is a no-op. A swap
 /// chain is taken back as far as it reaches (works handed on on other days, the works their receivers handed on in turn),
 /// a work that went away for an own absence stays, and a chain whose works cannot be told apart refuses the switch. The
 /// repository substitutes answer the range reads like the database: only works inside the asked range come back.
@@ -268,14 +269,26 @@ public class ScenarioReplacementSwitcherTests
     }
 
     [Test]
-    public async Task AnotherMovedWork_KeepsTheTemporaryMembership()
+    public async Task AnotherMovedWorkOfTheSameDay_KeepsTheTemporaryMembership()
     {
         GivenMovedWork(_absentId, _oldStandInId);
-        _workRepository.HoldsMovedWorkInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>()).Returns(true);
+        _workRepository.HoldsMovedWorkInScenarioOnDayAsync(_token, _oldStandInId, Day, CancellationToken.None).Returns(true);
 
         await Apply(Row());
 
         await _scenarioService.DidNotReceiveWithAnyArgs().RemoveScenarioMembershipsAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task AMovedWorkOfAnotherDay_DoesNotKeepTheTemporaryMembershipOfTheSlotsDay()
+    {
+        GivenMovedWork(_absentId, _oldStandInId);
+        _workRepository.HoldsMovedWorkInScenarioAsync(_token, _oldStandInId, CancellationToken.None).Returns(true);
+        _workRepository.HoldsMovedWorkInScenarioOnDayAsync(_token, _oldStandInId, Day.AddDays(2), CancellationToken.None).Returns(true);
+
+        await Apply(Row());
+
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, _oldStandInId, Day, CancellationToken.None);
     }
 
     [Test]
@@ -676,17 +689,18 @@ public class ScenarioReplacementSwitcherTests
 
     [TestCase(true, false)]
     [TestCase(false, true)]
-    public async Task TheReceiverOfAReturnedWork_KeepsTheMembership_WhileTheyHoldSomethingOfTheScenario(
-        bool standsInElsewhere, bool holdsAMovedWork)
+    public async Task TheReceiverOfAReturnedWork_KeepsTheMembershipOfThatDay_WhileTheyHoldSomethingOnThatDay(
+        bool standsInOnThatDay, bool holdsAMovedWorkOnThatDay)
     {
         // Arrange
         var borrowedId = Guid.NewGuid();
+        var reliefDay = Day.AddDays(2);
         GivenSlotChange();
-        var relief = GivenMovedWork(_oldStandInId, borrowedId, day: Day.AddDays(2));
-        _workChangeRepository.IsReplacementInScenarioAsync(_token, borrowedId, Arg.Any<CancellationToken>())
-            .Returns(standsInElsewhere);
-        _workRepository.HoldsMovedWorkInScenarioAsync(_token, borrowedId, Arg.Any<CancellationToken>())
-            .Returns(holdsAMovedWork);
+        var relief = GivenMovedWork(_oldStandInId, borrowedId, day: reliefDay);
+        _workChangeRepository.IsReplacementInScenarioOnDayAsync(_token, borrowedId, reliefDay, CancellationToken.None)
+            .Returns(standsInOnThatDay);
+        _workRepository.HoldsMovedWorkInScenarioOnDayAsync(_token, borrowedId, reliefDay, CancellationToken.None)
+            .Returns(holdsAMovedWorkOnThatDay);
 
         // Act
         (await Apply(Row())).ShouldBeTrue();
@@ -695,6 +709,35 @@ public class ScenarioReplacementSwitcherTests
         await ShouldReturn(relief, _oldStandInId);
         await _scenarioService.DidNotReceive().RemoveScenarioMembershipsAsync(
             Arg.Any<Guid>(), borrowedId, Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task TheReceiverOfAReturnedWork_LosesTheMembershipOfThatDay_WhenTheyOnlyHoldSomethingOnAnotherDay(
+        bool standsInOnAnotherDay, bool holdsAMovedWorkOnAnotherDay)
+    {
+        // Arrange: the receiver still covers something in the scenario, but on a day other than the returned work's.
+        var borrowedId = Guid.NewGuid();
+        var reliefDay = Day.AddDays(2);
+        var otherDay = Day.AddDays(5);
+        GivenSlotChange();
+        var relief = GivenMovedWork(_oldStandInId, borrowedId, day: reliefDay);
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, borrowedId, CancellationToken.None)
+            .Returns(standsInOnAnotherDay);
+        _workChangeRepository.IsReplacementInScenarioOnDayAsync(_token, borrowedId, otherDay, CancellationToken.None)
+            .Returns(standsInOnAnotherDay);
+        _workRepository.HoldsMovedWorkInScenarioAsync(_token, borrowedId, CancellationToken.None)
+            .Returns(holdsAMovedWorkOnAnotherDay);
+        _workRepository.HoldsMovedWorkInScenarioOnDayAsync(_token, borrowedId, otherDay, CancellationToken.None)
+            .Returns(holdsAMovedWorkOnAnotherDay);
+
+        // Act
+        (await Apply(Row())).ShouldBeTrue();
+
+        // Assert
+        await ShouldReturn(relief, _oldStandInId);
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, borrowedId, reliefDay, CancellationToken.None);
+        await _scenarioService.DidNotReceive().RemoveScenarioMembershipsAsync(_token, borrowedId, otherDay, CancellationToken.None);
     }
 
     [Test]
@@ -1009,26 +1052,38 @@ public class ScenarioReplacementSwitcherTests
     }
 
     [Test]
-    public async Task TheOldStandInsTemporaryMembership_GoesWithTheirLastCover()
+    public async Task TheOldStandInsTemporaryMembership_GoesWithTheirLastCoverOfTheDay()
     {
         GivenSlotChange();
-        _workChangeRepository.IsReplacementInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>()).Returns(false);
+        _workChangeRepository.IsReplacementInScenarioOnDayAsync(_token, _oldStandInId, Day, CancellationToken.None).Returns(false);
 
         await Apply(Row());
 
-        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, _oldStandInId, Day, Arg.Any<CancellationToken>());
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, _oldStandInId, Day, CancellationToken.None);
     }
 
     [Test]
-    public async Task TheOldStandInsTemporaryMembership_StaysWhileTheyCoverAnotherSlot()
+    public async Task TheOldStandInsTemporaryMembership_StaysWhileTheyCoverAnotherSlotOfThatDay()
     {
         GivenSlotChange();
-        _workChangeRepository.IsReplacementInScenarioAsync(_token, _oldStandInId, Arg.Any<CancellationToken>()).Returns(true);
+        _workChangeRepository.IsReplacementInScenarioOnDayAsync(_token, _oldStandInId, Day, CancellationToken.None).Returns(true);
 
         await Apply(Row());
 
         await _scenarioService.DidNotReceive().RemoveScenarioMembershipsAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheOldStandInsTemporaryMembershipOfTheDay_Goes_WhenTheyOnlyCoverASlotOfAnotherDay()
+    {
+        GivenSlotChange();
+        _workChangeRepository.IsReplacementInScenarioAsync(_token, _oldStandInId, CancellationToken.None).Returns(true);
+        _workChangeRepository.IsReplacementInScenarioOnDayAsync(_token, _oldStandInId, Day.AddDays(3), CancellationToken.None).Returns(true);
+
+        await Apply(Row());
+
+        await _scenarioService.Received(1).RemoveScenarioMembershipsAsync(_token, _oldStandInId, Day, CancellationToken.None);
     }
 
     private Task<bool> Apply(ReplacementRequest row)

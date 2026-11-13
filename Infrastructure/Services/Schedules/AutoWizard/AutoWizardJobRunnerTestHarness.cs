@@ -143,6 +143,7 @@ public abstract class AutoWizardJobRunnerTestHarness
         services.AddSingleton(TestScenarioTokenAccess.AllVisible());
         services.AddSingleton(TestGroupWriteVisibility.AllClientsVisible());
         services.AddSingleton(ShiftVisibilityGuards.AllowAll());
+        services.AddSingleton(TestBorrowedAgents.None());
         AddServices(services);
         _provider = services.BuildServiceProvider();
 

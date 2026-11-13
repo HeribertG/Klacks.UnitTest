@@ -357,7 +357,7 @@ public class PreviewApplySkillCallsNoWriteTests
             new() { Id = AbsenceId, Name = new MultiLanguage { De = AbsenceTypeName } }
         });
         var memberService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-        memberService.GetAllClientIdsFromGroupAndSubgroups(GroupId).Returns(new List<Guid> { ClientId });
+        memberService.GetRealClientIdsFromGroupAndSubgroups(GroupId, Arg.Any<CancellationToken>()).Returns(new List<Guid> { ClientId });
         var breakRepository = Substitute.For<IBreakRepository>();
         breakRepository.GetClientIdsWithBreakOnDate(
                 Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
