@@ -143,7 +143,7 @@ public class LLMServiceReadOnlyRecipeReplyTests
             Message = SlotAnswer,
             Language = "de",
             UserId = UserId.ToString(),
-            AvailableFunctions = new List<LLMFunction> { new() { Name = ReadSkill }, new() { Name = StoreSkill } }
+            AvailableFunctions = new List<LLMFunction> { new() { Name = ReadSkill }, new() { Name = StoreSkill }, new() { Name = FollowUpWrite } }
         },
         new LLMModel(),
         provider,
@@ -209,7 +209,7 @@ public class LLMServiceReadOnlyRecipeReplyTests
                 && request.VolatileSystemPrompt.Contains(
                     RecipeEngineDefaults.ReadOnlyRecipeCompletedNotePrefix, StringComparison.Ordinal)
                 && request.VolatileSystemPrompt.Contains(StepNote, StringComparison.Ordinal)
-                && request.AvailableFunctions.Count == 2),
+                && request.AvailableFunctions.Count == 3),
             Arg.Any<CancellationToken>());
     }
 

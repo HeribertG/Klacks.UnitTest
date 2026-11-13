@@ -2,10 +2,10 @@
 
 /// <summary>
 /// Whole-turn check of the toolset membership guard on both chat paths, in the mode the service ships with
-/// (Observe): a call to a skill that is not in the turn's toolset still reaches the skill layer and keeps its real
-/// outcome, but it is logged as a warning and flagged on the call, and the executor logs its outcome (Success,
-/// result kind, turn ids) so the rate of outside calls that succeeded is countable; a call to an offered skill, an
-/// alias of an offered skill and confirm_pending_action are neither logged nor flagged.
+/// (Enforce since 2026-11-13): a call to a skill that is not in the turn's toolset never reaches the skill layer, is
+/// logged as a warning and the turn still answers, with the nothing-stored notice because the rejected call was a
+/// write attempt; a call to an offered skill and confirm_pending_action are neither
+/// logged nor rejected. The Observe behaviour is covered by ToolsetMembershipGuardTests.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -43,48 +43,33 @@ public class LLMServiceToolsetMembershipTests
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task CallOutsideTheToolset_InObserveMode_StillRunsAndIsLogged(bool streaming)
+    public async Task CallOutsideTheToolset_IsRejected_NeverReachesTheSkill_AndIsLogged(bool streaming)
     {
         var harness = new LLMServiceTurnHarness(streaming);
         harness.Script(LLMServiceTurnHarness.ToolCall(OutsideSkill), LLMServiceTurnHarness.Text(Answer));
 
         await RunTurnAsync(harness, streaming);
 
-        SkillBridgeReceived(harness, OutsideSkill);
+        await harness.SkillBridge.DidNotReceive().ExecuteSkillFromLLMCallAsync(
+            Arg.Is<LLMFunctionCall>(call => call.FunctionName == OutsideSkill),
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<CancellationToken>());
         harness.Logger.Entries.ShouldContain(
             entry => entry.Level == LogLevel.Warning && entry.Message.Contains(OutsideSkill));
-        harness.PersistedAnswer.ShouldBe(Answer);
+        harness.PersistedAnswer.ShouldStartWith(Answer);
+        harness.PersistedAnswer.ShouldContain(RecipeEngineDefaults.NothingStoredNotice);
     }
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task CallOutsideTheToolset_InObserveMode_HasItsOutcomeLogged_WhichProvesTheFlagOnTheCall(bool streaming)
+    public async Task CallOutsideTheToolset_HasNoExecutorOutcome_BecauseItNeverRan(bool streaming)
     {
         var harness = new LLMServiceTurnHarness(streaming);
         harness.Script(LLMServiceTurnHarness.ToolCall(OutsideSkill), LLMServiceTurnHarness.Text(Answer));
 
         await RunTurnAsync(harness, streaming);
 
-        var outcome = harness.ExecutorLogger.Entries.Single(
-            entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Outside-toolset call"));
-        outcome.Message.ShouldContain(OutsideSkill);
-        outcome.Message.ShouldContain("Success True");
-        outcome.Message.ShouldContain(LLMServiceTurnHarness.ConversationId);
-    }
-
-    [Test]
-    public async Task CallOutsideTheToolset_ThatFails_HasItsFailureOutcomeLogged_AndIsNotRejected()
-    {
-        var harness = new LLMServiceTurnHarness(streaming: false);
-        harness.SkillsFail();
-        harness.Script(LLMServiceTurnHarness.ToolCall(OutsideSkill), LLMServiceTurnHarness.Text(Answer));
-
-        var response = await harness.Service.ProcessAsync(LLMServiceTurnHarness.Context(UserMessage));
-
-        response!.ActionPerformed.ShouldBeFalse();
-        SkillBridgeReceived(harness, OutsideSkill);
-        harness.ExecutorLogger.Entries.ShouldContain(
-            entry => entry.Message.Contains("Outside-toolset call") && entry.Message.Contains("Success False"));
+        harness.ExecutorLogger.Entries.ShouldNotContain(entry => entry.Message.Contains("Outside-toolset call"));
     }
 
     [TestCase(false)]

@@ -217,9 +217,9 @@ public class ToolsetMembershipGuardTests
     }
 
     [Test]
-    public void TheShippedMode_IsObserve_UntilTheLoggedRateProvesEnforceSafe()
+    public void TheShippedMode_IsEnforce()
     {
-        LLMLoopConstants.DefaultToolsetMembershipMode.ShouldBe(ToolsetMembershipMode.Observe);
+        LLMLoopConstants.DefaultToolsetMembershipMode.ShouldBe(ToolsetMembershipMode.Enforce);
     }
 
     [Test]

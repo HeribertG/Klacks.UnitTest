@@ -237,6 +237,7 @@ internal sealed class LLMServiceTurnHarness
         AvailableFunctions = new List<LLMFunction>
         {
             new() { Name = "get_employee" },
+            new() { Name = "create_employee" },
             new() { Name = "list_groups" },
             new() { Name = SkillNames.ManagePendingNotes }
         }
