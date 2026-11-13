@@ -164,6 +164,7 @@
   "explain_absence_value_vs_hours": "ReadOnly",
   "explain_active_industries": "ReadOnly",
   "explain_address_management": "ReadOnly",
+  "explain_autofill_staircase_start": "ReadOnly",
   "explain_calendar_model": "ReadOnly",
   "explain_company_rules": "ReadOnly",
   "explain_compliance_rules_model": "ReadOnly",
