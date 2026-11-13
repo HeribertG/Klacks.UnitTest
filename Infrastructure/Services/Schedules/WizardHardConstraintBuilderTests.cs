@@ -653,6 +653,45 @@ public class WizardHardConstraintBuilderTests
         seats.ShouldBeEmpty();
     }
 
+    [TestCase(WorkLockLevel.None)]
+    [TestCase(WorkLockLevel.Confirmed)]
+    public async Task BuildAsync_Scenario_RealWorkOnAShiftTheScenarioDoesNotCarry_IsAnExistingWorkBlocker(WorkLockLevel lockLevel)
+    {
+        var token = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 21);
+        var otherGroupWork = ForeignWork(agent, Guid.NewGuid(), date, lockLevel, token: null);
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], date, date, token, CancellationToken.None);
+
+        var blocker = result.ExistingWorkBlockers.ShouldHaveSingleItem("the work in the other group occupies the day, locked or not");
+        blocker.AgentId.ShouldBe(agent.ToString());
+        blocker.Date.ShouldBe(date);
+        blocker.Hours.ShouldBe(otherGroupWork.WorkTime);
+        result.LockedWorks.ShouldBeEmpty("a real work never becomes a token of the scenario run");
+    }
+
+    [Test]
+    public async Task BuildAsync_Scenario_RealWorkOnAShiftTheScenarioCarries_StaysOut_EvenWhenTheScenarioMovedItAway()
+    {
+        var token = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        var colleague = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 21);
+        var realShift = Guid.NewGuid();
+        var cloneShift = Guid.NewGuid();
+        _context.Shift.Add(new Shift { Id = realShift, Name = "Care", Status = ShiftStatus.SplitShift });
+        _context.Shift.Add(new Shift { Id = cloneShift, Name = "Care", Status = ShiftStatus.SplitShift, AnalyseToken = token, ScenarioSourceShiftId = realShift });
+        ForeignWork(agent, realShift, date, WorkLockLevel.None, token: null);
+        ForeignWork(colleague, cloneShift, date, WorkLockLevel.None, token);
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], date, date, token, CancellationToken.None);
+
+        result.ExistingWorkBlockers.ShouldBeEmpty("the scenario decides the group's shifts and handed this one to a colleague");
+    }
+
     private Work ForeignWork(Guid client, Guid shift, DateOnly date, WorkLockLevel lockLevel, Guid? token)
     {
         var work = new Work
