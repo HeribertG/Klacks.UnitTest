@@ -70,10 +70,6 @@ public class SkillToolsetAssemblerTests
         _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
         _expander = Substitute.For<ISkillRetrievalExpander>();
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
         _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
         _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(0);
@@ -478,10 +474,10 @@ public class SkillToolsetAssemblerTests
     private void GivenLearnedSkillPhrase(string ownerName, string phrase) =>
         GivenLearnedPhrases((ownerName, phrase, SkillPhraseOwnerKinds.Skill));
 
-    private Task<SkillToolsetResult> AssembleAsync(List<string>? userRights = null)
+    private Task<SkillToolsetResult> AssembleAsync(List<string>? userRights = null, string userMessage = UserMessage)
     {
         return CreateAssembler().AssembleAsync(
-            _agent, userRights ?? new List<string>(), UserMessage,
+            _agent, userRights ?? new List<string>(), userMessage,
             conversationId: null, currentRoute: null, UserId, language: null, cancellationToken: CancellationToken.None);
     }
 
@@ -612,31 +608,22 @@ public class SkillToolsetAssemblerTests
     }
 
     [Test]
-    public async Task AssembleAsync_ExpanderNeighbour_IsAddedWithinFreeBudget()
+    public async Task AssembleAsync_AssociationThrows_SelectionKeepsItsRetrievedSkills()
     {
-        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
-        _expander.ExpandAsync(
-                _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new List<AgentSkill> { CreateSkill(NeighbourSkillName) });
+        var hit = RetrievalHit(RetrievedSkillName, NeighbourSkillName);
+        SetupRetrievalResult(hit with { AssociationPool = hit.Candidates });
+        _expander.AssociationSlots.Returns(1);
+        _expander.AssociateAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyDictionary<string, double>>(),
+                Arg.Any<IReadOnlyDictionary<string, double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<string>>(_ => throw new InvalidOperationException("relation store down"));
 
-        var result = await AssembleAsync();
+        var result = await AssembleAsync(userMessage: "Such die Leute zusammen, dann teil sie ein");
 
-        result.Functions.ShouldContain(f => f.Name == NeighbourSkillName);
-    }
-
-    [Test]
-    public async Task AssembleAsync_ExpanderThrows_SelectionSurvivesWithoutExpansion()
-    {
-        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<AgentSkill>>(_ => throw new InvalidOperationException("relation store down"));
-
-        var result = await AssembleAsync();
+        await _expander.ReceivedWithAnyArgs(1).AssociateAsync(default, default!, default!, default, default);
 
         result.Functions.ShouldContain(f => f.Name == RetrievedSkillName);
+        result.Functions.ShouldContain(f => f.Name == NeighbourSkillName);
         result.HasDomainSkillContext.ShouldBeTrue();
     }
 
@@ -647,10 +634,6 @@ public class SkillToolsetAssemblerTests
         if (retrievalHits)
         {
             SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
-            _expander.ExpandAsync(
-                    _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                    Arg.Any<int>(), Arg.Any<CancellationToken>())
-                .Returns(new List<AgentSkill> { CreateSkill(NeighbourSkillName) });
         }
 
         var assembler = CreateAssembler();
@@ -925,21 +908,6 @@ public class SkillToolsetAssemblerTests
 
         result.Functions.Single(f => f.Name == RetrievedSkillName).ToolsetSource
             .ShouldBe(ToolsetSkillSource.Keyword);
-    }
-
-    [Test]
-    public async Task ExpandedNeighbour_IsMarkedExpansion()
-    {
-        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
-        _expander.ExpandAsync(
-                _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new List<AgentSkill> { CreateSkill(NeighbourSkillName) });
-
-        var result = await AssembleAsync();
-
-        result.Functions.Single(f => f.Name == NeighbourSkillName).ToolsetSource
-            .ShouldBe(ToolsetSkillSource.Expansion);
     }
 
     [Test]

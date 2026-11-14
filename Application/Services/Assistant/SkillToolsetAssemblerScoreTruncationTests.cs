@@ -83,10 +83,6 @@ public class SkillToolsetAssemblerScoreTruncationTests
             .Returns(call => call.ArgAt<string>(0));
 
         var expander = Substitute.For<ISkillRetrievalExpander>();
-        expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         var relations = Substitute.For<ISkillRelationRepository>();
         relations.GetByAgentAsync(_agent.Id, Arg.Any<CancellationToken>()).Returns(new List<SkillRelation>());

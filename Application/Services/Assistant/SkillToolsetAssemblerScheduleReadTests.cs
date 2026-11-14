@@ -364,10 +364,6 @@ public class SkillToolsetAssemblerScheduleReadTests
         queryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
         var expander = Substitute.For<ISkillRetrievalExpander>();
-        expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         var assembler = new SkillToolsetAssembler(
             _skillCache, _retrieval, queryBuilder, expander, resolver,

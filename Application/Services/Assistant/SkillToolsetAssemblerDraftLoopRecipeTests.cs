@@ -247,10 +247,6 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
         queryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
         var expander = Substitute.For<ISkillRetrievalExpander>();
-        expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         return new SkillToolsetAssembler(
             _skillCache, _skillRetrieval, queryBuilder, expander, resolver, Substitute.For<ILogger<SkillToolsetAssembler>>());

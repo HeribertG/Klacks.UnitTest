@@ -1,12 +1,17 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for the silent retrieval expansion logic: only active co-required neighbours of a
-/// selected skill that are permitted get added, ranked by confidence and capped to the free slots;
-/// candidate/sequential edges, non-permitted neighbours and already-selected skills are excluded.
+/// Unit tests for the skill-graph association ranking: only active relations count, in both directions and whatever
+/// their type; a neighbour must be in the association pool and must not be a seed; candidates are ranked by
+/// AssociationGraphWeight * (best seed score * confidence) + (1 - weight) * own score and capped to the slots.
+/// SeeAlso relations count since 2026-11-14 (W3.2 had kept them out of the old free-slot expansion, which ranked by
+/// confidence alone and let their 1.0 win every slot); measured on the multi-tool goldset simulation, leaving them
+/// out cost the single-target sets 14 hits against keeping them.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.SkillGraph;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
 
@@ -15,113 +20,139 @@ namespace Klacks.UnitTest.Application.Services.Assistant.SkillGraph;
 [TestFixture]
 public class SkillRetrievalExpanderTests
 {
-    private static AgentSkill Skill(string name) => new() { Name = name };
-
     private static SkillRelation Edge(string a, string b, double confidence,
         SkillRelationType type = SkillRelationType.CoRequired,
         SkillRelationStatus status = SkillRelationStatus.Active)
         => new() { SkillAName = a, SkillBName = b, Type = type, Status = status, Confidence = confidence };
 
-    [Test]
-    public void Expansion_AddsActiveCoRequiredPermittedNeighbour()
-    {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[] { Edge("aa", "bb", 0.8) },
-            new[] { Skill("aa") },
-            new[] { Skill("aa"), Skill("bb") },
-            slots: 3);
+    private static Dictionary<string, double> Scores(params (string Name, double Score)[] entries) =>
+        entries.ToDictionary(e => e.Name, e => e.Score, StringComparer.OrdinalIgnoreCase);
 
-        result.Select(s => s.Name).ShouldBe(new[] { "bb" });
+    [Test]
+    public void Association_PicksAPooledNeighbourOfASeed()
+    {
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "neighbour", 0.8)], Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBe(["neighbour"]);
     }
 
-    /// <summary>
-    /// W3.2 regression guard: the 148 curated "see also" cross-references carry confidence 1.0, above
-    /// anything the learner can reach (0.95). While they were typed CoRequired they won every ranking
-    /// and pushed learned co-occurrence evidence out of all three expansion slots. SeeAlso must stay
-    /// retrieval-neutral — it licenses a name-drop inside a description, it is not evidence.
-    /// </summary>
     [Test]
-    public void Expansion_IgnoresSeeAlsoEdges_EvenAtMaximumConfidence()
+    public void Association_FollowsARelationInBothDirections()
     {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[] { Edge("aa", "bb", 1.0, type: SkillRelationType.SeeAlso) },
-            new[] { Skill("aa") },
-            new[] { Skill("aa"), Skill("bb") },
-            slots: 3);
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("neighbour", "seed", 0.8)], Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBe(["neighbour"]);
+    }
+
+    [Test]
+    public void Association_IgnoresANeighbourOutsideThePool()
+    {
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "unscored", 0.9)], Scores(("seed", 0.8)), Scores(("other", 0.5)), slots: 3);
 
         result.ShouldBeEmpty();
     }
 
-    [Test]
-    public void Expansion_SeeAlsoEdge_DoesNotDisplaceLearnedCoRequiredNeighbour()
+    [TestCase(SkillRelationStatus.Candidate)]
+    [TestCase(SkillRelationStatus.Retired)]
+    public void Association_IgnoresRelationsThatAreNotActive(SkillRelationStatus status)
     {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[]
-            {
-                Edge("aa", "bb", 1.0, type: SkillRelationType.SeeAlso),
-                Edge("aa", "cc", 0.95),
-            },
-            new[] { Skill("aa") },
-            new[] { Skill("aa"), Skill("bb"), Skill("cc") },
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "neighbour", 0.9, status: status)], Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBeEmpty();
+    }
+
+    [TestCase(SkillRelationType.CoRequired)]
+    [TestCase(SkillRelationType.Sequential)]
+    [TestCase(SkillRelationType.ExplainedBy)]
+    [TestCase(SkillRelationType.AdvisesFor)]
+    [TestCase(SkillRelationType.SeeAlso)]
+    public void Association_CountsEveryActiveRelationType(SkillRelationType type)
+    {
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "neighbour", 0.9, type: type)], Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBe(["neighbour"]);
+    }
+
+    [Test]
+    public void Association_LetsTheNeighboursOwnScoreOutweighAStrongerRelation()
+    {
+        // strong: 0.2 * (0.8 * 1.0) + 0.8 * 0.50 = 0.560; close: 0.2 * (0.8 * 0.5) + 0.8 * 0.62 = 0.576
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "strong", 1.0), Edge("seed", "close", 0.5)],
+            Scores(("seed", 0.8)),
+            Scores(("strong", 0.50), ("close", 0.62)),
             slots: 1);
 
-        result.Select(s => s.Name).ShouldBe(new[] { "cc" });
+        result.ShouldBe(["close"]);
     }
 
     [Test]
-    public void Expansion_ExcludesNonPermittedNeighbour()
+    public void Association_TakesTheBestSeedEvidence_ForANeighbourOfSeveralSeeds()
     {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[] { Edge("aa", "bb", 0.8) },
-            new[] { Skill("aa") },
-            new[] { Skill("aa") },
-            slots: 3);
+        // shared: 0.2 * max(0.9 * 0.5, 0.4 * 0.5) + 0.8 * 0.5 = 0.490; single: 0.2 * (0.4 * 1.0) + 0.8 * 0.5 = 0.480
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("strongSeed", "shared", 0.5), Edge("weakSeed", "shared", 0.5), Edge("weakSeed", "single", 1.0)],
+            Scores(("strongSeed", 0.9), ("weakSeed", 0.4)),
+            Scores(("shared", 0.5), ("single", 0.5)),
+            slots: 1);
 
-        result.ShouldBeEmpty();
+        result.ShouldBe(["shared"]);
     }
 
     [Test]
-    public void Expansion_ExcludesNonActiveAndSequentialEdges()
+    public void Association_RespectsTheSlots()
     {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[]
-            {
-                Edge("aa", "bb", 0.9, status: SkillRelationStatus.Candidate),
-                Edge("aa", "cc", 0.9, type: SkillRelationType.Sequential),
-            },
-            new[] { Skill("aa") },
-            new[] { Skill("aa"), Skill("bb"), Skill("cc") },
-            slots: 3);
-
-        result.ShouldBeEmpty();
-    }
-
-    [Test]
-    public void Expansion_ExcludesAlreadySelectedNeighbour()
-    {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[] { Edge("aa", "bb", 0.8) },
-            new[] { Skill("aa"), Skill("bb") },
-            new[] { Skill("aa"), Skill("bb") },
-            slots: 3);
-
-        result.ShouldBeEmpty();
-    }
-
-    [Test]
-    public void Expansion_RanksByConfidence_AndRespectsSlots()
-    {
-        var result = SkillRetrievalExpander.BuildExpansion(
-            new[]
-            {
-                Edge("aa", "bb", 0.90),
-                Edge("aa", "cc", 0.70),
-                Edge("aa", "dd", 0.95),
-            },
-            new[] { Skill("aa") },
-            new[] { Skill("aa"), Skill("bb"), Skill("cc"), Skill("dd") },
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "a", 0.9), Edge("seed", "b", 0.9), Edge("seed", "c", 0.9)],
+            Scores(("seed", 0.8)),
+            Scores(("a", 0.5), ("b", 0.6), ("c", 0.4)),
             slots: 2);
 
-        result.Select(s => s.Name).ShouldBe(new[] { "dd", "bb" });
+        result.ShouldBe(["b", "a"]);
+    }
+
+    [Test]
+    public void Association_WithZeroSlots_ReturnsNothing()
+    {
+        var result = SkillRetrievalExpander.RankAssociations(
+            [Edge("seed", "neighbour", 0.9)], Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 0);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task AssociateAsync_WithEpsilonOne_SkipsTheTurn_WithoutReadingTheGraph()
+    {
+        var repository = Substitute.For<ISkillRelationRepository>();
+        var expander = new SkillRetrievalExpander(
+            repository, Substitute.For<ILogger<SkillRetrievalExpander>>(), new SkillGraphExpansionOptions(1.0, 3));
+
+        var result = await expander.AssociateAsync(
+            Guid.NewGuid(), Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBeEmpty();
+        await repository.DidNotReceiveWithAnyArgs().GetByAgentAsync(default, default);
+    }
+
+    [Test]
+    public async Task AssociateAsync_WithEpsilonZero_RanksTheAgentsRelations()
+    {
+        var agentId = Guid.NewGuid();
+        var repository = Substitute.For<ISkillRelationRepository>();
+        repository.GetByAgentAsync(agentId, Arg.Any<CancellationToken>())
+            .Returns([Edge("seed", "neighbour", 0.8)]);
+        var expander = new SkillRetrievalExpander(
+            repository, Substitute.For<ILogger<SkillRetrievalExpander>>(), new SkillGraphExpansionOptions(0, 3));
+
+        var result = await expander.AssociateAsync(
+            agentId, Scores(("seed", 0.8)), Scores(("neighbour", 0.5)), slots: 3);
+
+        result.ShouldBe(["neighbour"]);
+        expander.AssociationSlots.ShouldBe(3);
     }
 }

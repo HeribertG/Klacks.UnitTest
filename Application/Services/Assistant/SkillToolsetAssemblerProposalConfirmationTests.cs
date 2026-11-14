@@ -66,10 +66,6 @@ public class SkillToolsetAssemblerProposalConfirmationTests
             .Returns(callInfo => callInfo.ArgAt<string>(0));
 
         _expander = Substitute.For<ISkillRetrievalExpander>();
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
         _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())

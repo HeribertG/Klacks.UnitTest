@@ -59,10 +59,6 @@ public class ProcessLLMMessageCommandHandlerTests
         _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
         _expander = Substitute.For<ISkillRetrievalExpander>();
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
         _enricher = Substitute.For<IPlanningScopeEnricher>();
         _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
         _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -169,11 +165,12 @@ public class ProcessLLMMessageCommandHandlerTests
         };
     }
 
-    private static ProcessLLMMessageCommand CreateCommand(string? currentRoute)
+    private static ProcessLLMMessageCommand CreateCommand(
+        string? currentRoute, string message = "Bitte erkläre mir Abdeckung & Bestätigung")
     {
         return new ProcessLLMMessageCommand
         {
-            Message = "Bitte erkläre mir Abdeckung & Bestätigung",
+            Message = message,
             UserId = "user-1",
             PageContext = currentRoute == null
                 ? null
@@ -325,10 +322,10 @@ public class ProcessLLMMessageCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_ExpanderNeighbour_IsIncludedInToolset()
+    public async Task Handle_AssociatedNeighbour_IsIncludedInToolset()
     {
-        // Co-required expansion on the non-streaming path: a high-confidence neighbour returned by
-        // ISkillRetrievalExpander must reach the LLM toolset exactly as on the streaming path.
+        // Graph association on the non-streaming path: a neighbour ISkillRetrievalExpander picks for the last retrieval
+        // place must reach the LLM toolset exactly as on the streaming path.
         var neighbour = CreateSkill(NeighbourSkillName);
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
             .Returns(new List<AgentSkill>
@@ -340,13 +337,19 @@ public class ProcessLLMMessageCommandHandlerTests
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
                 Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
-            .Returns(RetrievalHit(DashboardSkillName));
-        _expander.ExpandAsync(
-                _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill> { neighbour });
+            .Returns(new RetrievalResult(
+                RetrievalHit(DashboardSkillName).Candidates.Concat(RetrievalHit(EmployeesSkillName).Candidates).ToList())
+            {
+                AssociationPool = RetrievalHit(NeighbourSkillName).Candidates
+            });
+        _expander.AssociationSlots.Returns(1);
+        _expander.AssociateAsync(
+                _agent.Id, Arg.Any<IReadOnlyDictionary<string, double>>(),
+                Arg.Any<IReadOnlyDictionary<string, double>>(), 1, Arg.Any<CancellationToken>())
+            .Returns(new List<string> { NeighbourSkillName });
 
-        await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
+        await CreateHandler().Handle(
+            CreateCommand(null, "Zeig mir das Dashboard, dann die Mitarbeitenden"), CancellationToken.None);
 
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);

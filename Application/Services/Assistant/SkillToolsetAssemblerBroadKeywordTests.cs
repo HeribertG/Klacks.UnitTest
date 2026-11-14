@@ -74,10 +74,6 @@ public class SkillToolsetAssemblerBroadKeywordTests
             .Returns(call => call.ArgAt<string>(0));
 
         var expander = Substitute.For<ISkillRetrievalExpander>();
-        expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         var phrases = Substitute.For<ISkillPhraseRepository>();
         phrases.GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())

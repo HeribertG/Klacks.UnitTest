@@ -79,10 +79,6 @@ public class SkillToolsetAssemblerExclusionTests
             .Returns(call => call.ArgAt<string>(0));
 
         _expander = Substitute.For<ISkillRetrievalExpander>();
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
         _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -222,14 +218,26 @@ public class SkillToolsetAssemblerExclusionTests
     }
 
     [Test]
-    public async Task ExcludedSkill_IsDroppedEvenWhenTheExpansionReAddsIt()
+    public async Task ExcludedSkill_IsDroppedEvenWhenTheAssociationPicksIt()
     {
-        _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill> { Skill(WrongSkill) });
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<bool>())
+            .Returns(new RetrievalResult([Candidate(RightSkill, 0.9), Candidate(PinnedSkill, 0.8)])
+            {
+                AssociationPool = [Candidate(RightSkill, 0.9), Candidate(PinnedSkill, 0.8), Candidate(WrongSkill, 0.7)]
+            });
+        _expander.AssociationSlots.Returns(1);
+        _expander.AssociateAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyDictionary<string, double>>(),
+                Arg.Any<IReadOnlyDictionary<string, double>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string> { WrongSkill });
 
-        var result = await Assemble([WrongSkill], null);
+        var result = await Assemble(
+            "Trag alle Mitarbeitenden in die Gruppe ein, dann zeig mir die Gruppe.", new List<string>(), [WrongSkill], null);
+
+        await _expander.ReceivedWithAnyArgs(1).AssociateAsync(default, default!, default!, default, default);
 
         result.Functions.ShouldNotContain(f => f.Name == WrongSkill);
     }

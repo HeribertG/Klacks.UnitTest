@@ -67,10 +67,6 @@ public class SkillToolsetAssemblerTraceTests
             .Returns(call => call.ArgAt<string>(0));
 
         var expander = Substitute.For<ISkillRetrievalExpander>();
-        expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill>());
 
         _pendingTurnIntent = Task.FromResult<TurnIntentPrediction?>(null);
         var resolver = Substitute.For<ISkillToolsetGuaranteeResolver>();

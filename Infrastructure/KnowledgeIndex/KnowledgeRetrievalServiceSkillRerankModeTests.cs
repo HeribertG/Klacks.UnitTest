@@ -8,6 +8,7 @@
 /// mode, because the correction clarification reads score gaps on the cross-encoder's scale.
 /// </summary>
 
+using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
 using Klacks.Api.KnowledgeIndex.Domain;
@@ -157,6 +158,50 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
         result.SkillRerank.ShouldBeNull();
     }
 
+    [Test]
+    public async Task Never_SkillPass_ReadsTheAssociationDepth_AndHandsOutTheCosinePool()
+    {
+        var result = await RetrieveAsync(SkillRerankMode.Never, ClearField);
+
+        await _repo.Received(1).FindNearestAsync(
+            Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+            KnowledgeIndexConstants.SkillAssociationPoolSize, Arg.Any<CancellationToken>(), KnowledgeEntryKind.Skill);
+        result.AssociationPool.Select(c => c.Entry.SourceId).ShouldBe(["s0", "s1", "s2"]);
+        result.AssociationPool[1].Score.ShouldBe(0.80, tolerance: 1e-4);
+    }
+
+    [Test]
+    public async Task ForcedPass_HandsOutNoAssociationPool()
+    {
+        var result = await RetrieveAsync(SkillRerankMode.Never, ClearField, forceSkillRerank: true);
+
+        result.AssociationPool.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RecipePass_ReadsOnlyTheRerankerDepth_AndHandsOutNoPool()
+    {
+        var result = await RetrieveAsync(SkillRerankMode.Never, ClearField, KnowledgeEntryKind.Recipe);
+
+        await _repo.Received(1).FindNearestAsync(
+            Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+            KnowledgeIndexConstants.MaxRerankerCandidates, Arg.Any<CancellationToken>(), KnowledgeEntryKind.Recipe);
+        result.AssociationPool.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task TheDeepRead_NeverWidensTheRankedCandidates_BeyondTheRerankerDepth()
+    {
+        var deepField = Enumerable.Range(0, KnowledgeIndexConstants.SkillAssociationPoolSize)
+            .Select(i => 0.99 - i * 0.01)
+            .ToArray();
+
+        var result = await RetrieveAsync(SkillRerankMode.Never, deepField, topK: KnowledgeIndexConstants.SkillAssociationPoolSize);
+
+        result.Candidates.Count.ShouldBe(KnowledgeIndexConstants.MaxRerankerCandidates);
+        result.AssociationPool.Count.ShouldBe(KnowledgeIndexConstants.SkillAssociationPoolSize);
+    }
+
     [TestCase("adaptive", SkillRerankMode.Adaptive)]
     [TestCase("NEVER", SkillRerankMode.Never)]
     [TestCase("bogus", SkillRerankMode.Always)]
@@ -180,7 +225,7 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
 
     private Task<RetrievalResult> RetrieveAsync(
         SkillRerankMode mode, double[] cosines, KnowledgeEntryKind kind = KnowledgeEntryKind.Skill,
-        ISkillRerankThreshold? threshold = null, bool forceSkillRerank = false)
+        ISkillRerankThreshold? threshold = null, bool forceSkillRerank = false, int topK = 20)
     {
         var pool = cosines
             .Select((cosine, i) => new KnowledgeEntry
@@ -200,6 +245,6 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
             _embeddings, _reranker, _repo, skillRerank: new SkillRerankOptions(mode, Threshold), threshold: threshold);
 
         return service.RetrieveAsync(
-            "q", [], true, 20, currentRoute: null, CancellationToken.None, kind, forceSkillRerank: forceSkillRerank);
+            "q", [], true, topK, currentRoute: null, CancellationToken.None, kind, forceSkillRerank: forceSkillRerank);
     }
 }
