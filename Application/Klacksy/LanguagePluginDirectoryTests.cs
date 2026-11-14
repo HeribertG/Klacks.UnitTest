@@ -177,6 +177,64 @@ public class LanguagePluginDirectoryTests
     }
 
     [Test]
+    public void TheUtteranceNormalizer_IgnoresALocaleThatIsNotAPackCode_EvenWhenItPointsAtAReadableWakeWordsFile()
+    {
+        var escapedDirectory = Path.Combine(_root, EscapedDirectoryName);
+        Directory.CreateDirectory(escapedDirectory);
+        File.WriteAllText(
+            Path.Combine(escapedDirectory, WakeWordsFileName),
+            JsonSerializer.Serialize(new { salutations = new[] { Salutation } }));
+        var utterance = $"{Salutation} klacksy zeig";
+        var sut = new UtteranceNormalizer(_configuredDirectory);
+
+        sut.Normalize(utterance, "../" + EscapedDirectoryName).WakeWordStripped.ShouldBeFalse();
+        sut.Normalize(utterance, escapedDirectory).WakeWordStripped.ShouldBeFalse();
+    }
+
+    [Test]
+    public void TheUtteranceNormalizer_DoesNotRememberALocaleWithoutAPack_SoAnInstalledPackIsPickedUpLater()
+    {
+        var utterance = $"{Salutation} klacksy zeig";
+        var sut = new UtteranceNormalizer(_configuredDirectory);
+        var missingPackDirectory = Path.Combine(_configuredDirectory, "yy");
+
+        sut.Normalize(utterance, "yy").WakeWordStripped.ShouldBeFalse();
+        Directory.CreateDirectory(missingPackDirectory);
+        File.WriteAllText(
+            Path.Combine(missingPackDirectory, WakeWordsFileName),
+            JsonSerializer.Serialize(new { salutations = new[] { Salutation } }));
+
+        sut.Normalize(utterance, "yy").WakeWordStripped.ShouldBeTrue();
+    }
+
+    [Test]
+    public void TheUtteranceNormalizer_DoesNotRememberAPackFileThatFailedToLoad_SoTheRepairedFileIsUsed()
+    {
+        var utterance = $"{Salutation} klacksy zeig";
+        var sut = new UtteranceNormalizer(_configuredDirectory);
+        Write(WakeWordsFileName, BrokenJson);
+
+        sut.Normalize(utterance, PackCode).WakeWordStripped.ShouldBeFalse();
+        Write(WakeWordsFileName, JsonSerializer.Serialize(new { salutations = new[] { Salutation } }));
+
+        sut.Normalize(utterance, PackCode).WakeWordStripped.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ThePhoneticConfigProvider_DoesNotRememberAPackFileThatFailedToLoad_SoTheRepairedFileIsUsed()
+    {
+        var sut = new PhoneticConfigProvider(_configuredDirectory);
+        Write(LanguagePluginConstants.PhoneticsFileName, BrokenJson);
+
+        sut.GetForLocale(PackCode).MinWordLength.ShouldNotBe(RelocatedMinWordLength);
+        Write(
+            LanguagePluginConstants.PhoneticsFileName,
+            JsonSerializer.Serialize(new { enabled = true, minWordLength = RelocatedMinWordLength }));
+
+        sut.GetForLocale(PackCode).MinWordLength.ShouldBe(RelocatedMinWordLength);
+    }
+
+    [Test]
     public void ThePhoneticConfigProvider_ReadsThePackPhoneticsFromTheConfiguredDirectory()
     {
         File.WriteAllText(
@@ -188,7 +246,22 @@ public class LanguagePluginDirectoryTests
     }
 
     [Test]
-    public void ThePhoneticConfigProvider_RefusesALocaleThatEscapesThePluginDirectory_AndLogsAWarning()
+    public void ThePhoneticConfigProvider_DoesNotRememberALocaleWithoutAPack_SoAnInstalledPackIsPickedUpLater()
+    {
+        var sut = new PhoneticConfigProvider(_configuredDirectory);
+        var missingPackDirectory = Path.Combine(_configuredDirectory, "yy");
+
+        sut.GetForLocale("yy").MinWordLength.ShouldNotBe(RelocatedMinWordLength);
+        Directory.CreateDirectory(missingPackDirectory);
+        File.WriteAllText(
+            Path.Combine(missingPackDirectory, LanguagePluginConstants.PhoneticsFileName),
+            JsonSerializer.Serialize(new { enabled = true, minWordLength = RelocatedMinWordLength }));
+
+        sut.GetForLocale("yy").MinWordLength.ShouldBe(RelocatedMinWordLength);
+    }
+
+    [Test]
+    public void ThePhoneticConfigProvider_RefusesALocaleThatEscapesThePluginDirectory_AndLogsADebugEntry()
     {
         var escapedDirectory = Path.Combine(_root, EscapedDirectoryName);
         Directory.CreateDirectory(escapedDirectory);
@@ -200,7 +273,8 @@ public class LanguagePluginDirectoryTests
         var config = new PhoneticConfigProvider(_configuredDirectory, logger).GetForLocale("../" + EscapedDirectoryName);
 
         config.MinWordLength.ShouldNotBe(RelocatedMinWordLength);
-        logger.Entries.ShouldContain(entry => entry.Level == LogLevel.Warning);
+        logger.Entries.ShouldContain(entry => entry.Level == LogLevel.Debug);
+        logger.Entries.ShouldNotContain(entry => entry.Level >= LogLevel.Warning);
     }
 
     private string PackFile(string fileName) => Path.Combine(_packDirectory, fileName);

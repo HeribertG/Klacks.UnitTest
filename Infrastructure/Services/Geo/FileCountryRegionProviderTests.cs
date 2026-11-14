@@ -151,6 +151,37 @@ public class FileCountryRegionProviderTests
         map["GE"].Key.ShouldBe("west");
     }
 
+    [TestCase("../OUTSIDE")]
+    [TestCase("..\\OUTSIDE")]
+    [TestCase("CH/../../OUTSIDE")]
+    public async Task GetRegionByStateAsync_CountryThatIsNotTwoLetters_NeverReadsAFileOutsideTheRegionDirectory(string country)
+    {
+        var regionDirectory = Path.Combine(_root, "regions");
+        Directory.CreateDirectory(regionDirectory);
+        File.WriteAllText(
+            Path.Combine(_root, "OUTSIDE.json"),
+            $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE"] } ] }""");
+        var provider = new FileCountryRegionProvider(regionDirectory);
+
+        var map = await provider.GetRegionByStateAsync(country);
+
+        map.ShouldBeEmpty();
+    }
+
+    [TestCase("C")]
+    [TestCase("CHEX")]
+    [TestCase("C1")]
+    [TestCase("Switzerland")]
+    public async Task GetRegionByStateAsync_CountryThatIsNotAlphaTwoAfterNormalising_ReturnsEmptyMap(string country)
+    {
+        Write("CH", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE"] } ] }""");
+        var provider = new FileCountryRegionProvider(_root);
+
+        var map = await provider.GetRegionByStateAsync(country);
+
+        map.ShouldBeEmpty();
+    }
+
     private void Write(string country, string content) =>
         File.WriteAllText(Path.Combine(_root, country + ".json"), content);
 

@@ -7,6 +7,8 @@
 /// </summary>
 
 using System.Reflection;
+using System.Text.Json;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Config;
 using Klacks.Api.Application.Interfaces.Plugins;
 using Klacks.Api.Application.Interfaces.Settings;
@@ -37,10 +39,21 @@ public class LanguageConfigControllerTests
     private ISettingsReader _settingsReader = null!;
     private IKnowledgeIndexSyncScheduler _knowledgeIndexSyncScheduler = null!;
     private CapturingLogger _logger = null!;
+    private List<string> _pluginDirectories = null!;
+
+    [TearDown]
+    public void DeletePluginDirectories()
+    {
+        foreach (var directory in _pluginDirectories.Where(Directory.Exists))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 
     [SetUp]
     public void SetUp()
     {
+        _pluginDirectories = new List<string>();
         _languagePluginService = Substitute.For<ILanguagePluginService>();
         _languagePluginService.GetInstalledPluginCodes().Returns(new List<string>());
         _languagePluginService.GetPlugin(Arg.Any<string>()).Returns((LanguagePluginInfo?)null);
@@ -179,16 +192,66 @@ public class LanguageConfigControllerTests
         await _marketplaceClient.DidNotReceive().DownloadPackageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [TestCase("yy")]
+    [TestCase("../escaped")]
+    [TestCase("")]
+    public async Task DownloadAndInstallPackage_ManifestCodeDiffersFromTheRequestedCode_RejectsTheBundleAndWritesNothing(string manifestCode)
+    {
+        var pluginDirectory = NewPluginDirectory();
+        StubBundle("xx", new { manifest = new { code = manifestCode }, translations = new { hello = "hallo" } });
+        var controller = CreateController(pluginDirectory);
+
+        var result = await controller.DownloadAndInstallPackage("xx", CancellationToken.None);
+
+        result.ShouldBeOfType<BadRequestObjectResult>();
+        Directory.Exists(Path.Combine(pluginDirectory, "xx")).ShouldBeFalse();
+        Directory.Exists(Path.Combine(pluginDirectory, "escaped")).ShouldBeFalse();
+        await _languagePluginService.DidNotReceive().RefreshPluginsAsync();
+        await _languagePluginService.DidNotReceive().InstallAsync(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task DownloadAndInstallPackage_ManifestCodeMatchesTheRequestedCode_WritesThePackUnderTheManifestSpellingAndInstallsIt()
+    {
+        var pluginDirectory = NewPluginDirectory();
+        StubBundle("xx", new { manifest = new { code = "XX" }, translations = new { hello = "hallo" } });
+        var controller = CreateController(pluginDirectory);
+
+        var result = await controller.DownloadAndInstallPackage("xx", CancellationToken.None);
+
+        result.ShouldBeOfType<OkResult>();
+        Directory.GetDirectories(pluginDirectory).Select(Path.GetFileName).ShouldBe(["XX"]);
+        File.Exists(Path.Combine(pluginDirectory, "XX", LanguagePluginConstants.ManifestFileName)).ShouldBeTrue();
+        await _languagePluginService.Received(1).InstallAsync("xx");
+    }
+
+    private string NewPluginDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "klacks-lang-config-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        _pluginDirectories.Add(directory);
+        return directory;
+    }
+
+    private void StubBundle(string code, object bundle)
+    {
+        _marketplaceClient.DownloadPackageAsync(code, Arg.Any<CancellationToken>())
+            .Returns(MarketplacePackageDownload.Verified(JsonSerializer.SerializeToUtf8Bytes(bundle)));
+    }
+
     private void StubDefaultLanguageSetting(string value)
     {
         _settingsReader.GetSetting(SettingKeys.DefaultLanguage)
             .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.DefaultLanguage, Value = value });
     }
 
-    private LanguageConfigController CreateController()
+    private LanguageConfigController CreateController(string? pluginDirectory = null)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [LanguagePluginConstants.DirectoryConfigKey] = pluginDirectory
+            })
             .Build();
 
         return new LanguageConfigController(

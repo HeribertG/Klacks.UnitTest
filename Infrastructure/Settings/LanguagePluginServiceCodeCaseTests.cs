@@ -11,6 +11,8 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.AspNetCore.Http;
@@ -47,7 +49,7 @@ public class LanguagePluginServiceCodeCaseTests
         var packDirectory = Path.Combine(_pluginDirectory, ManifestCode);
         Directory.CreateDirectory(packDirectory);
         File.WriteAllText(
-            Path.Combine(packDirectory, "manifest.json"),
+            Path.Combine(packDirectory, LanguagePluginConstants.ManifestFileName),
             $"{{\"code\": \"{ManifestCode}\", \"name\": \"Chinese (Simplified)\"}}");
 
         var options = new DbContextOptionsBuilder<DataBaseContext>()
@@ -130,6 +132,72 @@ public class LanguagePluginServiceCodeCaseTests
         service.GetInstalledPluginCodes().ShouldBeEmpty();
         AssertInstalledUnderEverySpelling(service, expected: false);
         setting.Value.ShouldBe(UninstalledValue);
+    }
+
+    [TestCase("../escaped")]
+    [TestCase("unknown")]
+    [TestCase("")]
+    public async Task Uninstall_CodeThatNoDiscoveredPackDeclares_IsRefusedWithoutTouchingContentOrSettings(string uninstallCode)
+    {
+        var service = CreateService();
+        await service.InitializeAsync();
+
+        (await service.UninstallAsync(uninstallCode)).ShouldBeFalse();
+
+        await _settingsRepository.DidNotReceive().GetSetting(Arg.Any<string>());
+        await _serviceProvider.GetRequiredService<ISkillCatalogRefresher>()
+            .DidNotReceive().RefreshAsync(Arg.Any<string>());
+    }
+
+    [TestCase("../escaped")]
+    [TestCase("a/b")]
+    [TestCase("a b")]
+    [TestCase("")]
+    public async Task Discovery_ManifestWhoseCodeIsNotAPackCode_IsSkipped(string manifestCode)
+    {
+        var packDirectory = Path.Combine(_pluginDirectory, "bad-pack");
+        Directory.CreateDirectory(packDirectory);
+        File.WriteAllText(
+            Path.Combine(packDirectory, LanguagePluginConstants.ManifestFileName),
+            JsonSerializer.Serialize(new { code = manifestCode, name = "Bad pack" }));
+        var service = CreateService();
+
+        await service.InitializeAsync();
+
+        service.GetAllPlugins().Where(p => !p.IsCore).Select(p => p.Code).ShouldBe([ManifestCode]);
+        service.GetPlugin(manifestCode).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Discovery_ManifestWhoseCodeDiffersFromItsDirectoryName_IsSkipped()
+    {
+        WritePack("other-directory", "zz");
+        var service = CreateService();
+
+        await service.InitializeAsync();
+
+        service.GetAllPlugins().Where(p => !p.IsCore).Select(p => p.Code).ShouldBe([ManifestCode]);
+        service.GetPlugin("zz").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Discovery_ManifestWhoseCodeDiffersFromItsDirectoryNameOnlyInCase_IsKept()
+    {
+        WritePack("Case-Pack", "case-pack");
+        var service = CreateService();
+
+        await service.InitializeAsync();
+
+        service.GetPlugin("case-pack").ShouldNotBeNull();
+    }
+
+    private void WritePack(string directoryName, string manifestCode)
+    {
+        var packDirectory = Path.Combine(_pluginDirectory, directoryName);
+        Directory.CreateDirectory(packDirectory);
+        File.WriteAllText(
+            Path.Combine(packDirectory, LanguagePluginConstants.ManifestFileName),
+            JsonSerializer.Serialize(new { code = manifestCode, name = directoryName }));
     }
 
     private LanguagePluginService CreateService()

@@ -30,7 +30,6 @@ public static class SilentCatchAllGuardAllowlist
         ["Application/Klacksy/GroupingIntentPluginLoader.cs"] = 1,
         ["Application/Klacksy/MutationIntentPluginLoader.cs"] = 1,
         ["Application/Klacksy/NavigationIntentPluginLoader.cs"] = 1,
-        ["Application/Klacksy/UtteranceNormalizer.cs"] = 1,
         ["Application/Mappers/ScheduleMapper.Schedules.cs"] = 1,
         ["Application/Services/Assistant/GreetingComposer.cs"] = 1,
         ["Application/Services/Assistant/Learning/SkillExecutionOracle.cs"] = 1,
