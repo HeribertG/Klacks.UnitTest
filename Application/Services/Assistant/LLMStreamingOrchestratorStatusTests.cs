@@ -74,7 +74,8 @@ public class LLMStreamingOrchestratorStatusTests
             Substitute.For<ISkillRegistry>(),
             Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>(),
-            Substitute.For<ITurnConfirmationScope>());
+            Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<IToolSearchToolsetAppender>());
 
         _orchestrator = new LLMStreamingOrchestrator(
             _llmService,

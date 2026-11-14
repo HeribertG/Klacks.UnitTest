@@ -142,7 +142,8 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<ISkillRegistry>(),
             Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>(),
-            Substitute.For<ITurnConfirmationScope>());
+            Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<IToolSearchToolsetAppender>());
 
         return new ProcessLLMMessageCommandHandler(
             _llmService, _agentRepository, _skillCache, correctionTurnPreparer, _enricher,
@@ -387,7 +388,8 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<ISkillRegistry>(),
             Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>(),
-            Substitute.For<ITurnConfirmationScope>());
+            Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<IToolSearchToolsetAppender>());
 
         var handler = new ProcessLLMMessageCommandHandler(
             _llmService, _agentRepository, _skillCache, correctionTurnPreparer, _enricher,

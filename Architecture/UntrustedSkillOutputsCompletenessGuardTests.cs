@@ -70,6 +70,7 @@ public class UntrustedSkillOutputsCompletenessGuardTests
         {
             ["diagnose_work_booking"] = "Reason, Remedy and Notes are fixed server sentences (WorkBookingDiagnosisTexts) filled only with person and shift names and dates; Comment is a validation key.",
             ["find_replacement"] = "Comment and Reason are texts the rule engine generates from fixed templates, not typed in by users.",
+            ["find_tools"] = "Description is the skill catalogue's own description: seeded, or written by create_agent_skill/update_agent_skill, which only administrators hold.",
             ["get_ai_guidelines"] = "Guidelines are written with the settings-edit right, which only administrators hold; an administrator injects only themselves.",
             ["get_ai_soul"] = "Soul sections are written with the settings-edit right, which only administrators hold.",
             ["get_data_retention_settings"] = "Description is a constant field explanation compiled into the skill.",

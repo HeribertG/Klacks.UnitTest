@@ -8,6 +8,7 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 
@@ -193,5 +194,44 @@ public class LLMServiceHistoryBudgetTests
 
         newReserve.ShouldBeLessThan(OldFlatReserveTokens);
         budgetWithNewReserve.ShouldBeGreaterThan(budgetWithOldFlatReserve);
+    }
+
+    [Test]
+    public void EstimateToolDefinitionReserveTokens_WithFindTools_ReservesRoomForTheToolsItCanAdd()
+    {
+        var functions = new List<LLMFunction>
+        {
+            MakeFunction("list_clients", "Lists the clients of the installation.", parameterCount: 2),
+            MakeFunction("assign_contract", "Assigns a contract to a client from a date on.", parameterCount: 3),
+            MakeFunction(ToolSearchConstants.SkillName, "Finds tools the toolset is missing.", parameterCount: 1)
+        };
+        var rawTokens = functions.Sum(ExpectedRawTokens);
+        var searchReserve = rawTokens / functions.Count * ToolSearchConstants.MaxAddedToolsPerTurn;
+        var grown = rawTokens + searchReserve;
+        var expected = grown + (grown * ConversationHistoryBudget.ToolDefinitionSafetyMarginPercent / 100);
+
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(functions);
+
+        result.ShouldBe(expected);
+    }
+
+    [Test]
+    public void EstimateToolDefinitionReserveTokens_FindTools_GrowsTheReserveOverTheSameToolsetWithoutIt()
+    {
+        var withoutSearch = new List<LLMFunction>
+        {
+            MakeFunction("list_clients", "Lists the clients of the installation.", parameterCount: 2),
+            MakeFunction("find_skill_like", "Finds tools the toolset is missing.", parameterCount: 1)
+        };
+        var withSearch = new List<LLMFunction>
+        {
+            MakeFunction("list_clients", "Lists the clients of the installation.", parameterCount: 2),
+            MakeFunction(ToolSearchConstants.SkillName.ToUpperInvariant(), "Finds tools the toolset is missing.", parameterCount: 1)
+        };
+
+        var reserveWithout = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(withoutSearch);
+        var reserveWith = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(withSearch);
+
+        reserveWith.ShouldBeGreaterThan(reserveWithout * 2);
     }
 }

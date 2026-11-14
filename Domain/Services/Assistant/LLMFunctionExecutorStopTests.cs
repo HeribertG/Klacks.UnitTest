@@ -60,7 +60,7 @@ public class LLMFunctionExecutorStopTests
             });
 
         _executor = new LLMFunctionExecutor(
-            Substitute.For<ILogger<LLMFunctionExecutor>>(), skills, agents, _pending, Substitute.For<ITurnConfirmationScope>(), _policy, _bridge);
+            Substitute.For<ILogger<LLMFunctionExecutor>>(), skills, agents, _pending, Substitute.For<ITurnConfirmationScope>(), _policy, Substitute.For<ITurnToolsetExtension>(), _bridge);
         _context = new LLMContext { UserId = Guid.NewGuid().ToString(), Message = "Do it." };
     }
 
@@ -162,6 +162,7 @@ public class LLMFunctionExecutorStopTests
             _pending,
             Substitute.For<ITurnConfirmationScope>(),
             Substitute.For<ICancellableSkillPolicy>(),
+            Substitute.For<ITurnToolsetExtension>(),
             _bridge);
 
         await executor.ProcessFunctionCallsAsync(_context, [Call(ReadSkill)], stop.Token);

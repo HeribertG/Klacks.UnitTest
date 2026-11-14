@@ -137,6 +137,7 @@ internal sealed class LLMServiceTurnHarness
                 Substitute.For<IPendingConfirmationStore>(),
                 Substitute.For<ITurnConfirmationScope>(),
                 Substitute.For<ICancellableSkillPolicy>(),
+                Substitute.For<ITurnToolsetExtension>(),
                 SkillBridge),
             responseBuilder: new LLMResponseBuilder(),
             promptBuilder: new LLMSystemPromptBuilder(

@@ -66,6 +66,7 @@ public class CorrectionTurnPreparerTests
     private IPendingConfirmationStore _pendingConfirmationStore = null!;
     private ISkillRegistry _skillRegistry = null!;
     private ISkillPermissionGate _permissionGate = null!;
+    private IToolSearchToolsetAppender _toolSearchAppender = null!;
 
     [SetUp]
     public void SetUp()
@@ -75,6 +76,7 @@ public class CorrectionTurnPreparerTests
         _pendingConfirmationStore = Substitute.For<IPendingConfirmationStore>();
         _skillRegistry = Substitute.For<ISkillRegistry>();
         _permissionGate = Substitute.For<ISkillPermissionGate>();
+        _toolSearchAppender = Substitute.For<IToolSearchToolsetAppender>();
 
         _assembler = Substitute.For<ISkillToolsetAssembler>();
         _assembler.AssembleAsync(
@@ -168,7 +170,8 @@ public class CorrectionTurnPreparerTests
         _lastActionStore, _pendingRecipeStore, _turnPreparation, _assembler, _pendingConfirmationStore,
         _skillRegistry, _permissionGate,
         Substitute.For<ILogger<CorrectionTurnPreparer>>(),
-        turnScope ?? Substitute.For<ITurnConfirmationScope>());
+        turnScope ?? Substitute.For<ITurnConfirmationScope>(),
+        _toolSearchAppender);
 
     private Task<CorrectionTurnPreparation> Prepare(string message = CorrectionMessage, ITurnConfirmationScope? turnScope = null) =>
         CreatePreparer(turnScope).PrepareAsync(
@@ -625,4 +628,52 @@ public class CorrectionTurnPreparerTests
             Arg.Is<IReadOnlyList<string>?>(previous => previousMatches(previous)),
             Arg.Is<IReadOnlyList<string>?>(continuation => continuationMatches(continuation)),
             Arg.Any<CancellationToken>());
+
+    [Test]
+    public async Task TheToolSearchAppender_ReceivesTheAssembledToolset()
+    {
+        var assembled = new SkillToolsetResult { Functions = [new LLMFunction { Name = PinnedSkillName }] };
+        GivenTheAssemblerReturns(assembled);
+
+        var result = await Prepare();
+
+        await _toolSearchAppender.Received(1).AppendAsync(
+            Arg.Any<Agent>(), Arg.Is<SkillToolsetResult>(t => ReferenceEquals(t, assembled)), Arg.Any<CancellationToken>());
+        result.Toolset.ShouldBeSameAs(assembled);
+    }
+
+    // The search is an addition to the turn: a failing appender costs find_tools, never the assembled tools.
+    [Test]
+    public async Task WhenTheToolSearchAppenderThrows_TheAssembledToolsetIsKept()
+    {
+        var assembled = new SkillToolsetResult { Functions = [new LLMFunction { Name = PinnedSkillName }] };
+        GivenTheAssemblerReturns(assembled);
+        _toolSearchAppender.AppendAsync(Arg.Any<Agent>(), Arg.Any<SkillToolsetResult>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("skill cache down"));
+
+        var result = await Prepare();
+
+        result.Toolset.ShouldBeSameAs(assembled);
+        result.Toolset.Functions.Select(f => f.Name).ShouldBe(new[] { PinnedSkillName });
+    }
+
+    [Test]
+    public async Task WithoutAnAgent_TheToolSearchAppenderIsNotCalled()
+    {
+        await CreatePreparer().PrepareAsync(
+            null, new List<string>(), CorrectionMessage, ConversationId,
+            UserId, language: "de", currentRoute: null, maxToolsForProvider: 10, CancellationToken.None);
+
+        await _toolSearchAppender.DidNotReceiveWithAnyArgs().AppendAsync(default!, default!, default);
+    }
+
+    private void GivenTheAssemblerReturns(SkillToolsetResult toolset) =>
+        _assembler.AssembleAsync(
+                Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+                Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(toolset);
 }

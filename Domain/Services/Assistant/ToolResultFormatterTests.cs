@@ -114,6 +114,7 @@ public class ToolResultFormatterTests
             Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ITurnConfirmationScope>(),
             Substitute.For<ICancellableSkillPolicy>(),
+            Substitute.For<ITurnToolsetExtension>(),
             bridge);
         var call = new LLMFunctionCall { FunctionName = WrapperSkill };
 

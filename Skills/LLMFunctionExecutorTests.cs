@@ -46,6 +46,7 @@ public class LLMFunctionExecutorTests
             PendingStoreTestFactory.CreateConfirmationStore(),
             Substitute.For<ITurnConfirmationScope>(),
             Substitute.For<ICancellableSkillPolicy>(),
+            Substitute.For<ITurnToolsetExtension>(),
             _skillBridge);
     }
 

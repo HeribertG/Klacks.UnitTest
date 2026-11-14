@@ -87,6 +87,7 @@ public class LLMServiceCutRecipeGateHoldTests
             Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ITurnConfirmationScope>(),
             Substitute.For<ICancellableSkillPolicy>(),
+            Substitute.For<ITurnToolsetExtension>(),
             _skillBridge);
 
         _confirmationStore = Substitute.For<IPendingConfirmationStore>();
