@@ -43,6 +43,7 @@ public class AssistantTextsPluginLoaderTests
         EscalationHandoffTexts.Reset();
         ScenarioNameTexts.Reset();
         ExplainOfferTexts.Reset();
+        OAuthConsentTexts.Reset();
         MessengerProactiveTexts.Reset();
 
         if (Directory.Exists(_baseDirectory))

@@ -18,5 +18,6 @@ internal static class AssistantTextCatalogues
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
         ExplainOfferTexts.Reset();
+        OAuthConsentTexts.Reset();
     }
 }

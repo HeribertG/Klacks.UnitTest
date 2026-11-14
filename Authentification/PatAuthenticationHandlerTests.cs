@@ -2,10 +2,12 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Klacks.Api.Application.Interfaces.OAuth;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Security;
 using Klacks.Api.Infrastructure.Authentication;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -271,7 +273,46 @@ public class PatAuthenticationHandlerTests
         result.Succeeded.ShouldBeTrue();
     }
 
-    private async Task<AuthenticateResult> AuthenticateAsync(string? authorizationHeader)
+    [Test]
+    public async Task AuthenticateAsync_OAuthIssuedTokenWhileModeOff_Fails()
+    {
+        var (plaintext, token) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        token.IsOAuthIssued = true;
+        SetupUser(Roles.Authorised);
+        var policy = OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthConnectionsMode, "off");
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext, policy);
+
+        result.Succeeded.ShouldBeFalse();
+        result.Failure!.Message.ShouldBe(InvalidTokenMessage);
+        await _repository.DidNotReceive().UpdateLastUsedAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_OAuthIssuedTokenWhileModeTrusted_Succeeds()
+    {
+        var (plaintext, token) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        token.IsOAuthIssued = true;
+        SetupUser(Roles.Authorised);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_ManualTokenWhileModeOff_StillSucceeds()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        SetupUser(Roles.Authorised);
+        var policy = OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthConnectionsMode, "off");
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext, policy);
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    private async Task<AuthenticateResult> AuthenticateAsync(string? authorizationHeader, IOAuthRedirectTrustPolicy? oauthPolicy = null)
     {
         var optionsMonitor = Substitute.For<IOptionsMonitor<AuthenticationSchemeOptions>>();
         optionsMonitor.Get(Arg.Any<string>()).Returns(new AuthenticationSchemeOptions());
@@ -281,7 +322,8 @@ public class PatAuthenticationHandlerTests
             NullLoggerFactory.Instance,
             UrlEncoder.Default,
             _repository,
-            _userManager);
+            _userManager,
+            oauthPolicy ?? OAuthTrustTestPolicy.Create());
 
         var context = new DefaultHttpContext();
         if (authorizationHeader != null)

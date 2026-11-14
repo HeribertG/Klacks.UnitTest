@@ -8,7 +8,9 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.OAuth;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Application.Interfaces.OAuth;
 using Klacks.Api.Domain.Models.Authentification;
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +22,8 @@ public class ExchangeOAuthTokenCommandHandlerTests
 {
     private const string KnownClientId = "client-1";
     private const string OtherClientId = "client-2";
-    private const string ClientName = "Claude";
+    private const string RegisteredNameOfAnOldClient = "Name the registrant chose";
+    private const string ToolName = "Claude";
     private const string RedirectUri = "https://claude.ai/api/mcp/auth_callback";
     private const string UserId = "user-1";
     private const string AuthorizationCode = "test-authorization-code";
@@ -63,7 +66,12 @@ public class ExchangeOAuthTokenCommandHandlerTests
         _codeStore = new OAuthAuthorizationCodeStore(
             new DataBaseContext(options, Substitute.For<IHttpContextAccessor>()),
             timeProvider);
-        _handler = new ExchangeOAuthTokenCommandHandler(_clientRepository, _codeStore, _tokenRepository);
+        _handler = Handler(OAuthTrustTestPolicy.Create());
+    }
+
+    private ExchangeOAuthTokenCommandHandler Handler(IOAuthRedirectTrustPolicy policy)
+    {
+        return new ExchangeOAuthTokenCommandHandler(_clientRepository, _codeStore, _tokenRepository, policy);
     }
 
     [Test]
@@ -160,23 +168,140 @@ public class ExchangeOAuthTokenCommandHandlerTests
         response.AccessToken.ShouldStartWith(PatConstants.TokenPrefix);
         response.TokenType.ShouldBe(OAuthConstants.TokenTypeBearer);
         response.ExpiresIn.ShouldBe(ExpectedExpiresInSeconds);
-        response.Scope.ShouldBe(OAuthConstants.McpToolsScope);
+        response.Scope.ShouldBe(OAuthConstants.McpToolsReadScope);
 
         _capturedToken.ShouldNotBeNull();
         _capturedToken!.UserId.ShouldBe(UserId);
-        _capturedToken.Name.ShouldBe(OAuthConstants.AccessTokenNamePrefix + ClientName);
+        _capturedToken.Name.ShouldBe(OAuthConstants.AccessTokenNamePrefix + ToolName);
+        _capturedToken.IsOAuthIssued.ShouldBeTrue();
+        _capturedToken.OAuthToolName.ShouldBe(ToolName);
+        _capturedToken.OAuthRedirectHost.ShouldBe("claude.ai");
         _capturedToken.ExpiresAt!.Value.ShouldBeInRange(
             before.AddDays(OAuthConstants.AccessTokenExpiresInDays),
             after.AddDays(OAuthConstants.AccessTokenExpiresInDays));
-        _capturedToken.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
+        _capturedToken.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
     }
+
+    [Test]
+    public async Task Handle_OutsideThePlayground_TokenLivesThirtyDays()
+    {
+        await StoreCode();
+        var before = DateTime.UtcNow;
+
+        var result = await _handler.Handle(Command(), CancellationToken.None);
+
+        result.Response!.ExpiresIn.ShouldBe((int)TimeSpan.FromDays(OAuthConstants.AccessTokenExpiresInDays).TotalSeconds);
+        _capturedToken!.ExpiresAt!.Value.ShouldBeInRange(
+            before.AddDays(OAuthConstants.AccessTokenExpiresInDays),
+            DateTime.UtcNow.AddDays(OAuthConstants.AccessTokenExpiresInDays));
+    }
+
+    [Test]
+    public async Task Handle_OnThePlayground_TokenLivesAtMostTwentyFourHours()
+    {
+        await StoreCode();
+        var handler = Handler(OAuthTrustTestPolicy.Create(playground: true));
+        var before = DateTime.UtcNow;
+
+        var result = await handler.Handle(Command(), CancellationToken.None);
+
+        result.Error.ShouldBeNull();
+        result.Response!.ExpiresIn.ShouldBe((int)TimeSpan.FromHours(OAuthConstants.PlaygroundAccessTokenExpiresInHours).TotalSeconds);
+        _capturedToken!.ExpiresAt!.Value.ShouldBeInRange(
+            before.AddHours(OAuthConstants.PlaygroundAccessTokenExpiresInHours),
+            DateTime.UtcNow.AddHours(OAuthConstants.PlaygroundAccessTokenExpiresInHours));
+        _capturedToken.ExpiresAt!.Value.ShouldBeLessThanOrEqualTo(DateTime.UtcNow.AddHours(24));
+    }
+
+    [Test]
+    public async Task Handle_CodeBoundToWrite_IssuesWriteTokenWithFullScope()
+    {
+        await StoreCode(PersonalAccessTokenAccessMode.Write);
+
+        var result = await _handler.Handle(Command(), CancellationToken.None);
+
+        result.Error.ShouldBeNull();
+        result.Response!.Scope.ShouldBe(OAuthConstants.McpToolsScope);
+        _capturedToken!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
+    }
+
+    [Test]
+    public async Task Handle_WriteSwitchTurnedOffAfterCodeIssue_ReturnsInvalidGrantAndIssuesNothing()
+    {
+        await StoreCode(PersonalAccessTokenAccessMode.Write);
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthAllowWrite, "false"));
+
+        var result = await handler.Handle(Command(), CancellationToken.None);
+
+        result.Response.ShouldBeNull();
+        result.Error!.Error.ShouldBe(OAuthConstants.ErrorInvalidGrant);
+        _capturedToken.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_WriteSwitchOff_StillIssuesReadCode()
+    {
+        await StoreCode(PersonalAccessTokenAccessMode.Read);
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthAllowWrite, "false"));
+
+        var result = await handler.Handle(Command(), CancellationToken.None);
+
+        result.Error.ShouldBeNull();
+        _capturedToken!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+    }
+
+    [Test]
+    public async Task Handle_ModeOffAfterCodeIssue_ReturnsInvalidGrant()
+    {
+        await StoreCode();
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthConnectionsMode, "off"));
+
+        var result = await handler.Handle(Command(), CancellationToken.None);
+
+        result.Error!.Error.ShouldBe(OAuthConstants.ErrorInvalidGrant);
+        _capturedToken.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_CodeBoundToUntrustedRedirect_ReturnsInvalidGrant()
+    {
+        await StoreCode(redirectUri: "https://evil.example.com/callback");
+
+        var result = await _handler.Handle(Command(redirectUri: "https://evil.example.com/callback"), CancellationToken.None);
+
+        result.Error!.Error.ShouldBe(OAuthConstants.ErrorInvalidGrant);
+        _capturedToken.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_TokenNameAndToolNameComeFromTheListEntryNotFromTheRegisteredClientName()
+    {
+        await StoreCode();
+
+        await _handler.Handle(Command(), CancellationToken.None);
+
+        _capturedToken!.Name.ShouldNotContain(RegisteredNameOfAnOldClient);
+        _capturedToken.OAuthToolName.ShouldNotBe(RegisteredNameOfAnOldClient);
+    }
+
+    [Test]
+    public async Task Handle_LoopbackRedirect_NamesTheTokenAfterProgramOnThisComputerWithItsHost()
+    {
+        const string loopback = "http://127.0.0.1:33418/callback";
+        await StoreCode(redirectUri: loopback);
+
+        await _handler.Handle(Command(redirectUri: loopback), CancellationToken.None);
+
+        _capturedToken!.Name.ShouldBe(OAuthConstants.AccessTokenNamePrefix + OAuthTrustedRedirects.LocalProgramDisplayName);
+        _capturedToken.OAuthRedirectHost.ShouldBe("127.0.0.1");
+    }
+
 
     private static OAuthClient Client(string clientId)
     {
         return new OAuthClient
         {
             ClientId = clientId,
-            ClientName = ClientName,
             RedirectUrisJson = JsonSerializer.Serialize(new List<string> { RedirectUri })
         };
     }
@@ -191,15 +316,14 @@ public class ExchangeOAuthTokenCommandHandlerTests
         return new ExchangeOAuthTokenCommand(grantType, code, redirectUri, clientId, codeVerifier);
     }
 
-    private async Task StoreCode()
+    private async Task StoreCode(PersonalAccessTokenAccessMode accessMode = PersonalAccessTokenAccessMode.Read, string redirectUri = RedirectUri)
     {
         await _codeStore.StoreAsync(AuthorizationCode, new OAuthAuthorizationCodeData(
             UserId: UserId,
             ClientId: KnownClientId,
-            ClientName: ClientName,
-            RedirectUri: RedirectUri,
+            RedirectUri: redirectUri,
             CodeChallenge: ComputeS256Challenge(CodeVerifier),
-            Scope: OAuthConstants.McpToolsScope));
+            AccessMode: accessMode));
     }
 
     private static string ComputeS256Challenge(string codeVerifier)

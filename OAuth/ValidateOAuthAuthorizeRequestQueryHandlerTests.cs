@@ -4,7 +4,9 @@ using System.Text.Json;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Application.Queries.OAuth;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Application.Interfaces.OAuth;
 using Klacks.Api.Domain.Models.Authentification;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.OAuth;
 
@@ -15,7 +17,8 @@ public class ValidateOAuthAuthorizeRequestQueryHandlerTests
     private const string UnknownClientId = "client-unknown";
     private const string RegisteredRedirectUri = "https://claude.ai/api/mcp/auth_callback";
     private const string UnregisteredRedirectUri = "https://evil.example.com/callback";
-    private const string ClientName = "Claude";
+    private const string EvilRegisteredUri = "https://evil.example.com/callback";
+    private const string EvilClientId = "client-evil";
     private const string CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
     private IOAuthClientRepository _repository = null!;
@@ -28,10 +31,19 @@ public class ValidateOAuthAuthorizeRequestQueryHandlerTests
         _repository.GetByClientIdAsync(KnownClientId, Arg.Any<CancellationToken>()).Returns(new OAuthClient
         {
             ClientId = KnownClientId,
-            ClientName = ClientName,
             RedirectUrisJson = JsonSerializer.Serialize(new List<string> { RegisteredRedirectUri })
         });
-        _handler = new ValidateOAuthAuthorizeRequestQueryHandler(_repository);
+        _repository.GetByClientIdAsync(EvilClientId, Arg.Any<CancellationToken>()).Returns(new OAuthClient
+        {
+            ClientId = EvilClientId,
+            RedirectUrisJson = JsonSerializer.Serialize(new List<string> { EvilRegisteredUri })
+        });
+        _handler = Handler(OAuthTrustTestPolicy.Create());
+    }
+
+    private ValidateOAuthAuthorizeRequestQueryHandler Handler(IOAuthRedirectTrustPolicy policy)
+    {
+        return new ValidateOAuthAuthorizeRequestQueryHandler(_repository, policy);
     }
 
     [Test]
@@ -105,13 +117,61 @@ public class ValidateOAuthAuthorizeRequestQueryHandlerTests
     }
 
     [Test]
-    public async Task Handle_HappyPath_ReturnsClientNameAndRedirectUri()
+    public async Task Handle_HappyPath_ReturnsListEntryAndRedirectUriNotTheRegisteredName()
     {
         var result = await _handler.Handle(Query(), CancellationToken.None);
 
         result.IsValid.ShouldBeTrue();
-        result.ClientName.ShouldBe(ClientName);
+        result.Match!.DisplayName.ShouldBe("Claude");
+        result.Match.Host.ShouldBe("claude.ai");
+        result.Match.Class.ShouldBe(OAuthRedirectClass.Vendor);
         result.EffectiveRedirectUri.ShouldBe(RegisteredRedirectUri);
+        result.IsWriteAllowed.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Handle_OldRegistrationWithForeignTarget_IsRejectedWithoutRedirect()
+    {
+        var result = await _handler.Handle(Query(clientId: EvilClientId, redirectUri: EvilRegisteredUri), CancellationToken.None);
+
+        result.IsValid.ShouldBeFalse();
+        result.CanRedirectError.ShouldBeFalse();
+        result.Error.ShouldBe(OAuthConstants.ErrorInvalidRequest);
+        result.ErrorDescription.ShouldContain("https://evil.example.com");
+        result.EffectiveRedirectUri.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_OldRegistrationWithForeignTargetAndNoRedirectParameter_IsRejectedWithoutRedirect()
+    {
+        var result = await _handler.Handle(Query(clientId: EvilClientId, redirectUri: null), CancellationToken.None);
+
+        result.IsValid.ShouldBeFalse();
+        result.CanRedirectError.ShouldBeFalse();
+        result.EffectiveRedirectUri.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_ModeOff_RejectsEvenListedVendorsWithoutRedirect()
+    {
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthConnectionsMode, "off"));
+
+        var result = await handler.Handle(Query(), CancellationToken.None);
+
+        result.IsValid.ShouldBeFalse();
+        result.CanRedirectError.ShouldBeFalse();
+        result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+    }
+
+    [Test]
+    public async Task Handle_WriteSwitchOff_ReportsWriteNotAllowed()
+    {
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthAllowWrite, "false"));
+
+        var result = await handler.Handle(Query(), CancellationToken.None);
+
+        result.IsValid.ShouldBeTrue();
+        result.IsWriteAllowed.ShouldBeFalse();
     }
 
     private static ValidateOAuthAuthorizeRequestQuery Query(

@@ -40,6 +40,7 @@ public class AssistantTextsPackCoverageTests
         ScenarioNameTexts.Reset();
         MessengerProactiveTexts.Reset();
         ExplainOfferTexts.Reset();
+        OAuthConsentTexts.Reset();
     }
 
     /// <summary>

@@ -59,6 +59,14 @@ public class BlockedSettingKeysOnPlaygroundFilterTests
     private static string[] UpdateKeyConstants() =>
         [SettingConstants.UPDATE_CHANNEL, SettingConstants.UPDATE_PINNED_VERSION];
 
+    private static string[] OAuthKeyConstants() =>
+        [
+            Klacks.Api.Domain.Constants.SettingKeys.OAuthConnectionsMode,
+            Klacks.Api.Domain.Constants.SettingKeys.OAuthAllowLoopback,
+            Klacks.Api.Domain.Constants.SettingKeys.OAuthAllowWrite,
+            Klacks.Api.Domain.Constants.SettingKeys.OAuthCustomRedirectTargets
+        ];
+
     private ActionExecutingContext Executing(string key, Guid? id = null) =>
         new(
             _actionContext,
@@ -76,12 +84,21 @@ public class BlockedSettingKeysOnPlaygroundFilterTests
     };
 
     [Test]
-    public void BlockedKeyList_CoversEverySpeechAndTranslationKeyConstant()
+    public void BlockedKeyList_CoversEverySpeechTranslationUpdateAndOAuthKeyConstant()
     {
-        var expected = SpeechKeyConstants().Concat(UpdateKeyConstants()).ToArray();
+        var expected = SpeechKeyConstants().Concat(UpdateKeyConstants()).Concat(OAuthKeyConstants()).ToArray();
 
         expected.ShouldNotBeEmpty();
         PlaygroundBlockedSettingKeys.Keys.OrderBy(k => k).ShouldBe(expected.OrderBy(k => k));
+    }
+
+    [Test]
+    public void ModeOn_OAuthTrustSettings_AreBlockedSoTheDemoAdminCannotChangeTheTrustedList()
+    {
+        foreach (var key in OAuthKeyConstants())
+        {
+            PlaygroundBlockedSettingKeys.IsBlocked(key).ShouldBeTrue(key);
+        }
     }
 
     [Test]

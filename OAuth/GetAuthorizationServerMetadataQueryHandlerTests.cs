@@ -50,6 +50,6 @@ public class GetAuthorizationServerMetadataQueryHandlerTests
         metadata.GrantTypesSupported.ShouldBe([OAuthConstants.GrantTypeAuthorizationCode]);
         metadata.CodeChallengeMethodsSupported.ShouldBe([OAuthConstants.CodeChallengeMethodS256]);
         metadata.TokenEndpointAuthMethodsSupported.ShouldBe([OAuthConstants.TokenEndpointAuthMethodNone]);
-        metadata.ScopesSupported.ShouldBe([OAuthConstants.McpToolsScope]);
+        metadata.ScopesSupported.ShouldBe([OAuthConstants.McpToolsScope, OAuthConstants.McpToolsReadScope]);
     }
 }
