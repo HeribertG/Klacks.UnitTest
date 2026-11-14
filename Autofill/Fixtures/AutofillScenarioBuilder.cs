@@ -42,6 +42,7 @@ public sealed class AutofillScenarioBuilder
     private int? _orderCount;
     private bool _reverseShiftInsertionOrder;
     private bool _includeDayShift;
+    private int? _seatsPerShift;
 
     /// <param name="from">First day of the planning period</param>
     /// <param name="until">Last day of the planning period, inclusive</param>
@@ -200,6 +201,19 @@ public sealed class AutofillScenarioBuilder
     }
 
     /// <summary>
+    /// Gives every slot of the order-less shift triple the given number of required assignments, like a shift of
+    /// quantity n in the product: one slot per kind and day that n employees fill. Used by the scale measurements
+    /// (50 employees, 10 seats per kind and day); the orders of scenario 4 and later stay one seat per slot.
+    /// </summary>
+    /// <param name="seats">Required assignments per slot, at least one</param>
+    public AutofillScenarioBuilder WithSeatsPerShift(int seats)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(seats, 1);
+        _seatsPerShift = seats;
+        return this;
+    }
+
+    /// <summary>
     /// Adds in-period locked works the engine must keep immutable — the frozen-prefix replanning
     /// input: pass the result of <c>FrozenPrefix.BuildLockedWorks</c> to freeze an existing plan
     /// up to a replan date.
@@ -269,6 +283,12 @@ public sealed class AutofillScenarioBuilder
             {
                 throw new InvalidOperationException(string.Join(Environment.NewLine, orderingProblems));
             }
+        }
+
+        if (_seatsPerShift.HasValue && _orderCount.HasValue)
+        {
+            throw new InvalidOperationException(
+                "Seats per shift apply to the order-less shift triple only; the orders model parallel seats as slots of their own.");
         }
 
         if (_includeDayShift && !_orderCount.HasValue)
@@ -374,7 +394,10 @@ public sealed class AutofillScenarioBuilder
     {
         if (!_orderCount.HasValue)
         {
-            return AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil);
+            var triple = AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil);
+            return _seatsPerShift is { } seats
+                ? triple.Select(shift => shift with { RequiredAssignments = seats }).ToList()
+                : triple;
         }
 
         var shifts = AutofillShiftCatalog.BuildDailyShifts(
