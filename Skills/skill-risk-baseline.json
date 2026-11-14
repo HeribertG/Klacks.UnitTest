@@ -249,6 +249,7 @@
   "find_customer_candidates": "ReadOnly",
   "find_replacement": "ReadOnly",
   "find_split_shift_candidates": "ReadOnly",
+  "find_tools": "ReadOnly",
   "generate_period_summary": "ReadOnly",
   "geocode_addresses": "FillEmptyOnly",
   "geocode_location_groups": "Irreversible",

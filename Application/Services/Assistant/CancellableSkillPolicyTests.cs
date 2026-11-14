@@ -48,6 +48,7 @@ public class CancellableSkillPolicyTests
             ["get_system_info"] = "reports host information",
             ["get_user_context"] = "reads the caller's identity claims",
             ["get_user_permissions"] = "derives descriptive text from the caller's rights",
+            ["find_tools"] = "searches the skill index and offers the hits to the current turn in memory",
             ["list_agent_skills"] = "lists enabled skills through a read-only repository call"
         };
 
