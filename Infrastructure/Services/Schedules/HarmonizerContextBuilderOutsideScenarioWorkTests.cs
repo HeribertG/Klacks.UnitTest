@@ -117,18 +117,82 @@ public class HarmonizerContextBuilderOutsideScenarioWorkTests
         annaCell.IsLocked.ShouldBeFalse();
     }
 
-    [Test]
-    public async Task RealPlanRun_ReadsAnnasNightWorkOnce_AsTheMovableWorkItIs()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task RealPlanRun_ReadsAnnasNightWorkOnce_AsTheMovableWorkItIs(bool loadPlanningRules)
     {
         SeedWork(_anna, _realNightShift, Day, NightStart, NightEnd, analyseToken: null, WorkLockLevel.None);
         await _context.SaveChangesAsync();
 
-        var input = await BuildSut().BuildContextAsync(Request(analyseToken: null), CancellationToken.None);
+        var request = Request(analyseToken: null) with { LoadPlanningRules = loadPlanningRules };
+        var input = await BuildSut().BuildContextAsync(request, CancellationToken.None);
 
         var annaAssignments = input.Assignments.Where(a => a.AgentId == _anna.ToString() && a.Date == Day).ToList();
         annaAssignments.Count.ShouldBe(1, "without a scenario the work is read once from the plan itself");
         annaAssignments[0].IsLocked.ShouldBeFalse();
         annaAssignments[0].WorkIds.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SubstituteOnARealWorkOutsideTheScenario_IsALockedCell_SoNoSwapHandsAnnaASecondShift()
+    {
+        var carlsNight = SeedWork(Guid.NewGuid(), _realNightShift, Day, NightStart, NightEnd, analyseToken: null, WorkLockLevel.None);
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = carlsNight,
+            Type = WorkChangeType.ReplacementWithin,
+            ReplaceClientId = _anna,
+            StartTime = NightStart,
+            EndTime = NightEnd,
+            ChangeTime = ShiftHours,
+        });
+        SeedWork(_bob, _scenarioCareShift, Day, EarlyStart, EarlyEnd, _token, WorkLockLevel.None);
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(Request(_token), CancellationToken.None);
+        var bitmap = BitmapBuilder.Build(input);
+        var annaRow = RowOf(bitmap, _anna);
+        var dayIndex = DayIndexOf(bitmap, Day);
+
+        var annaCell = bitmap.GetCell(annaRow, dayIndex);
+        annaCell.Symbol.ShouldBe(CellSymbol.Night, "Anna covers Carl's Night shift in the other group that day");
+        annaCell.IsLocked.ShouldBeTrue();
+        annaCell.Hours.ShouldBe(ShiftHours, "the covered hours count toward Anna's hours");
+
+        var rejection = new PlanMutationValidator(new DomainAwareReplaceValidator(input.Availability))
+            .Validate(bitmap, new PlanCellSwap(annaRow, dayIndex, RowOf(bitmap, _bob), dayIndex, "test"));
+        rejection.ShouldNotBeNull("a swap would give Anna the Care shift on top of the Night shift she covers");
+        rejection.Reason.ShouldBe(PlanMutationRejectionReason.LockedCell);
+    }
+
+    [Test]
+    public async Task WorkMovedToAnnaOnAShiftOutsideTheScenario_IsALockedCellOfAnna()
+    {
+        var moved = SeedWork(_anna, _realNightShift, Day, NightStart, NightEnd, analyseToken: null, WorkLockLevel.None);
+        (await _context.Work.FindAsync(moved))!.MovedFromClientId = Guid.NewGuid();
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(Request(_token), CancellationToken.None);
+        var bitmap = BitmapBuilder.Build(input);
+
+        var annaCell = bitmap.GetCell(RowOf(bitmap, _anna), DayIndexOf(bitmap, Day));
+        annaCell.Symbol.ShouldBe(CellSymbol.Night, "the cover move made the Night work Anna's own work");
+        annaCell.IsLocked.ShouldBeTrue();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task QualificationReport_ScansAnnasForeignCell_InTheScenarioAsOnTheRealPlan(bool scenarioRun)
+    {
+        SeedWork(_anna, _realNightShift, Day, NightStart, NightEnd, analyseToken: null, WorkLockLevel.None);
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(Request(scenarioRun ? _token : null), CancellationToken.None);
+        var scanned = QualificationGapReportBuilder.ExtractBitmapAssignments(BitmapBuilder.Build(input));
+
+        scanned.ShouldContain(a => a.AgentId == _anna.ToString() && a.ShiftId == _realNightShift && a.Date == Day,
+            "the report lists every duty the person holds in the plan, the foreign one included, with or without a scenario");
     }
 
     [Test]
@@ -168,10 +232,12 @@ public class HarmonizerContextBuilderOutsideScenarioWorkTests
         return id;
     }
 
-    private void SeedWork(Guid agent, Guid shiftId, DateOnly date, TimeOnly start, TimeOnly end, Guid? analyseToken, WorkLockLevel lockLevel)
-        => _context.Work.Add(new Work
+    private Guid SeedWork(Guid agent, Guid shiftId, DateOnly date, TimeOnly start, TimeOnly end, Guid? analyseToken, WorkLockLevel lockLevel)
+    {
+        var id = Guid.NewGuid();
+        _context.Work.Add(new Work
         {
-            Id = Guid.NewGuid(),
+            Id = id,
             ClientId = agent,
             ShiftId = shiftId,
             CurrentDate = date,
@@ -181,6 +247,8 @@ public class HarmonizerContextBuilderOutsideScenarioWorkTests
             AnalyseToken = analyseToken,
             LockLevel = lockLevel,
         });
+        return id;
+    }
 
     private void StubContracts(params Guid[] agents)
     {

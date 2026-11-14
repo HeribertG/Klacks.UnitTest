@@ -692,6 +692,52 @@ public class WizardHardConstraintBuilderTests
         result.ExistingWorkBlockers.ShouldBeEmpty("the scenario decides the group's shifts and handed this one to a colleague");
     }
 
+    [Test]
+    public async Task BuildAsync_Scenario_SubstituteOnARealWorkOutsideTheScenario_IsAnExistingWorkBlocker()
+    {
+        var token = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 21);
+        var outsidersWork = ForeignWork(Guid.NewGuid(), Guid.NewGuid(), date, WorkLockLevel.None, token: null);
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = outsidersWork.Id,
+            Type = WorkChangeType.ReplacementWithin,
+            ReplaceClientId = agent,
+            StartTime = outsidersWork.StartTime,
+            EndTime = outsidersWork.EndTime,
+            ChangeTime = outsidersWork.WorkTime,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], date, date, token, CancellationToken.None);
+
+        var blocker = result.ExistingWorkBlockers.ShouldHaveSingleItem("the agent covers a real duty in another group that day");
+        blocker.AgentId.ShouldBe(agent.ToString());
+        blocker.Date.ShouldBe(date);
+        blocker.Hours.ShouldBe(outsidersWork.WorkTime);
+    }
+
+    [Test]
+    public async Task BuildAsync_Scenario_RealWorkOutsideTheScenarioBeforeReplanFrom_StaysAnExistingWorkBlocker()
+    {
+        var token = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        var replanFrom = new DateOnly(2026, 4, 22);
+        var dayBeforeCut = replanFrom.AddDays(-1);
+        ForeignWork(agent, Guid.NewGuid(), dayBeforeCut, WorkLockLevel.None, token: null);
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], from, until, token, CancellationToken.None, replanFrom);
+
+        result.ExistingWorkBlockers.Select(b => b.Date).ShouldBe(
+            [dayBeforeCut], "the duty in the other group still bounds the rest and the weekly hours at the cut");
+        result.LockedWorks.ShouldBeEmpty("a real work never becomes a token of the scenario run");
+    }
+
     private Work ForeignWork(Guid client, Guid shift, DateOnly date, WorkLockLevel lockLevel, Guid? token)
     {
         var work = new Work
