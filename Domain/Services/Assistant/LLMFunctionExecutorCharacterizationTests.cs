@@ -48,6 +48,7 @@ public class LLMFunctionExecutorCharacterizationTests
         Substitute.For<IPendingConfirmationStore>(),
         _turnScope,
         Substitute.For<ICancellableSkillPolicy>(),
+        Substitute.For<ITurnToolsetExtension>(),
         skillBridge);
 
     private static LLMContext Ctx(bool isVoiceMode = false) => new()

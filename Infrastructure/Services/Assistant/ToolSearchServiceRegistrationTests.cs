@@ -45,7 +45,7 @@ public class ToolSearchServiceRegistrationTests
     [Test]
     public void OneScope_SharesOneExtensionInstance()
     {
-        var services = new ServiceCollection();
+        IServiceCollection services = new ServiceCollection();
         services.Add(Descriptor<ITurnToolsetExtension>());
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -65,7 +65,7 @@ public class ToolSearchServiceRegistrationTests
             settings[ToolSearchOptions.EnabledConfigKey] = configured;
         }
 
-        var services = new ServiceCollection();
+        IServiceCollection services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
         services.Add(Descriptor<ToolSearchOptions>());
         using var provider = services.BuildServiceProvider();
