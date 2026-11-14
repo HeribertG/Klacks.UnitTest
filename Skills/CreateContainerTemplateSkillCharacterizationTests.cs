@@ -63,7 +63,7 @@ public class CreateContainerTemplateSkillCharacterizationTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
     }
 
     [TearDown]
@@ -340,7 +340,7 @@ public class CreateContainerTemplateSkillCharacterizationTests
         _api.Respond(HttpMethod.Post, LockAcquireRoute, new ContainerLockResource { Id = LockId, Acquired = true });
         _api.Respond(HttpMethod.Post, TemplatesRoute, Created(2, isHoliday: false, isWeekdayAndHoliday: false));
         var skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -359,7 +359,7 @@ public class CreateContainerTemplateSkillCharacterizationTests
             throw new InvalidOperationException("no route");
         });
         var skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, routes, _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, routes, _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         (await Should.ThrowAsync<InvalidOperationException>(() => skill.ExecuteAsync(Ctx(), Params())))
             .Message.ShouldBe("no route");

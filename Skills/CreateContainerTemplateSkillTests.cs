@@ -72,7 +72,7 @@ public class CreateContainerTemplateSkillTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
     }
 
     [TearDown]
@@ -296,7 +296,7 @@ public class CreateContainerTemplateSkillTests
         api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         return api;
     }
@@ -340,7 +340,7 @@ public class CreateContainerTemplateSkillTests
     {
         _skill = new CreateContainerTemplateSkill(
             _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(),
-            ShiftVisibilityGuards.Hiding(ContainerId));
+            ShiftVisibilityGuards.Hiding(ContainerId), Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 

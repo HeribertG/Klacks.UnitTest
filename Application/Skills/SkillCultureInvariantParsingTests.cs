@@ -159,7 +159,7 @@ public class SkillCultureInvariantParsingTests
             Substitute.For<IContainerTemplateRepository>(),
             Substitute.For<IKlacksSelfApiClient>(),
             Substitute.For<ISelfApiRouteResolver>(),
-            Substitute.For<IShiftVisibilityGuard>());
+            Substitute.For<IShiftVisibilityGuard>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         await InEveryProcessCultureAsync(async () =>
         {
@@ -210,7 +210,7 @@ public class SkillCultureInvariantParsingTests
             Substitute.For<IContainerTemplateRepository>(),
             Substitute.For<IKlacksSelfApiClient>(),
             Substitute.For<ISelfApiRouteResolver>(),
-            Substitute.For<IShiftVisibilityGuard>());
+            Substitute.For<IShiftVisibilityGuard>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateContainerTemplateSkill>.Instance);
 
         await InEveryProcessCultureAsync(async () =>
         {

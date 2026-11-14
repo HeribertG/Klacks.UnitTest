@@ -68,7 +68,7 @@ public class DeleteContainerTemplateSkillCharacterizationTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new DeleteContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteContainerTemplateSkill>.Instance);
     }
 
     [TearDown]
@@ -306,7 +306,7 @@ public class DeleteContainerTemplateSkillCharacterizationTests
             throw new InvalidOperationException("no route");
         });
         var skill = new DeleteContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, routes, _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, routes, _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteContainerTemplateSkill>.Instance);
 
         (await Should.ThrowAsync<InvalidOperationException>(() => skill.ExecuteAsync(Ctx(), Params())))
             .Message.ShouldBe("no route");

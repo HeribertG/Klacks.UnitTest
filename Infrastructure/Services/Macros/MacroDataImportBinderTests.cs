@@ -70,7 +70,7 @@ public class MacroDataImportBinderTests
         var management = Substitute.For<IMacroManagementService>();
         management.GetMacroAsync(macroId).Returns(new Macro { Id = macroId, Name = "probe", Content = ChannelProbeScript });
         var service = new MacroCompilationService(
-            management, new MacroCache(), new MacroEngine(), NullLogger<MacroCompilationService>.Instance);
+            management, new MacroCache(), new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance), NullLogger<MacroCompilationService>.Instance);
 
         var result = await service.CompileAndExecuteAsync(macroId, CreateSampleData());
 

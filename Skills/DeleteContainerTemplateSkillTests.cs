@@ -71,7 +71,7 @@ public class DeleteContainerTemplateSkillTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new DeleteContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard, Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteContainerTemplateSkill>.Instance);
     }
 
     [TearDown]
@@ -282,7 +282,7 @@ public class DeleteContainerTemplateSkillTests
     {
         _skill = new DeleteContainerTemplateSkill(
             _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(),
-            ShiftVisibilityGuards.Hiding(ContainerId));
+            ShiftVisibilityGuards.Hiding(ContainerId), Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteContainerTemplateSkill>.Instance);
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 

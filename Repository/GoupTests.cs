@@ -55,7 +55,7 @@ internal class GoupTests
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService();
+        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService(new Klacks.UnitTest.TestHelpers.FixedCompanyClock(DateTimeOffset.UtcNow));
         var searchService = new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
@@ -64,7 +64,7 @@ internal class GoupTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(),
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,

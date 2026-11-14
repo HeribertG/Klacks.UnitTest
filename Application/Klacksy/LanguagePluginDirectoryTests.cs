@@ -12,6 +12,7 @@ using System.Text.Json;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Klacksy;
@@ -20,6 +21,7 @@ namespace Klacks.UnitTest.Application.Klacksy;
 public class LanguagePluginDirectoryTests
 {
     private const string PackCode = "xx";
+    private const string EscapedDirectoryName = "escaped";
     private const string BrokenJson = "{ this is not json";
     private const string BaseDirectoryName = "app-base";
     private const string ConfiguredDirectoryName = "relocated-packs";
@@ -183,6 +185,22 @@ public class LanguagePluginDirectoryTests
 
         new PhoneticConfigProvider(_configuredDirectory).GetForLocale(PackCode).MinWordLength.ShouldBe(RelocatedMinWordLength);
         new PhoneticConfigProvider().GetForLocale(PackCode).MinWordLength.ShouldNotBe(RelocatedMinWordLength);
+    }
+
+    [Test]
+    public void ThePhoneticConfigProvider_RefusesALocaleThatEscapesThePluginDirectory_AndLogsAWarning()
+    {
+        var escapedDirectory = Path.Combine(_root, EscapedDirectoryName);
+        Directory.CreateDirectory(escapedDirectory);
+        File.WriteAllText(
+            Path.Combine(escapedDirectory, LanguagePluginConstants.PhoneticsFileName),
+            JsonSerializer.Serialize(new { enabled = true, minWordLength = RelocatedMinWordLength }));
+        var logger = new RecordingLogger<PhoneticConfigProvider>();
+
+        var config = new PhoneticConfigProvider(_configuredDirectory, logger).GetForLocale("../" + EscapedDirectoryName);
+
+        config.MinWordLength.ShouldNotBe(RelocatedMinWordLength);
+        logger.Entries.ShouldContain(entry => entry.Level == LogLevel.Warning);
     }
 
     private string PackFile(string fileName) => Path.Combine(_packDirectory, fileName);

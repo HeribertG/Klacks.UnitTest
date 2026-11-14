@@ -49,7 +49,7 @@ internal class ExportClientListSelectionTests
             _dbContext,
             groupFilterService,
             new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService(),
-            new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService(new Klacks.UnitTest.TestHelpers.FixedCompanyClock(DateTimeOffset.UtcNow)),
             new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService(),
             new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService(),
             Substitute.For<IClientFuzzySearchService>());

@@ -113,7 +113,7 @@ OUTPUT 1, Hour";
         var macroManagement = Substitute.For<IMacroManagementService>();
         macroManagement.GetMacroAsync(MacroId).Returns(new Macro { Id = MacroId, Name = "Vacation", Content = VacationMacro });
         var compilation = new MacroCompilationService(
-            macroManagement, new MacroCache(), new MacroEngine(), NullLogger<MacroCompilationService>.Instance);
+            macroManagement, new MacroCache(), new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance), NullLogger<MacroCompilationService>.Instance);
 
         _breakMacroService = new BreakMacroService(_context, macroDataProvider, compilation, NullLogger<BreakMacroService>.Instance);
 

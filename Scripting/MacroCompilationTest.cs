@@ -159,7 +159,7 @@ output 1, result
 
         Console.WriteLine($"Cloned ExternalSymbols after set: [{string.Join(", ", clone.ExternalSymbols.Keys)}]");
 
-        var engine = new MacroEngine();
+        var engine = new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance);
         var results = engine.RunWithScript(clone);
 
         Console.WriteLine($"ErrorNumber: {engine.ErrorNumber}");
