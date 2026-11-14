@@ -190,10 +190,10 @@ public class HarmonizerApplyServiceCaptureTests
 
         await BuildHarmonizerSut().ApplyAsScenarioAsync(
             StoreScenarioSourceResult(Guid.NewGuid()), groupId, CancellationToken.None,
-            nameKind: ScenarioNameKind.AutoHarmonizer, language: SpanishUser);
+            nameKind: ScenarioNameKind.Auto, language: SpanishUser);
 
         await _nameGenerator.Received(1).GenerateAsync(
-            ScenarioNameKind.AutoHarmonizer, D, D, groupId, SpanishUser, Arg.Any<CancellationToken>());
+            ScenarioNameKind.Auto, D, D, groupId, SpanishUser, Arg.Any<CancellationToken>());
     }
 
     [Test]

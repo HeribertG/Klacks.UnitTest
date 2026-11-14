@@ -20,7 +20,7 @@ public static class AutofillChainCategories
         + "scenario suite; select it with TestCategory=AutofillChainQuality.";
 
     public const string ExplicitReasonLarge =
-        "Measurement of the autofill chain Wizard 1 -> 2 -> 3 on a large scenario (15 or 17 employees, 279 or 372 shifts); "
+        "Measurement of the autofill chain Wizard 1 -> 3 (Wizard 2 for comparison) on a large scenario (15 or 17 employees, 279 or 372 shifts); "
         + "runs for an hour or more and needs the run1 artifact of the scenario suite; select it with "
         + "TestCategory=AutofillChainQualityLarge.";
 }
