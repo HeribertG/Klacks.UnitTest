@@ -7,6 +7,7 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Services.Common;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 using Klacks.UnitTest.TestHelpers;
@@ -38,7 +39,7 @@ public class PutCommandValidatorTests
         _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
         _validator = new PutCommandValidator(
             geocoding, stateResolver, countryResolver, addressRepository, _shiftRepository, Substitute.For<IClientRepository>(),
-            _clientVisibilityGuard, _groupVisibilityGuard);
+            _clientVisibilityGuard, _groupVisibilityGuard, NullLogger<AddressGeocodingValidator>.Instance);
     }
 
     [Test]

@@ -1227,6 +1227,27 @@ public class AgentTriggerServiceTests
             Is.True,
             "The per-event summary line must account for the recipients that lost their row.");
     }
+
+    [Test]
+    public async Task OnEventAsync_PersistenceFailsAndTheDuplicateLookupFailsToo_ReportsTheLostRowInsteadOfCallingItADuplicate()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dispatchRepository
+            .RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("insert failed")));
+        _dispatchRepository
+            .WasDispatchedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false), Task.FromException<bool>(new InvalidOperationException("lookup failed")));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Plain summary."));
+
+        Assert.That(_logger.Entries.Count(e => e.Level == LogLevel.Error
+            && e.Message.Contains("persistence failed", StringComparison.Ordinal)), Is.EqualTo(1));
+        Assert.That(_logger.Entries.Count(e => e.Level == LogLevel.Warning
+            && e.Message.Contains("Duplicate lookup", StringComparison.Ordinal)), Is.EqualTo(1));
+        Assert.That(_logger.Entries.Any(e => e.Message.Contains("concurrent dispatch", StringComparison.Ordinal)), Is.False);
+    }
 }
 
 /// <summary>

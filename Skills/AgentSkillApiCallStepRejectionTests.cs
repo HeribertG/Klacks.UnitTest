@@ -13,6 +13,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -64,7 +65,7 @@ public class AgentSkillApiCallStepRejectionTests
     [Test]
     public async Task CreateAgentSkill_WithAnApiCallStep_IsRefused_AndNothingIsStored()
     {
-        var sut = new CreateAgentSkillSkill(_skillRepository, _agentRepository, _phraseRepository, _catalogRefresher);
+        var sut = new CreateAgentSkillSkill(_skillRepository, _agentRepository, _phraseRepository, _catalogRefresher, NullLogger<CreateAgentSkillSkill>.Instance);
 
         var result = await sut.ExecuteAsync(Context(), Parameters(("name", "wipe_clients"), ("description", "d"), ("handlerSteps", ApiCallSteps)));
 
@@ -77,7 +78,7 @@ public class AgentSkillApiCallStepRejectionTests
     [Test]
     public async Task CreateAgentSkill_WithNavigationSteps_IsStillCreated()
     {
-        var sut = new CreateAgentSkillSkill(_skillRepository, _agentRepository, _phraseRepository, _catalogRefresher);
+        var sut = new CreateAgentSkillSkill(_skillRepository, _agentRepository, _phraseRepository, _catalogRefresher, NullLogger<CreateAgentSkillSkill>.Instance);
 
         var result = await sut.ExecuteAsync(Context(), Parameters(("name", "open_settings"), ("description", "d"), ("handlerSteps", NavigateSteps)));
 
@@ -92,7 +93,7 @@ public class AgentSkillApiCallStepRejectionTests
     {
         var existing = new AgentSkill { Name = "open_settings", HandlerConfig = "{\"steps\":" + NavigateSteps + "}" };
         _skillRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentSkill> { existing });
-        var sut = new UpdateAgentSkillSkill(_skillRepository, _phraseRepository, _catalogRefresher);
+        var sut = new UpdateAgentSkillSkill(_skillRepository, _phraseRepository, _catalogRefresher, NullLogger<UpdateAgentSkillSkill>.Instance);
 
         var result = await sut.ExecuteAsync(Context(), Parameters(("skillName", "open_settings"), ("handlerSteps", ApiCallSteps)));
 
@@ -107,7 +108,7 @@ public class AgentSkillApiCallStepRejectionTests
     {
         var existing = new AgentSkill { Name = "open_settings", HandlerConfig = "{}" };
         _skillRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentSkill> { existing });
-        var sut = new UpdateAgentSkillSkill(_skillRepository, _phraseRepository, _catalogRefresher);
+        var sut = new UpdateAgentSkillSkill(_skillRepository, _phraseRepository, _catalogRefresher, NullLogger<UpdateAgentSkillSkill>.Instance);
 
         var result = await sut.ExecuteAsync(Context(), Parameters(("skillName", "open_settings"), ("handlerSteps", NavigateSteps)));
 

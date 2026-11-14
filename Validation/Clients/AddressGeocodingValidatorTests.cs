@@ -5,6 +5,8 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -17,6 +19,7 @@ public class AddressGeocodingValidatorTests
     private ICountryResolver _countryResolver = null!;
     private IAddressRepository _addressRepository = null!;
     private StateAbbreviationResolver _stateResolver = null!;
+    private RecordingLogger<AddressGeocodingValidator> _logger = null!;
     private AddressGeocodingValidator _validator = null!;
 
     [SetUp]
@@ -26,7 +29,8 @@ public class AddressGeocodingValidatorTests
         _countryResolver = Substitute.For<ICountryResolver>();
         _addressRepository = Substitute.For<IAddressRepository>();
         _stateResolver = new StateAbbreviationResolver(Substitute.For<IStateRepository>());
-        _validator = new AddressGeocodingValidator(_geocoding, _stateResolver, _countryResolver, _addressRepository);
+        _logger = new RecordingLogger<AddressGeocodingValidator>();
+        _validator = new AddressGeocodingValidator(_geocoding, _stateResolver, _countryResolver, _addressRepository, _logger);
     }
 
     [Test]
@@ -152,5 +156,30 @@ public class AddressGeocodingValidatorTests
 
         Assert.That(result.IsValid, Is.True);
         Assert.That(address.Latitude, Is.Null);
+    }
+
+    [Test]
+    public async Task GeocoderThrows_DoesNotBlockTheSave_AndLogsAWarningWithoutTheAddress()
+    {
+        _geocoding.ValidateExactAddressAsync(Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns<GeocodingValidationResult>(_ => throw new InvalidOperationException("boom"));
+
+        var address = new AddressResource
+        {
+            Id = Guid.Empty,
+            Street = "Bahnhofstrasse 1",
+            Zip = "8001",
+            City = "Zürich",
+            Country = "CH"
+        };
+
+        var result = await _validator.ValidateAsync(new List<AddressResource> { address });
+
+        Assert.That(result.IsValid, Is.True);
+        Assert.That(address.Latitude, Is.Null);
+        var warnings = _logger.Entries.Where(entry => entry.Level == LogLevel.Warning).ToList();
+        Assert.That(warnings, Has.Count.EqualTo(1));
+        Assert.That(warnings[0].Exception, Is.InstanceOf<InvalidOperationException>());
+        Assert.That(warnings[0].Message, Does.Not.Contain("Bahnhofstrasse"));
     }
 }

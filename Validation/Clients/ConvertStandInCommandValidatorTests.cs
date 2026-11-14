@@ -12,6 +12,7 @@ using Klacks.Api.Application.Validation.Clients;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Services.Common;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
 namespace Klacks.UnitTest.Validation.Clients;
@@ -28,7 +29,8 @@ public class ConvertStandInCommandValidatorTests
             Substitute.For<IGeocodingService>(),
             new StateAbbreviationResolver(Substitute.For<IStateRepository>()),
             Substitute.For<ICountryResolver>(),
-            Substitute.For<IAddressRepository>());
+            Substitute.For<IAddressRepository>(),
+            NullLogger<AddressGeocodingValidator>.Instance);
     }
 
     private static ConvertStandInResource Valid(EntityTypeEnum target = EntityTypeEnum.Employee) => new()

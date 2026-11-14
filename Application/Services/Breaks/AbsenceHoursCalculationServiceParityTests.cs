@@ -146,7 +146,8 @@ OUTPUT 1, Hour";
             macroDataProvider,
             compilation,
             macroManagement,
-            monthlyTargetHours);
+            monthlyTargetHours,
+            NullLogger<AbsenceHoursCalculationService>.Instance);
     }
 
     [TearDown]

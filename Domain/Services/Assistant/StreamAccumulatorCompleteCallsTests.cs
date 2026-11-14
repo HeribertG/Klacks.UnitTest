@@ -10,6 +10,8 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Shouldly;
 
@@ -49,5 +51,20 @@ public class StreamAccumulatorCompleteCallsTests
         accumulator.FinalizeFunctionCalls();
 
         accumulator.HasFunctionCalls.ShouldBeFalse();
+    }
+
+    [Test]
+    public void MalformedArguments_BecomeEmptyParameters_AndLogAWarningWithoutTheArguments()
+    {
+        var logger = new RecordingLogger<StreamAccumulator>();
+        var accumulator = new StreamAccumulator(logger);
+        accumulator.AppendToolCallDelta(0, "get_employee", "{\"name\": \"Anna");
+
+        accumulator.FinalizeFunctionCalls();
+
+        accumulator.FunctionCalls.Single().Parameters.ShouldBeEmpty();
+        var warning = logger.Entries.Single(entry => entry.Level == LogLevel.Warning);
+        warning.Message.ShouldContain("get_employee");
+        warning.Message.ShouldNotContain("Anna");
     }
 }

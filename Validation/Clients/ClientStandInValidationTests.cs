@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Services.Common;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Validation.Clients;
 
@@ -38,10 +39,11 @@ public class ClientStandInValidationTests
         var stateResolver = new StateAbbreviationResolver(Substitute.For<IStateRepository>());
         var shiftRepository = Substitute.For<IShiftRepository>();
 
-        _postValidator = new PostCommandValidator(geocoding, stateResolver, countryResolver, addressRepository, clientRepository);
+        _postValidator = new PostCommandValidator(geocoding, stateResolver, countryResolver, addressRepository, clientRepository, NullLogger<AddressGeocodingValidator>.Instance);
         _putValidator = new PutCommandValidator(
             geocoding, stateResolver, countryResolver, addressRepository, shiftRepository, clientRepository,
-            TestGroupWriteVisibility.AllClientsVisible(), TestGroupWriteVisibility.UnrestrictedGroups());
+            TestGroupWriteVisibility.AllClientsVisible(), TestGroupWriteVisibility.UnrestrictedGroups(),
+            NullLogger<AddressGeocodingValidator>.Instance);
     }
 
     [TestCase(true)]
