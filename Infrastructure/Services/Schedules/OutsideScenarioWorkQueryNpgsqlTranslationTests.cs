@@ -60,4 +60,29 @@ public class OutsideScenarioWorkQueryNpgsqlTranslationTests
         Regex.IsMatch(sql, @"\w+\.parent_work_id IS NULL").ShouldBeTrue($"Works that count their own hours. Generated SQL: {sql}");
         sql.ShouldContain("is_deleted");
     }
+
+    [Test]
+    public void TopLevelQuery_WithTheClient_TranslatesEveryLeg()
+    {
+        var sql = Regex.Replace(
+            OutsideScenarioWorkQuery.TopLevelQuery(
+                    _context,
+                    Guid.NewGuid(),
+                    new HashSet<Guid> { Guid.NewGuid() },
+                    new DateOnly(2026, 3, 9),
+                    new DateOnly(2026, 3, 15))
+                .Include(w => w.Client)
+                .ToQueryString(),
+            WhitespaceRuns,
+            SingleSpace);
+
+        sql.ShouldContain("FROM work");
+        Regex.IsMatch(sql, @"\w+\.client_id = ANY").ShouldBeTrue($"Only the given people. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.analyse_token IS NULL").ShouldBeTrue($"Only real works. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.workday >= @").ShouldBeTrue($"Start day inclusive. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.workday <= @").ShouldBeTrue($"End day inclusive. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.scenario_source_shift_id").ShouldBeTrue($"The carried shifts come from the scenario's clones. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.parent_work_id IS NULL").ShouldBeTrue($"Only top-level works. Generated SQL: {sql}");
+        sql.ShouldContain("JOIN client");
+    }
 }
