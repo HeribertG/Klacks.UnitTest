@@ -113,7 +113,7 @@ public class SttControllerTranscribeTests
 
         var badRequest = result.ShouldBeOfType<BadRequestObjectResult>();
         ReadProperty(badRequest.Value, CodeProperty).ShouldBeNull();
-        ReadProperty(badRequest.Value, ErrorProperty).ShouldBeOfType<string>().ShouldContain("503");
+        ReadProperty(badRequest.Value, ErrorProperty).ShouldBe(SttProviderConstants.TranscriptionFailedMessage);
     }
 
     [Test]
