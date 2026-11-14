@@ -58,6 +58,7 @@ public class FindToolsSkillTests
         GivenRetrievalReturns();
 
         _toolsetExtension = Substitute.For<ITurnToolsetExtension>();
+        _toolsetExtension.TryStartSearch(Arg.Any<Guid?>()).Returns(true);
         _toolsetExtension.Offer(Arg.Any<Guid?>(), Arg.Any<IReadOnlyList<LLMFunction>>())
             .Returns(call =>
             {
@@ -119,6 +120,19 @@ public class FindToolsSkillTests
     }
 
     private List<string> OfferedNames() => _offers.SelectMany(o => o).Select(f => f.Name).ToList();
+
+    [Test]
+    public async Task ASearchBeyondTheTurnLimit_IsRefusedWithoutRetrieval()
+    {
+        _toolsetExtension.TryStartSearch(Arg.Any<Guid?>()).Returns(false);
+
+        var result = await Execute("assign a contract");
+
+        result.Success.ShouldBeFalse();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default, default, default);
+        _offers.ShouldBeEmpty();
+    }
 
     [Test]
     public async Task Needs_AreSplitTrimmedAndCappedAtTheMaximumPerCall()

@@ -109,4 +109,17 @@ public class TurnToolsetExtensionTests
 
         _extension.Offer(Guid.NewGuid(), Functions(names)).Count.ShouldBe(ToolSearchConstants.MaxAddedToolsPerTurn);
     }
+
+    [Test]
+    public void Searches_AreCappedPerTurn_AndANewTurnStartsOver()
+    {
+        var turn = Guid.NewGuid();
+        for (var i = 0; i < ToolSearchConstants.MaxSearchesPerTurn; i++)
+        {
+            _extension.TryStartSearch(turn).ShouldBeTrue();
+        }
+
+        _extension.TryStartSearch(turn).ShouldBeFalse();
+        _extension.TryStartSearch(Guid.NewGuid()).ShouldBeTrue();
+    }
 }
