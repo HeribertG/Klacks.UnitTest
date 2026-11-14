@@ -5,7 +5,9 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.OAuth;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Application.Interfaces.OAuth;
 using Klacks.Api.Domain.Models.Authentification;
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +18,6 @@ namespace Klacks.UnitTest.OAuth;
 public class IssueOAuthAuthorizationCodeCommandHandlerTests
 {
     private const string KnownClientId = "client-1";
-    private const string ClientName = "Claude";
     private const string RegisteredRedirectUri = "https://claude.ai/api/mcp/auth_callback";
     private const string UnregisteredRedirectUri = "https://evil.example.com/callback";
     private const string Email = "user@example.com";
@@ -47,7 +48,6 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         _clientRepository.GetByClientIdAsync(KnownClientId, Arg.Any<CancellationToken>()).Returns(new OAuthClient
         {
             ClientId = KnownClientId,
-            ClientName = ClientName,
             RedirectUrisJson = JsonSerializer.Serialize(new List<string> { RegisteredRedirectUri })
         });
 
@@ -73,8 +73,13 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _codeStore = new OAuthAuthorizationCodeStore(_context, timeProvider);
-        _handler = new IssueOAuthAuthorizationCodeCommandHandler(
-            _clientRepository, _authenticationService, _codeStore, _adminSetupGateService, _userManagementService);
+        _handler = Handler(OAuthTrustTestPolicy.Create());
+    }
+
+    private IssueOAuthAuthorizationCodeCommandHandler Handler(IOAuthRedirectTrustPolicy policy)
+    {
+        return new IssueOAuthAuthorizationCodeCommandHandler(
+            _clientRepository, _authenticationService, _codeStore, _adminSetupGateService, _userManagementService, policy);
     }
 
     [TearDown]
@@ -87,7 +92,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     public async Task Handle_PlannerAccountWithoutRole_RefusesWithAccessDeniedWithoutStoringCode()
     {
         _userManagementService.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string>());
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -132,7 +137,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_HappyPath_StoresCodeBoundToClientRedirectUriAndChallenge()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -143,16 +148,88 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         stored.ShouldNotBeNull();
         stored!.UserId.ShouldBe(UserId);
         stored.ClientId.ShouldBe(KnownClientId);
-        stored.ClientName.ShouldBe(ClientName);
         stored.RedirectUri.ShouldBe(RegisteredRedirectUri);
         stored.CodeChallenge.ShouldBe(CodeChallenge);
-        stored.Scope.ShouldBe(OAuthConstants.McpToolsScope);
+        stored.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+    }
+
+    [Test]
+    public async Task Handle_WriteRequestedAndAllowed_BindsWriteToTheCode()
+    {
+        var result = await _handler.Handle(Command(accessMode: OAuthConstants.AccessModeWrite), CancellationToken.None);
+
+        var stored = await _codeStore.ConsumeAsync(result.Code!);
+        stored!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
+    }
+
+    [Test]
+    public async Task Handle_WriteRequestedButSwitchOff_BindsRead()
+    {
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthAllowWrite, "false"));
+
+        var result = await handler.Handle(Command(accessMode: OAuthConstants.AccessModeWrite), CancellationToken.None);
+
+        var stored = await _codeStore.ConsumeAsync(result.Code!);
+        stored!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("read")]
+    [TestCase("WRITE")]
+    [TestCase("Write")]
+    [TestCase("write ")]
+    [TestCase("1")]
+    [TestCase("read,write")]
+    public async Task Handle_AnyModeOtherThanTheExactWordWrite_BindsRead(string? requested)
+    {
+        var result = await _handler.Handle(Command(accessMode: requested), CancellationToken.None);
+
+        var stored = await _codeStore.ConsumeAsync(result.Code!);
+        stored!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+    }
+
+    [Test]
+    public async Task Handle_RegisteredButUntrustedRedirectUri_RefusesBeforeTheCredentialsAreChecked()
+    {
+        var clientWithForeignTarget = new OAuthClient
+        {
+            ClientId = "client-evil",
+            RedirectUrisJson = JsonSerializer.Serialize(new List<string> { UnregisteredRedirectUri })
+        };
+        _clientRepository.GetByClientIdAsync("client-evil", Arg.Any<CancellationToken>()).Returns(clientWithForeignTarget);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, "client-evil", UnregisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.Code.ShouldBeNull();
+        result.Error.ShouldBe(OAuthConstants.ErrorInvalidRequest);
+        result.ErrorDescription.ShouldContain("not trusted");
+        await _authenticationService.DidNotReceive().ValidateCredentialsAsync(Arg.Any<string>(), Arg.Any<string>());
+        (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Handle_ModeOff_RefusesWithoutStoringCode()
+    {
+        var handler = Handler(OAuthTrustTestPolicy.WithSetting(SettingKeys.OAuthConnectionsMode, "off"));
+
+        var result = await handler.Handle(Command(), CancellationToken.None);
+
+        result.Code.ShouldBeNull();
+        result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
+    }
+
+    private static IssueOAuthAuthorizationCodeCommand Command(string? accessMode = null)
+    {
+        return new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, accessMode, IsLocalRequest: false);
     }
 
     [Test]
     public async Task Handle_SeedAdminWhileSetupGateActive_RefusesWithoutStoringCode()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -166,7 +243,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     public async Task Handle_SeedAdminAfterSetup_IssuesCode()
     {
         _adminSetupGateService.IsGateActiveAsync().Returns(false);
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -177,7 +254,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_NormalUserWhileSetupGateActive_IssuesCodeWithoutConsultingGate()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -200,7 +277,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     public async Task Handle_SeedAdminReservedForTheSetupCode_RefusesBeforeThePasswordIsChecked()
     {
         _adminSetupGateService.IsSeedAdminSignInReservedForSetupCodeAsync(SeedAdminEmail, false).Returns(true);
-        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: false);
+        var command = new IssueOAuthAuthorizationCodeCommand(SeedAdminEmail, SeedAdminPassword, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -213,7 +290,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     [Test]
     public async Task Handle_PassesTheRequestOriginToTheReservationCheck()
     {
-        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, OAuthConstants.McpToolsScope, IsLocalRequest: true);
+        var command = new IssueOAuthAuthorizationCodeCommand(Email, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: true);
 
         await _handler.Handle(command, CancellationToken.None);
 

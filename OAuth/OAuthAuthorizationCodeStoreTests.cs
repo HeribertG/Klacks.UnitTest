@@ -121,6 +121,17 @@ public class OAuthAuthorizationCodeStoreTests
         (await issuingInstance.ConsumeAsync(Code)).ShouldBeNull();
     }
 
+    [TestCase(PersonalAccessTokenAccessMode.Read)]
+    [TestCase(PersonalAccessTokenAccessMode.Write)]
+    public async Task Consume_RoundTripsTheBoundAccessMode(PersonalAccessTokenAccessMode accessMode)
+    {
+        await CreateStore().StoreAsync(Code, Data(accessMode));
+
+        var consumed = await CreateStore().ConsumeAsync(Code);
+
+        consumed!.AccessMode.ShouldBe(accessMode);
+    }
+
     private int StoredRowCount()
     {
         using var probe = CreateContext();
@@ -131,14 +142,13 @@ public class OAuthAuthorizationCodeStoreTests
 
     private OAuthAuthorizationCodeStore CreateStore() => new(CreateContext(), _timeProvider);
 
-    private static OAuthAuthorizationCodeData Data()
+    private static OAuthAuthorizationCodeData Data(PersonalAccessTokenAccessMode accessMode = PersonalAccessTokenAccessMode.Read)
     {
         return new OAuthAuthorizationCodeData(
             UserId: "user-1",
             ClientId: "client-1",
-            ClientName: "Claude",
             RedirectUri: "https://claude.ai/api/mcp/auth_callback",
             CodeChallenge: "challenge",
-            Scope: null);
+            AccessMode: accessMode);
     }
 }

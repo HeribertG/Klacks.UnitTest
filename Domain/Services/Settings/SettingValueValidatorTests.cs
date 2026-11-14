@@ -166,4 +166,34 @@ public class SettingValueValidatorTests
     {
         Should.NotThrow(() => _sut.Validate(key, "0"));
     }
+
+    [TestCase(SettingKeys.OAuthConnectionsMode, "trusted")]
+    [TestCase(SettingKeys.OAuthConnectionsMode, "off")]
+    [TestCase(SettingKeys.OAuthConnectionsMode, " OFF ")]
+    [TestCase(SettingKeys.OAuthAllowLoopback, "true")]
+    [TestCase(SettingKeys.OAuthAllowLoopback, "False")]
+    [TestCase(SettingKeys.OAuthAllowWrite, "false")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[]")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[\"https://mcp.example.org/cb\"]")]
+    public void Validate_OAuthSettingAcceptedValue_DoesNotThrow(string key, string value)
+    {
+        Should.NotThrow(() => _sut.Validate(key, value));
+    }
+
+    [TestCase(SettingKeys.OAuthConnectionsMode, "open")]
+    [TestCase(SettingKeys.OAuthConnectionsMode, "all")]
+    [TestCase(SettingKeys.OAuthConnectionsMode, "")]
+    [TestCase(SettingKeys.OAuthAllowLoopback, "yes")]
+    [TestCase(SettingKeys.OAuthAllowLoopback, "")]
+    [TestCase(SettingKeys.OAuthAllowWrite, "1")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "not json")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[\"https://*.example.org/cb\"]")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[\"http://mcp.example.org/cb\"]")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[\"https://mcp.example.org/cb?x=1\"]")]
+    [TestCase(SettingKeys.OAuthCustomRedirectTargets, "[\"https://mcp.example.org/cb\",\"https://localhost/cb\"]")]
+    public void Validate_OAuthSettingRejectedValue_Throws(string key, string value)
+    {
+        Should.Throw<InvalidRequestException>(() => _sut.Validate(key, value));
+    }
 }
