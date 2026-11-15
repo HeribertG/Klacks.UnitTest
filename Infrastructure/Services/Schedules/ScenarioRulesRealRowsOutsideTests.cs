@@ -340,6 +340,37 @@ public class ScenarioRulesRealRowsOutsideTests
     }
 
     [Test]
+    public async Task WorkHoursByDay_Scenario_CountsACustomerChildOnce_WhenItsCloneKeepsTheRealTaskShift()
+    {
+        var realContainer = SeedRealShift();
+        var task = SeedRealShift();
+        var realParent = SeedWork(_anna, realContainer, InsideSpan, analyseToken: null);
+        SeedWork(_berta, task, InsideSpan, analyseToken: null, parentWorkId: realParent);
+        var clonedParent = SeedWork(_anna, SeedCloneOf(realContainer), InsideSpan, _token);
+        SeedWork(_berta, task, InsideSpan, _token, parentWorkId: clonedParent);
+        await _context.SaveChangesAsync();
+
+        var hours = await new ClientWorkHoursProvider(_context).GetWorkHoursByDayAsync(_berta, InsideSpan, InsideSpan, _token);
+
+        hours[InsideSpan].ShouldBe(ShiftHours, "the cloned child on the real task shift stands for the real child");
+    }
+
+    [Test]
+    public async Task PlanningRuleWorkSpans_Scenario_AWorkOnARealShiftStandsForTheRealWorkOfThatPersonAndDayOnly()
+    {
+        var realShift = SeedRealShift();
+        SeedWork(_anna, realShift, InsideSpan, analyseToken: null);
+        SeedWork(_anna, realShift, InsideSpan, _token);
+        SeedWork(_berta, realShift, InsideSpan, analyseToken: null);
+        await _context.SaveChangesAsync();
+
+        var spans = await new PlanningRuleDataReader(_context).GetWorkSpansAsync([_anna, _berta], InsideSpan, InsideSpan, _token);
+
+        spans.Count(s => s.ClientId == _anna).ShouldBe(1, "the scenario work is Anna's twin of her real work");
+        spans.Count(s => s.ClientId == _berta).ShouldBe(1, "Berta's real work on the same shift has no twin and stays");
+    }
+
+    [Test]
     public async Task SoftDeletedRows_AreNotCounted_InAScenarioRuleCheck()
     {
         SeedWork(_anna, SeedRealShift(), InsideSpan, analyseToken: null, isDeleted: true);
@@ -454,7 +485,14 @@ public class ScenarioRulesRealRowsOutsideTests
     }
 
     private Guid SeedWork(
-        Guid clientId, Guid shiftId, DateOnly date, Guid? analyseToken, TimeOnly? start = null, TimeOnly? end = null, bool isDeleted = false)
+        Guid clientId,
+        Guid shiftId,
+        DateOnly date,
+        Guid? analyseToken,
+        TimeOnly? start = null,
+        TimeOnly? end = null,
+        bool isDeleted = false,
+        Guid? parentWorkId = null)
     {
         var id = Guid.NewGuid();
         _context.Work.Add(new Work
@@ -468,6 +506,7 @@ public class ScenarioRulesRealRowsOutsideTests
             WorkTime = ShiftHours,
             AnalyseToken = analyseToken,
             IsDeleted = isDeleted,
+            ParentWorkId = parentWorkId,
         });
         return id;
     }
