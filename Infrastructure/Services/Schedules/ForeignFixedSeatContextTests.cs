@@ -432,7 +432,7 @@ public class ForeignFixedSeatContextTests
 
         var builder = new WizardContextBuilder(
             new WizardAgentSnapshotBuilder(contractProvider, membershipReader),
-            new WizardShiftBuilder(_context),
+            WizardShiftBuilderTestFactory.WithoutContainerChildren(_context),
             new WizardHardConstraintBuilder(_context, keywordProvider),
             periodHours,
             contractProvider,

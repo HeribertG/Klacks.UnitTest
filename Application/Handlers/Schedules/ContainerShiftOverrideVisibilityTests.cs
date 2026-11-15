@@ -294,11 +294,11 @@ public class ContainerShiftOverrideVisibilityTests
 
     private PostContainerShiftOverrideCommandHandler PostHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _lockRepository, _unitOfWork, new ScheduleMapper(), _userService, Guard(shiftGuard),
-            Substitute.For<ILogger<PostContainerShiftOverrideCommandHandler>>());
+            Substitute.For<IContainerFitGuard>(), Substitute.For<ILogger<PostContainerShiftOverrideCommandHandler>>());
 
     private PutContainerShiftOverrideCommandHandler PutHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _lockRepository, _unitOfWork, new ScheduleMapper(), _userService, Guard(shiftGuard),
-            Substitute.For<ILogger<PutContainerShiftOverrideCommandHandler>>());
+            Substitute.For<IContainerFitGuard>(), Substitute.For<ILogger<PutContainerShiftOverrideCommandHandler>>());
 
     private DeleteContainerShiftOverrideCommandHandler DeleteHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _unitOfWork, Guard(shiftGuard), Substitute.For<ILogger<DeleteContainerShiftOverrideCommandHandler>>());

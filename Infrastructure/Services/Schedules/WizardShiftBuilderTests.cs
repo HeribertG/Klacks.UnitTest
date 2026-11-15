@@ -25,7 +25,7 @@ public class WizardShiftBuilderTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new WizardShiftBuilder(_context);
+        _sut = WizardShiftBuilderTestFactory.WithoutContainerChildren(_context);
     }
 
     [TearDown]

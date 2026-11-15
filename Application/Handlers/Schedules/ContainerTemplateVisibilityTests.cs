@@ -65,11 +65,11 @@ public class ContainerTemplateVisibilityTests
 
     private PostContainerTemplatesCommandHandler PostHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _unitOfWork, new ScheduleMapper(), _lockRepository, _userService, Guard(shiftGuard),
-            Substitute.For<ILogger<PostContainerTemplatesCommandHandler>>());
+            Substitute.For<IContainerFitGuard>(), Substitute.For<ILogger<PostContainerTemplatesCommandHandler>>());
 
     private PutContainerTemplatesCommandHandler PutHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _unitOfWork, new ScheduleMapper(), _lockRepository, _userService, Guard(shiftGuard),
-            Substitute.For<ILogger<PutContainerTemplatesCommandHandler>>());
+            Substitute.For<IContainerFitGuard>(), Substitute.For<ILogger<PutContainerTemplatesCommandHandler>>());
 
     private DeleteContainerTemplatesCommandHandler DeleteHandler(IShiftVisibilityGuard shiftGuard) =>
         new(_repository, _unitOfWork, new ScheduleMapper(), _lockRepository, _userService, Guard(shiftGuard),

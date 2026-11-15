@@ -233,7 +233,7 @@ public class WizardContextBuilderTests
                 IsMonday = true,
             });
             await dbContext.SaveChangesAsync();
-            var written = await new WizardShiftBuilder(dbContext)
+            var written = await Klacks.UnitTest.Infrastructure.Services.Schedules.WizardShiftBuilderTestFactory.WithoutContainerChildren(dbContext)
                 .BuildAsync(null, date, date, null, CancellationToken.None);
             _shiftBuilder
                 .BuildAsync(Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
