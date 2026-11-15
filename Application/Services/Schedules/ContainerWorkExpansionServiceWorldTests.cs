@@ -51,7 +51,9 @@ public class ContainerWorkExpansionServiceWorldTests
             Substitute.For<IWorkChangeRepository>(),
             shiftRepository,
             writeGuard,
-            Substitute.For<IContainerWorkChildrenManager>(), Substitute.For<ILogger<ContainerWorkExpansionService>>());
+            Substitute.For<IContainerWorkChildrenManager>(),
+            Substitute.For<IShiftReader>(),
+            Substitute.For<ILogger<ContainerWorkExpansionService>>());
     }
 
     [Test]

@@ -44,7 +44,9 @@ public class ContainerWorkExpansionToInvoiceTests
             _workChanges,
             shifts,
             Substitute.For<IWorkWriteGuard>(),
-            Substitute.For<IContainerWorkChildrenManager>(), Substitute.For<ILogger<ContainerWorkExpansionService>>());
+            Substitute.For<IContainerWorkChildrenManager>(),
+            Substitute.For<IShiftReader>(),
+            Substitute.For<ILogger<ContainerWorkExpansionService>>());
     }
 
     [Test]

@@ -54,6 +54,7 @@ public class ContainerWorkExpansionSubBreakTests
             shifts,
             Substitute.For<IWorkWriteGuard>(),
             _childrenManager,
+            Substitute.For<IShiftReader>(),
             Substitute.For<ILogger<ContainerWorkExpansionService>>());
     }
 
