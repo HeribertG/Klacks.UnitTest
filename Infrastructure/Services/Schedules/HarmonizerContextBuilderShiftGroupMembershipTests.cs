@@ -42,7 +42,7 @@ public class HarmonizerContextBuilderShiftGroupMembershipTests
     private static readonly TimeOnly NightStart = new(22, 0);
     private static readonly TimeOnly NightEnd = new(6, 0);
     private const decimal ShiftHours = 8m;
-    private const string NotEligibleReason = "not qualified for shift";
+    private const string NotEligibleReason = "not a member of the group of shift";
 
     private DataBaseContext _context = null!;
     private IClientContractDataProvider _contractProvider = null!;
@@ -148,6 +148,8 @@ public class HarmonizerContextBuilderShiftGroupMembershipTests
 
         input.IneligibleAssignments!.ShouldNotContain((_anna.ToString(), foreignShift, Day));
         input.IneligibleAssignments!.ShouldContain((_bob.ToString(), foreignShift, Day));
+        input.OutsideGroupAssignments!.ShouldContain((_bob.ToString(), foreignShift, Day));
+        input.OutsideGroupAssignments!.ShouldNotContain((_anna.ToString(), foreignShift, Day));
     }
 
     [Test]
@@ -161,6 +163,7 @@ public class HarmonizerContextBuilderShiftGroupMembershipTests
 
         input.IneligibleAssignments!.ShouldNotContain((_bob.ToString(), _nightShift, Day),
             "a scenario run keeps its own semantics: real works outside the scenario are locked cells");
+        input.OutsideGroupAssignments!.ShouldBeEmpty();
     }
 
     private async Task SeedAnnasNightAsync()
@@ -177,7 +180,7 @@ public class HarmonizerContextBuilderShiftGroupMembershipTests
         var dayIndex = DayIndexOf(bitmap, Day);
         bitmap.GetCell(annaRow, dayIndex).IsLocked.ShouldBeFalse("the Night work itself stays movable among members");
 
-        return new PlanMutationValidator(new DomainAwareReplaceValidator(input.Availability, ineligibleAssignments: input.IneligibleAssignments))
+        return new PlanMutationValidator(DomainAwareReplaceValidator.ForInput(input, planningRules: null))
             .Validate(bitmap, new PlanCellSwap(annaRow, dayIndex, RowOf(bitmap, _bob), dayIndex, "test"));
     }
 

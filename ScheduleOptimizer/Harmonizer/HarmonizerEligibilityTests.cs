@@ -56,6 +56,55 @@ public sealed class HarmonizerEligibilityTests
         validator.IsValid(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeTrue();
     }
 
+    [Test]
+    public void ReplaceValidator_OutsideGroupReceivingAgent_NamesTheGroup()
+    {
+        var shiftId = Guid.NewGuid();
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 1, WorkCell(shiftId, Day0.AddDays(1)));
+
+        var triple = ("agent-1", shiftId, Day0.AddDays(1));
+        var ineligible = new HashSet<(string, Guid, DateOnly)> { triple };
+        var outsideGroup = new HashSet<(string, Guid, DateOnly)> { triple };
+        var validator = new DomainAwareReplaceValidator(null, null, ineligible, outsideGroupAssignments: outsideGroup);
+
+        var reason = validator.Diagnose(bitmap, new ReplaceMove(0, 1, 1));
+
+        reason.ShouldNotBeNull();
+        reason.ShouldContain("not a member of the group of shift");
+        reason.ShouldNotContain("not qualified");
+    }
+
+    [Test]
+    public void ReplaceValidator_QualificationOnly_KeepsTheQualificationReason()
+    {
+        var shiftId = Guid.NewGuid();
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 1, WorkCell(shiftId, Day0.AddDays(1)));
+
+        var ineligible = new HashSet<(string, Guid, DateOnly)> { ("agent-1", shiftId, Day0.AddDays(1)) };
+        var outsideGroup = new HashSet<(string, Guid, DateOnly)> { ("agent-0", shiftId, Day0.AddDays(1)) };
+        var validator = new DomainAwareReplaceValidator(null, null, ineligible, outsideGroupAssignments: outsideGroup);
+
+        var reason = validator.Diagnose(bitmap, new ReplaceMove(0, 1, 1));
+
+        reason.ShouldNotBeNull();
+        reason.ShouldContain("not qualified");
+    }
+
+    [Test]
+    public void ReplaceValidator_OutsideGroupOnlyWithoutVeto_Passes()
+    {
+        var shiftId = Guid.NewGuid();
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 1, WorkCell(shiftId, Day0.AddDays(1)));
+
+        var outsideGroup = new HashSet<(string, Guid, DateOnly)> { ("agent-1", shiftId, Day0.AddDays(1)) };
+        var validator = new DomainAwareReplaceValidator(null, null, null, outsideGroupAssignments: outsideGroup);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeTrue();
+    }
+
     // --- Wizard 3: PlanMutationValidator cross-day branch (discriminating test) ---
 
     [Test]
@@ -77,6 +126,28 @@ public sealed class HarmonizerEligibilityTests
 
         rejection.ShouldNotBeNull();
         rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void PlanMutationValidator_CrossDaySwap_OutsideGroupAgent_NamesTheGroup()
+    {
+        var shiftId = Guid.NewGuid();
+        var otherShift = Guid.NewGuid();
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 0, WorkCell(shiftId, Day0));
+        bitmap.SetCell(1, 1, WorkCell(otherShift, Day0.AddDays(1)));
+
+        var triple = ("agent-1", shiftId, Day0.AddDays(1));
+        var ineligible = new HashSet<(string, Guid, DateOnly)> { triple };
+        var outsideGroup = new HashSet<(string, Guid, DateOnly)> { triple };
+        var validator = new PlanMutationValidator(
+            new DomainAwareReplaceValidator(null, null, ineligible, outsideGroupAssignments: outsideGroup));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(0, 0, 1, 1, "test"));
+
+        rejection.ShouldNotBeNull();
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        rejection.Detail.ShouldContain("not a member of the group of shift");
     }
 
     [Test]
