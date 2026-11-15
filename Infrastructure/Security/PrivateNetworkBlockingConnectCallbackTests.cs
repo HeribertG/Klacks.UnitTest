@@ -44,6 +44,28 @@ public class PrivateNetworkBlockingConnectCallbackTests
             async () => await _callback.ConnectAsync("looks-public.example.com", TestPort, CancellationToken.None));
     }
 
+    [TestCase("100.64.0.1")]
+    [TestCase("100.100.100.200")]
+    [TestCase("64:ff9b::a9fe:a9fe")]
+    public async Task ConnectAsync_ResolvesToReservedAddress_ThrowsPrivateNetworkAccessBlockedException(string ip)
+    {
+        _hostAddressResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { IPAddress.Parse(ip) });
+
+        await Should.ThrowAsync<PrivateNetworkAccessBlockedException>(
+            async () => await _callback.ConnectAsync("looks-public.example.com", TestPort, CancellationToken.None));
+    }
+
+    [Test]
+    public async Task ConnectAsync_PublicAndCgnatAddressMixed_IsBlocked()
+    {
+        _hostAddressResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { IPAddress.Parse("8.8.8.8"), IPAddress.Parse("100.64.0.1") });
+
+        await Should.ThrowAsync<PrivateNetworkAccessBlockedException>(
+            async () => await _callback.ConnectAsync("looks-public.example.com", TestPort, CancellationToken.None));
+    }
+
     [Test]
     public async Task ConnectAsync_HostnameRebindsToPrivateAddress_IsBlockedEvenThoughHostStringLooksPublic()
     {
