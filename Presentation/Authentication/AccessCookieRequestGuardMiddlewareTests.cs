@@ -5,7 +5,8 @@
 /// request with a foreign Origin is 403 for every method (also GET, the WebSocket upgrade of a hub); an unsafe method
 /// without X-Requested-With and without JSON is 403; safe methods without proof, unsafe methods with either proof,
 /// whitelisted and same-host origins pass. A request that was not authenticated by the cookie passes untouched, also
-/// with a foreign Origin and a form content type.
+/// with a foreign Origin and a form content type. A WebSocket handshake over HTTP/2 (Extended CONNECT) needs no CSRF
+/// proof but the same origin check as the GET upgrade; any other CONNECT still needs the proof.
 /// </summary>
 
 using Klacks.Api.Application.Configuration;
@@ -13,6 +14,7 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Presentation.Authentication;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -139,6 +141,76 @@ public class AccessCookieRequestGuardMiddlewareTests
         AssertPassed(context, nextCalled);
     }
 
+    [Test]
+    public async Task CookieAuthenticated_WebSocketConnectWithSameOriginFetchSite_PassesWithoutProof()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Connect, origin: "https://" + ServerHost, webSocket: true, fetchSite: CsrfProofConstants.FetchSiteSameOrigin);
+
+        AssertPassed(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_WebSocketConnectWithWhitelistedOrigin_PassesWithoutProof()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Connect, origin: WhitelistedOrigin, webSocket: true, fetchSite: "cross-site");
+
+        AssertPassed(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_WebSocketConnectWithForeignOrigin_Is403()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Connect, origin: ForeignOrigin, webSocket: true, fetchSite: "cross-site");
+
+        AssertForbidden(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_WebSocketConnectWithSameSiteFetchSiteAndForeignOrigin_Is403()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Connect, origin: ForeignOrigin, webSocket: true, fetchSite: "same-site");
+
+        AssertForbidden(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_PlainConnectWithoutProof_Is403()
+    {
+        var (context, nextCalled) = await RunAsync(cookieAuthenticated: true, HttpMethods.Connect);
+
+        AssertForbidden(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_PostCarryingWebSocketFeature_StillNeedsProof()
+    {
+        var (context, nextCalled) = await RunAsync(cookieAuthenticated: true, HttpMethods.Post, contentType: FormContentType, webSocket: true);
+
+        AssertForbidden(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_WebSocketGetUpgradeWithForeignOrigin_Is403()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Get, origin: ForeignOrigin, webSocket: true, fetchSite: "cross-site");
+
+        AssertForbidden(context, nextCalled);
+    }
+
+    [Test]
+    public async Task CookieAuthenticated_WebSocketGetUpgradeWithSameOriginFetchSite_Passes()
+    {
+        var (context, nextCalled) = await RunAsync(
+            cookieAuthenticated: true, HttpMethods.Get, origin: "https://" + ServerHost, webSocket: true, fetchSite: CsrfProofConstants.FetchSiteSameOrigin);
+
+        AssertPassed(context, nextCalled);
+    }
+
     private static void AssertForbidden(HttpContext context, bool nextCalled)
     {
         context.Response.StatusCode.ShouldBe(StatusCodes.Status403Forbidden);
@@ -156,9 +228,11 @@ public class AccessCookieRequestGuardMiddlewareTests
         string method,
         string? contentType = null,
         bool requestedWith = false,
-        string? origin = null)
+        string? origin = null,
+        bool webSocket = false,
+        string? fetchSite = null)
     {
-        var context = CreateContext(method, contentType, requestedWith, origin);
+        var context = CreateContext(method, contentType, requestedWith, origin, webSocket, fetchSite);
         if (cookieAuthenticated)
         {
             AccessTokenCookieAuthentication.MarkTokenFromCookie(context);
@@ -183,9 +257,22 @@ public class AccessCookieRequestGuardMiddlewareTests
         return nextCalled;
     }
 
-    private DefaultHttpContext CreateContext(string method, string? contentType, bool requestedWith, string? origin)
+    private DefaultHttpContext CreateContext(
+        string method, string? contentType, bool requestedWith, string? origin, bool webSocket = false, string? fetchSite = null)
     {
         var context = new DefaultHttpContext { RequestServices = _provider };
+        if (webSocket)
+        {
+            var feature = Substitute.For<IHttpWebSocketFeature>();
+            feature.IsWebSocketRequest.Returns(true);
+            context.Features.Set(feature);
+        }
+
+        if (fetchSite != null)
+        {
+            context.Request.Headers[CsrfProofConstants.FetchSiteHeader] = fetchSite;
+        }
+
         context.Request.Scheme = "https";
         context.Request.Host = new HostString(ServerHost);
         context.Request.Method = method;
