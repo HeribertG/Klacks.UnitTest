@@ -54,10 +54,10 @@ public class ToolSearchServiceRegistrationTests
             .ShouldBeSameAs(scope.ServiceProvider.GetRequiredService<ITurnToolsetExtension>());
     }
 
-    [TestCase(null, false)]
+    [TestCase(null, true)]
     [TestCase("false", false)]
     [TestCase("true", true)]
-    public void TheSwitch_IsReadFromConfiguration_AndOffByDefault(string? configured, bool expected)
+    public void TheSwitch_IsReadFromConfiguration_AndOnByDefault(string? configured, bool expected)
     {
         var settings = new Dictionary<string, string?>();
         if (configured != null)
