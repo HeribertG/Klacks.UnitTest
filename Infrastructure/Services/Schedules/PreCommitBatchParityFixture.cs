@@ -13,7 +13,7 @@
 /// the planning-rule evaluator, the directive keyword set and collaborators that no check reads are substitutes.
 /// Next to the plan the fixture seeds rows that must not count (Disturbances), one per kind and each on a person of its
 /// own, chosen so that counting it would add a finding of the stated comment to that person: a work with a work change
-/// and a break of the other world (scenario token in the real plan, real plan in a scenario), a soft-deleted work,
+/// and a break of the other world (the token of another scenario, in the real plan and in a scenario alike; the real rows a scenario does not carry count in a scenario by design), a soft-deleted work,
 /// break, work change and compensatory-rest obligation, and a container child (ParentWorkId set) of the person's own
 /// work. The added rows lie where they overlap the planned row of their person only. The mode None leaves the rows out
 /// and Live seeds the same rows as ordinary rows of the plan, which lets a test show that each one is effective.
@@ -477,7 +477,7 @@ public sealed class PreCommitBatchParityFixture : IDisposable
         Context.CompensatoryRestObligation.Add(deletedObligation);
     }
 
-    private Guid? OtherWorldToken() => _analyseToken is null ? OtherScenarioToken : null;
+    private static Guid OtherWorldToken() => OtherScenarioToken;
 
     private void AddWork(Guid clientId, DateOnly date, TimeOnly start, TimeOnly end, decimal hours = 8m, Guid? id = null)
         => Context.Work.Add(NewWork(clientId, date, start, end, hours, id));

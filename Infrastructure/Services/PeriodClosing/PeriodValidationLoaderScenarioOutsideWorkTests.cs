@@ -25,9 +25,12 @@ namespace Klacks.UnitTest.Infrastructure.Services.PeriodClosing;
 public class PeriodValidationLoaderScenarioOutsideWorkTests
 {
     private const string CollisionCode = "Collision";
+    private const string UncoveredAbsenceCode = "UncoveredAbsence";
     private static readonly DateOnly From = new(2026, 7, 1);
     private static readonly DateOnly To = new(2026, 7, 31);
     private static readonly DateOnly Day = new(2026, 7, 14);
+    private static readonly DateOnly InsideSpanDay = new(2026, 7, 8);
+    private static readonly DateOnly BeyondSpanDay = new(2026, 7, 28);
 
     private DataBaseContext _context = null!;
     private PeriodValidationLoader _sut = null!;
@@ -136,6 +139,84 @@ public class PeriodValidationLoaderScenarioOutsideWorkTests
         issues.ShouldNotContain(i => i.Code == CollisionCode, "a work of another scenario is not part of this one");
     }
 
+    [Test]
+    public async Task LoadAsync_Scenario_WorkOverlappingARealDutyOnACarriedShiftBeyondTheClonedSpan_IsACollision()
+    {
+        var token = SeedScenario();
+        var anna = SeedClient();
+        var realCare = SeedShift(analyseToken: null, sourceShiftId: null);
+        var scenarioCare = SeedShift(token, realCare);
+        SeedWork(anna, realCare, analyseToken: null, new TimeOnly(14, 0), new TimeOnly(22, 0), BeyondSpanDay);
+        SeedWork(anna, scenarioCare, token, new TimeOnly(16, 0), new TimeOnly(20, 0), BeyondSpanDay);
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null, token);
+
+        issues.ShouldContain(i => i.Code == CollisionCode && i.ClientId == anna,
+            "no clone exists beyond the cloned span, the real duty stays in the plan");
+    }
+
+    [Test]
+    public async Task LoadAsync_Scenario_RealCopyOfAWorkInsideTheScenario_IsNoCollision()
+    {
+        var token = SeedScenario();
+        var anna = SeedClient();
+        var realCare = SeedShift(analyseToken: null, sourceShiftId: null);
+        var scenarioCare = SeedShift(token, realCare);
+        SeedWork(anna, realCare, analyseToken: null, new TimeOnly(14, 0), new TimeOnly(22, 0), InsideSpanDay);
+        SeedWork(anna, scenarioCare, token, new TimeOnly(16, 0), new TimeOnly(20, 0), InsideSpanDay);
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null, token);
+
+        issues.ShouldNotContain(i => i.Code == CollisionCode, "the clone stands for the real duty inside the cloned span");
+    }
+
+    [Test]
+    public async Task LoadAsync_Scenario_WorkDuringARealAbsenceTheScenarioDoesNotCarry_IsUncovered()
+    {
+        var token = Guid.NewGuid();
+        var anna = SeedClient();
+        var scenarioCare = SeedShift(token, SeedShift(analyseToken: null, sourceShiftId: null));
+        SeedWork(anna, scenarioCare, token, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedBreak(anna, Guid.NewGuid(), analyseToken: null);
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null, token);
+
+        issues.ShouldContain(i => i.Code == UncoveredAbsenceCode && i.ClientId == anna,
+            "the real absence stays in the plan after an accept");
+    }
+
+    [Test]
+    public async Task LoadAsync_Scenario_AnAbsenceOfAnotherScenario_IsNoAbsenceOfThisOne()
+    {
+        var token = Guid.NewGuid();
+        var anna = SeedClient();
+        var scenarioCare = SeedShift(token, SeedShift(analyseToken: null, sourceShiftId: null));
+        SeedWork(anna, scenarioCare, token, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedBreak(anna, Guid.NewGuid(), Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null, token);
+
+        issues.ShouldNotContain(i => i.Code == UncoveredAbsenceCode);
+    }
+
+    private Guid SeedScenario()
+    {
+        var token = Guid.NewGuid();
+        _context.AnalyseScenarios.Add(new AnalyseScenario
+        {
+            Id = Guid.NewGuid(),
+            Name = "Scenario",
+            Token = token,
+            FromDate = new DateOnly(2026, 7, 6),
+            UntilDate = new DateOnly(2026, 7, 12),
+        });
+        return token;
+    }
+
     private Guid SeedClient()
     {
         var clientId = Guid.NewGuid();
@@ -157,15 +238,28 @@ public class PeriodValidationLoaderScenarioOutsideWorkTests
         return id;
     }
 
-    private void SeedWork(Guid clientId, Guid shiftId, Guid? analyseToken, TimeOnly start, TimeOnly end)
+    private void SeedWork(Guid clientId, Guid shiftId, Guid? analyseToken, TimeOnly start, TimeOnly end, DateOnly? date = null)
         => _context.Work.Add(new Work
         {
             Id = Guid.NewGuid(),
             ClientId = clientId,
             ShiftId = shiftId,
-            CurrentDate = Day,
+            CurrentDate = date ?? Day,
             StartTime = start,
             EndTime = end,
+            WorkTime = 8m,
+            AnalyseToken = analyseToken,
+        });
+
+    private void SeedBreak(Guid clientId, Guid absenceId, Guid? analyseToken)
+        => _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            AbsenceId = absenceId,
+            CurrentDate = Day,
+            StartTime = new TimeOnly(6, 0),
+            EndTime = new TimeOnly(22, 0),
             WorkTime = 8m,
             AnalyseToken = analyseToken,
         });

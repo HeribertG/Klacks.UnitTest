@@ -17,7 +17,6 @@
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
-using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -144,8 +143,8 @@ public class PeriodCapEvaluatorTests
     private void StubPersistedHours(decimal hours)
     {
         _periodHoursService
-            .CalculatePeriodHoursAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
-            .Returns(new PeriodHoursResource { Hours = hours, Surcharges = 0m, GuaranteedHours = 0m });
+            .CalculateHoursForClientsAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(ClientId)), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
+            .Returns(new Dictionary<Guid, decimal> { [ClientId] = hours });
     }
 
     [Test]
@@ -292,8 +291,8 @@ public class PeriodCapEvaluatorTests
         _membershipStartResolver.GetValidFromAsync(ClientId).Returns((DateOnly?)membershipStart);
 
         _periodHoursService
-            .CalculatePeriodHoursAsync(ClientId, membershipStart, Day, Arg.Any<Guid?>())
-            .Returns(new PeriodHoursResource { Hours = 50m, Surcharges = 0m, GuaranteedHours = 0m });
+            .CalculateHoursForClientsAsync(Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(ClientId)), membershipStart, Day, Arg.Any<Guid?>())
+            .Returns(new Dictionary<Guid, decimal> { [ClientId] = 50m });
 
         var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
 
@@ -313,7 +312,7 @@ public class PeriodCapEvaluatorTests
 
         result.ShouldBeEmpty();
         await _periodHoursService.DidNotReceiveWithAnyArgs()
-            .CalculatePeriodHoursAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>());
+            .CalculateHoursForClientsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>());
     }
 
     private void StubOvertimeRule(

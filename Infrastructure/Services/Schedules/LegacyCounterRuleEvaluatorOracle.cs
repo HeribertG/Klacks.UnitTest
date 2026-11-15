@@ -3,7 +3,8 @@
 /// <summary>
 /// Frozen copy of the CounterRuleEvaluator as it was before it became an adapter over the shared planning-rule
 /// evaluator (Api 0d4d5b59d). Test oracle only: CounterRuleLegacyParityTests run a generated corpus through
-/// this copy and through the production adapter and require byte-identical notification lists.
+/// this copy and through the production adapter and require byte-identical notification lists. Its work read follows
+/// the production read (ScenarioRuleRows), which is not under comparison here.
 /// </summary>
 
 using System.Globalization;
@@ -15,6 +16,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.Api.Infrastructure.Services.Schedules;
 using Microsoft.EntityFrameworkCore;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
@@ -196,11 +198,10 @@ public sealed class LegacyCounterRuleEvaluatorOracle
         Guid? analyseToken,
         CancellationToken cancellationToken)
     {
-        var works = await _context.Work
+        var works = await ScenarioRuleRows.Works(_context, analyseToken)
             .AsNoTracking()
             .Where(w => w.ClientId == clientId
                 && !w.IsDeleted
-                && w.AnalyseToken == analyseToken
                 && w.CurrentDate >= periodStart
                 && w.CurrentDate <= periodEnd)
             .Select(w => new { w.CurrentDate, w.StartTime, w.EndTime })

@@ -361,16 +361,14 @@ public class PreCommitConflictCheckerTests
     }
 
     [Test]
-    public async Task ScenarioRows_DoNotSeeRealWorks()
+    public async Task ScenarioRows_SeeTheRealWorksTheScenarioDoesNotCarry()
     {
-        // A real work exists on Day; checking a scenario placement (analyseToken set) must not collide
-        // with the real work, because scenario mode only loads rows with that token.
         SeedWork(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0));
 
         var result = await _checker.CheckAsync(
             [Row(new TimeOnly(12, 0), new TimeOnly(20, 0))], analyseToken: Guid.NewGuid());
 
-        result.HasAny.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c => c.Comment == "schedule.error-list.collision");
     }
 
     [Test]
