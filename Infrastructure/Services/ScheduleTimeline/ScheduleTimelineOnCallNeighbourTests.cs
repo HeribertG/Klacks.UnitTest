@@ -103,14 +103,15 @@ public class ScheduleTimelineOnCallNeighbourTests
     }
 
     [Test]
-    public async Task NightShiftOfTheRealPlan_DoesNotMeetAnOnCallOfAScenarioOnTheNextDay()
+    public async Task NightShiftOfTheRealPlan_MeetsAnOnCallOfAScenarioOnTheNextDay_BecauseTheScenarioDoesNotCarryIt()
     {
         var token = Guid.NewGuid();
         var shiftDay = new DateOnly(2026, 3, 3);
         await _host.AddWorkAsync(_clientId, _shiftId, shiftDay, NightStart, NightEnd);
         await AddOnCallBreakAsync(shiftDay.AddDays(1), token);
 
-        (await RunSingleCheckAsync(shiftDay.AddDays(1), token)).ShouldBeEmpty();
+        (await RunSingleCheckAsync(shiftDay.AddDays(1), token)).ShouldHaveSingleItem().Date.ShouldBe(shiftDay,
+            "the real night shift stays in the plan after an accept, the scenario's live check sees it like its rule check");
     }
 
     [Test]

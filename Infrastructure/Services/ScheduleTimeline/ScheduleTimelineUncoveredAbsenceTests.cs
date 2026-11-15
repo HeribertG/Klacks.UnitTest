@@ -481,13 +481,16 @@ public class ScheduleTimelineUncoveredAbsenceTests
     }
 
     [Test]
-    public async Task NightShiftOfTheRealPlan_DoesNotMeetAnAbsenceOfAScenarioOnTheNextDay()
+    public async Task NightShiftOfTheRealPlan_MeetsAnAbsenceOfAScenarioOnTheNextDay_BecauseTheScenarioDoesNotCarryIt()
     {
         var token = Guid.NewGuid();
         await _host.AddWorkAsync(_absentClientId, _earlyShiftId, Tuesday, NightStart, NightEnd);
         await AddBreakAsync(_sickAbsenceId, FullDayStart, FullDayEnd, token, date: Tuesday.AddDays(1));
 
-        (await RunSingleCheckAsync(Tuesday.AddDays(1), token)).Findings.ShouldBeEmpty();
+        var (_, findings) = await RunSingleCheckAsync(Tuesday.AddDays(1), token);
+
+        findings.ShouldHaveSingleItem("the real night shift stays in the plan after an accept, the scenario's live check sees it")
+            .Date.ShouldBe(Tuesday);
     }
 
     [Test]

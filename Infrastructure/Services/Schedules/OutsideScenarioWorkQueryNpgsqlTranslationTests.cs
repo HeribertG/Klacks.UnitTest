@@ -59,5 +59,7 @@ public class OutsideScenarioWorkQueryNpgsqlTranslationTests
         Regex.IsMatch(sql, @"\w+\.analyse_token = @").ShouldBeTrue($"Exactly the scenario's clones. Generated SQL: {sql}");
         Regex.IsMatch(sql, @"\w+\.parent_work_id IS NULL").ShouldBeTrue($"Works that count their own hours. Generated SQL: {sql}");
         sql.ShouldContain("is_deleted");
+        Regex.IsMatch(sql, @"\w+\.cloned_from_work_id = \w+\.id").ShouldBeTrue($"A scenario twin stands for the real work. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.start_time = \w+\.start_time").ShouldBeTrue($"A twin runs the same hours. Generated SQL: {sql}");
     }
 }

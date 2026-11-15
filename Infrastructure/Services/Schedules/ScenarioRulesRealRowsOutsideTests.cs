@@ -371,6 +371,62 @@ public class ScenarioRulesRealRowsOutsideTests
     }
 
     [Test]
+    public async Task OutsideScenarioWorks_Scenario_LeaveOutTheRealCustomerChild_WhenItsCloneKeepsTheRealTaskShift()
+    {
+        var task = SeedRealShift();
+        SeedClonedCustomerChild(task);
+        await _context.SaveChangesAsync();
+
+        var outside = await OutsideScenarioWorkQuery.LoadAsync(_context, _token, [_berta], InsideSpan, InsideSpan, CancellationToken.None);
+
+        outside.ShouldBeEmpty("the run reads Berta's cloned child from the scenario; the real child must not occupy her a second time");
+    }
+
+    [Test]
+    public async Task ReplacementCoversOfARun_Scenario_CountTheCoverOfACustomerChildOnce_WhenItsCloneKeepsTheRealTaskShift()
+    {
+        var carl = Guid.NewGuid();
+        var task = SeedRealShift();
+        var (realChild, clonedChild) = SeedClonedCustomerChild(task);
+        SeedReplacement(realChild, carl, analyseToken: null);
+        SeedReplacement(clonedChild, carl, _token);
+        await _context.SaveChangesAsync();
+
+        var covers = await ReplacementCoverQuery.LoadForRunAsync(_context, _token, InsideSpan, InsideSpan, [carl], CancellationToken.None);
+
+        covers.Count(c => c.SubstituteClientId == carl).ShouldBe(1, "the cloned cover stands for the real cover of the real child");
+    }
+
+    [Test]
+    public async Task PlanningRuleWorkSpans_Scenario_ATwinStandsOnlyForTheRealWorkWithItsHours()
+    {
+        var realShift = SeedRealShift();
+        SeedWork(_anna, realShift, InsideSpan, analyseToken: null, start: new TimeOnly(6, 0), end: new TimeOnly(10, 0));
+        SeedWork(_anna, realShift, InsideSpan, analyseToken: null, start: new TimeOnly(14, 0), end: new TimeOnly(18, 0));
+        SeedWork(_anna, realShift, InsideSpan, _token, start: new TimeOnly(6, 0), end: new TimeOnly(10, 0));
+        await _context.SaveChangesAsync();
+
+        var spans = await new PlanningRuleDataReader(_context).GetWorkSpansAsync([_anna], InsideSpan, InsideSpan, _token);
+
+        spans.Count.ShouldBe(2, "the scenario work twins the morning work; Anna's afternoon work on the same shift stays");
+    }
+
+    [Test]
+    public async Task PlanningRuleWorkSpans_Scenario_AClonePlacedOnOtherHoursStaysTheTwinOfItsSource()
+    {
+        var realShift = SeedRealShift();
+        var source = SeedWork(_anna, realShift, InsideSpan, analyseToken: null);
+        var clone = SeedWork(_anna, realShift, InsideSpan, _token, start: new TimeOnly(9, 0), end: new TimeOnly(17, 0));
+        await _context.SaveChangesAsync();
+        (await _context.Work.FindAsync(clone))!.ClonedFromWorkId = source;
+        await _context.SaveChangesAsync();
+
+        var spans = await new PlanningRuleDataReader(_context).GetWorkSpansAsync([_anna], InsideSpan, InsideSpan, _token);
+
+        spans.Count.ShouldBe(1, "the planner moved the clone's hours in the scenario; it still stands for its source");
+    }
+
+    [Test]
     public async Task SoftDeletedRows_AreNotCounted_InAScenarioRuleCheck()
     {
         SeedWork(_anna, SeedRealShift(), InsideSpan, analyseToken: null, isDeleted: true);
@@ -510,6 +566,29 @@ public class ScenarioRulesRealRowsOutsideTests
         });
         return id;
     }
+
+    private (Guid RealChild, Guid ClonedChild) SeedClonedCustomerChild(Guid taskShiftId)
+    {
+        var realContainer = SeedRealShift();
+        var realParent = SeedWork(_anna, realContainer, InsideSpan, analyseToken: null);
+        var realChild = SeedWork(_berta, taskShiftId, InsideSpan, analyseToken: null, parentWorkId: realParent);
+        var clonedParent = SeedWork(_anna, SeedCloneOf(realContainer), InsideSpan, _token);
+        var clonedChild = SeedWork(_berta, taskShiftId, InsideSpan, _token, parentWorkId: clonedParent);
+        return (realChild, clonedChild);
+    }
+
+    private void SeedReplacement(Guid workId, Guid substituteId, Guid? analyseToken)
+        => _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = workId,
+            ReplaceClientId = substituteId,
+            Type = WorkChangeType.ReplacementWithin,
+            StartTime = new TimeOnly(10, 0),
+            EndTime = new TimeOnly(12, 0),
+            ChangeTime = 2m,
+            AnalyseToken = analyseToken,
+        });
 
     private void SeedBreak(Guid clientId, Guid absenceId, DateOnly date, Guid? analyseToken, bool isDeleted = false)
         => _context.Break.Add(new Break

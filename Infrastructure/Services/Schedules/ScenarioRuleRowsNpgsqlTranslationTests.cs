@@ -50,6 +50,41 @@ public class ScenarioRuleRowsNpgsqlTranslationTests
     }
 
     [Test]
+    public void Works_Scenario_TranslatesTheTwinRule()
+    {
+        var sql = Normalized(ScenarioRuleRows.Works(_context, Guid.NewGuid()).ToQueryString());
+
+        Regex.IsMatch(sql, @"\w+\.cloned_from_work_id = \w+\.id").ShouldBeTrue($"A clone twins its source. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.start_time = \w+\.start_time").ShouldBeTrue($"A twin runs the same start. Generated SQL: {sql}");
+        Regex.IsMatch(sql, @"\w+\.end_time = \w+\.end_time").ShouldBeTrue($"A twin runs the same end. Generated SQL: {sql}");
+    }
+
+    [Test]
+    public void Works_Scenario_KeepsTheSoftDeleteFilterOfAnIncludedNavigation()
+    {
+        var sql = Normalized(ScenarioRuleRows.Works(_context, Guid.NewGuid()).Include(w => w.Client).ToQueryString());
+
+        Regex.IsMatch(sql, @"FROM client AS \w+ WHERE NOT \(\w+\.is_deleted\)")
+            .ShouldBeTrue($"No part of the query may switch the global soft-delete filters off. Generated SQL: {sql}");
+    }
+
+    [Test]
+    public void OutsideRows_Scenario_TranslateTheirScope()
+    {
+        var token = Guid.NewGuid();
+        var people = new[] { Guid.NewGuid() };
+        var works = Normalized(ScenarioRuleRows.OutsideTopLevelWorks(
+            _context, token, people, new DateOnly(2026, 3, 9), new DateOnly(2026, 3, 15)).ToQueryString());
+        var absences = Normalized(ScenarioRuleRows.OutsideAbsences(
+            _context, token, people, new DateOnly(2026, 3, 9), new DateOnly(2026, 3, 15)).ToQueryString());
+
+        Regex.IsMatch(works, @"\w+\.client_id = ANY").ShouldBeTrue($"Only the given people. Generated SQL: {works}");
+        Regex.IsMatch(works, @"\w+\.parent_work_id IS NULL").ShouldBeTrue($"Top-level works only. Generated SQL: {works}");
+        Regex.IsMatch(absences, @"\w+\.client_id = ANY").ShouldBeTrue($"Only the given people. Generated SQL: {absences}");
+        Regex.IsMatch(absences, @"\w+\.workday >= @").ShouldBeTrue($"Start day inclusive. Generated SQL: {absences}");
+    }
+
+    [Test]
     public void Works_RealPlan_IsTheRealRowsOnly()
     {
         var sql = Normalized(ScenarioRuleRows.Works(_context, analyseToken: null).ToQueryString());

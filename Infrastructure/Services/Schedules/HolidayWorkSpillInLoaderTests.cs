@@ -98,7 +98,7 @@ public class HolidayWorkSpillInLoaderTests
     }
 
     private Task<HolidayWorkSpillIn> LoadAsync() =>
-        HolidayWorkSpillInLoader.LoadAsync(_context, _timeline, August1, null, CancellationToken.None);
+        HolidayWorkSpillInLoader.LoadAsync(_context, _timeline, August1, null, [], CancellationToken.None);
 
     private Guid SeedClient(string name, string firstName)
     {
