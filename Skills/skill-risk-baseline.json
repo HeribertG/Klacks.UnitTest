@@ -196,6 +196,7 @@
   "explain_messenger_pairing_and_scope": "ReadOnly",
   "explain_navigation_learning": "ReadOnly",
   "explain_oauth_connections": "ReadOnly",
+  "explain_office_pc_installation": "ReadOnly",
   "explain_overtime_model": "ReadOnly",
   "explain_page_absence": "ReadOnly",
   "explain_page_availability": "ReadOnly",
