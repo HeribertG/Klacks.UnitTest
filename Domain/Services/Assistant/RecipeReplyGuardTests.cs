@@ -108,10 +108,10 @@ public class RecipeReplyGuardTests
         result.ShouldContain("?");
     }
 
-    [TestCase("de", "Möchtest du")]
+    [TestCase("de", "Soll ich")]
     [TestCase("en", "Do you want")]
-    [TestCase("fr", "Veux-tu")]
-    [TestCase("it", "Vuoi")]
+    [TestCase("fr", "Dois-je")]
+    [TestCase("it", "Devo")]
     public void SafeConfirmation_DeterministicFallback_LocalizedForCoreLanguages(string language, string expectedLead)
     {
         var result = RecipeReplyGuard.SafeConfirmation("Erledigt.", Goal, null, language);
@@ -388,7 +388,7 @@ public class RecipeReplyGuardTests
             RecipeReplyGuard.SafeConfirmation(leakedReasoning, Goal, null, "de", GoalTranslations), null, "de");
 
         result.ShouldNotContain("manage_pending_notes");
-        result.ShouldStartWith("Möchtest du diese geführte Aktion starten: „Eine neue Gruppe erstellen.\"?");
+        result.ShouldStartWith("Soll ich diese geführte Aktion starten: „Eine neue Gruppe erstellen.\"?");
         result.ShouldEndWith("[REPLIES:single \"Ja=yes\" | \"Nein=no\"]");
     }
 
