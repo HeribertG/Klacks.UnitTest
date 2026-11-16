@@ -185,6 +185,49 @@ public class OAuthLoginPageRendererTests
     }
 
     [Test]
+    public void Render_ToolNameContainingAnotherPlaceholder_StaysLiteralAndTheRealPlaceholderIsStillFilled()
+    {
+        var hostile = new OAuthRedirectMatch("{{INTRO}}{{ALLOW}}{{HIDDEN_FIELDS}}", "{{DENY}}.example.org", OAuthRedirectClass.Custom, null);
+
+        var html = OAuthLoginPageRenderer.Render(Model(match: hostile));
+
+        html.ShouldContain("<div class=\"toolname\">{{INTRO}}{{ALLOW}}{{HIDDEN_FIELDS}}</div>");
+        html.ShouldContain("<div class=\"toolhost\" dir=\"ltr\">{{DENY}}.example.org</div>");
+        html.ShouldContain($"<p class=\"consent\">{OAuthConsentTexts.EnglishOf(OAuthConsentTexts.Intro)}</p>");
+        html.ShouldContain($">{OAuthConsentTexts.EnglishOf(OAuthConsentTexts.Allow)}</button>");
+        html.ShouldContain("<input type=\"hidden\" name=\"client_id\" value=\"client-1\">");
+    }
+
+    [Test]
+    public void Render_ErrorMessageContainingAnotherPlaceholder_StaysLiteralAndTheRealPlaceholderIsStillFilled()
+    {
+        var html = OAuthLoginPageRenderer.Render(Model(error: "{{ALLOW}} {{DENY}} {{FORM_ACTION}}"));
+
+        html.ShouldContain("<div class=\"error\">{{ALLOW}} {{DENY}} {{FORM_ACTION}}</div>");
+        html.ShouldContain($">{OAuthConsentTexts.EnglishOf(OAuthConsentTexts.Allow)}</button>");
+        html.ShouldContain($">{OAuthConsentTexts.EnglishOf(OAuthConsentTexts.Deny)}</button>");
+        html.ShouldContain("<form method=\"post\" action=\"/oauth/authorize\">");
+    }
+
+    [Test]
+    public void Render_HiddenFieldNameAndValueContainingPlaceholders_StayLiteral()
+    {
+        var hidden = new Dictionary<string, string> { ["{{VALUE}}"] = "{{NAME}}" };
+
+        var html = OAuthLoginPageRenderer.Render(Model(hidden: hidden));
+
+        html.ShouldContain("<input type=\"hidden\" name=\"{{VALUE}}\" value=\"{{NAME}}\">");
+    }
+
+    [Test]
+    public void Render_EveryPlaceholderOfTheTemplateHasAValue_SoNoneIsLeftUnresolved()
+    {
+        var html = OAuthLoginPageRenderer.Render(Model(match: LoopbackMatch, error: "Invalid email or password."));
+
+        System.Text.RegularExpressions.Regex.IsMatch(html, @"\{\{[A-Z_]+\}\}").ShouldBeFalse();
+    }
+
+    [Test]
     public void Render_ClientNameNeverAppears_BecauseTheModelHasNoSuchField()
     {
         typeof(OAuthConsentPageModel).GetProperties().Select(p => p.Name).ShouldNotContain("ClientName");

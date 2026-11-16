@@ -5,6 +5,7 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.OAuth;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Application.Interfaces.OAuth;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.UnitTest.TestHelpers;
@@ -98,6 +99,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.Code.ShouldBeNull();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.Failure.ShouldBe(OAuthIssueFailure.AccountNotAllowed);
         (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
     }
 
@@ -132,6 +134,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.Code.ShouldBeNull();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.Failure.ShouldBe(OAuthIssueFailure.InvalidCredentials);
     }
 
     [Test]
@@ -235,6 +238,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.Code.ShouldBeNull();
         result.IsSetupRequired.ShouldBeTrue();
+        result.Failure.ShouldBe(OAuthIssueFailure.SetupRequired);
         result.ErrorDescription.ShouldBe(OAuthConstants.SetupRequiredErrorDescription);
         (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
     }
@@ -249,6 +253,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.IsSetupRequired.ShouldBeFalse();
         result.Code.ShouldNotBeNullOrWhiteSpace();
+        result.Failure.ShouldBe(OAuthIssueFailure.None);
     }
 
     [Test]
@@ -271,6 +276,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.IsSetupRequired.ShouldBeFalse();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.Failure.ShouldBe(OAuthIssueFailure.InvalidCredentials);
     }
 
     [Test]
@@ -284,6 +290,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         result.Code.ShouldBeNull();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
         result.ErrorDescription.ShouldBe("Invalid email or password.");
+        result.Failure.ShouldBe(OAuthIssueFailure.InvalidCredentials);
         await _authenticationService.DidNotReceive().ValidateCredentialsAsync(Arg.Any<string>(), Arg.Any<string>());
     }
 

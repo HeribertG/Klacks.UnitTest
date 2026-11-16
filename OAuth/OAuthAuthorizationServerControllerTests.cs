@@ -11,6 +11,7 @@ using Klacks.Api.Application.DTOs.OAuth;
 using Klacks.Api.Application.Queries.OAuth;
 using Klacks.Api.Application.Services.OAuth;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.OAuth;
@@ -230,7 +231,7 @@ public class OAuthAuthorizationServerControllerTests
     public async Task Post_InvalidCredentials_ShowsTheTranslatedLine()
     {
         _http.Request.Headers.AcceptLanguage = "fr";
-        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, OAuthConstants.InvalidCredentialsDescription));
+        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, OAuthConstants.InvalidCredentialsDescription, OAuthIssueFailure.InvalidCredentials));
 
         var result = await PostAsync("user@example.com", "wrong", OAuthConstants.DecisionApprove, null);
 
@@ -241,11 +242,34 @@ public class OAuthAuthorizationServerControllerTests
     public async Task Post_AccountWithoutRight_ShowsTheTranslatedLine()
     {
         _http.Request.Headers.AcceptLanguage = "it";
-        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, OAuthConstants.AccountNotAllowedDescription));
+        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, OAuthConstants.AccountNotAllowedDescription, OAuthIssueFailure.AccountNotAllowed));
 
         var result = await PostAsync("user@example.com", "secret", OAuthConstants.DecisionApprove, null);
 
         result.ShouldBeOfType<ContentResult>().Content!.ShouldContain(OAuthConsentTexts.VariantsOf(OAuthConsentTexts.ErrorAccountNotAllowed)["it"]);
+    }
+
+    [Test]
+    public async Task Post_InvalidCredentials_IsLocalizedByTheCodeNotByTheDescriptionText()
+    {
+        _http.Request.Headers.AcceptLanguage = "fr";
+        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, "any other wording", OAuthIssueFailure.InvalidCredentials));
+
+        var result = await PostAsync("user@example.com", "wrong", OAuthConstants.DecisionApprove, null);
+
+        var html = result.ShouldBeOfType<ContentResult>().Content!;
+        html.ShouldContain(OAuthConsentTexts.VariantsOf(OAuthConsentTexts.ErrorInvalidCredentials)["fr"]);
+        html.ShouldNotContain("any other wording");
+    }
+
+    [Test]
+    public async Task Post_AccessDeniedWithoutFailureCode_ShowsTheDescriptionAsIs()
+    {
+        IssueReturns(OAuthAuthorizationCodeResult.Rejected(OAuthConstants.ErrorAccessDenied, OAuthConstants.InvalidCredentialsDescription));
+
+        var result = await PostAsync("user@example.com", "wrong", OAuthConstants.DecisionApprove, null);
+
+        result.ShouldBeOfType<ContentResult>().Content!.ShouldContain(OAuthConstants.InvalidCredentialsDescription);
     }
 
     [Test]
