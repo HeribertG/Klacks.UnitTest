@@ -41,7 +41,7 @@ public class RouteOptimizationServiceGeocodingCountryTests
             .GeocodeAddressAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(((double?)null, (double?)null));
         _distanceMatrixBuilder
-            .BuildDistanceMatrixAsync(Arg.Any<List<Location>>(), Arg.Any<ContainerTransportMode>())
+            .BuildDistanceMatrixAsync(Arg.Any<List<Location>>(), Arg.Any<ContainerTransportMode>(), Arg.Any<CancellationToken>())
             .Returns(call => new DistanceMatrix(call.Arg<List<Location>>(), new double[0, 0], new double[0, 0]));
         _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(Austria());
         _countryResolver.ResolveAsync(GermanyCode, Arg.Any<CancellationToken>()).Returns(Germany());
