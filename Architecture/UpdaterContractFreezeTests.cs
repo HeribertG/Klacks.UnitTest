@@ -19,13 +19,14 @@ public class UpdaterContractFreezeTests
         ((int)UpdateOperationType.Rollback).ShouldBe(1);
         ((int)UpdateOperationType.WhisperInstall).ShouldBe(2);
         ((int)UpdateOperationType.WhisperUninstall).ShouldBe(3);
+        ((int)UpdateOperationType.PostgresUpgrade).ShouldBe(4);
     }
 
     [Test]
     public void OperationTypeMembers_AreFrozen()
     {
         Enum.GetNames<UpdateOperationType>().ShouldBe(
-            ["Update", "Rollback", "WhisperInstall", "WhisperUninstall"],
+            ["Update", "Rollback", "WhisperInstall", "WhisperUninstall", "PostgresUpgrade"],
             ignoreOrder: true);
     }
 
