@@ -50,7 +50,7 @@ public class UserManagementServiceLastAdministratorTests
             null!,
             NullLogger<UserManager<AppUser>>.Instance);
         _sut = new UserManagementService(
-            _userManager, new AppUserReader(_userManager), Substitute.For<ILogger<UserManagementService>>());
+            _userManager, new AppUserReader(_userManager, _context), Substitute.For<ILogger<UserManagementService>>());
         _adminRole = Role(Roles.Admin);
         _authorisedRole = Role(Roles.Authorised);
         _context.Roles.AddRange(_adminRole, _authorisedRole);

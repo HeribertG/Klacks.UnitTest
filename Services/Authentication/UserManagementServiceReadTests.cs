@@ -47,7 +47,7 @@ public class UserManagementServiceReadTests
             null!,
             NullLogger<UserManager<AppUser>>.Instance);
         _sut = new UserManagementService(
-            _userManager, new AppUserReader(_userManager), Substitute.For<ILogger<UserManagementService>>());
+            _userManager, new AppUserReader(_userManager, _context), Substitute.For<ILogger<UserManagementService>>());
     }
 
     [TearDown]
@@ -81,6 +81,29 @@ public class UserManagementServiceReadTests
         list.Select(u => (u.IsAdmin, u.IsAuthorised)).ShouldBe([(true, false), (false, true), (false, false)]);
         list[0].Email.ShouldBe("first@test.local");
         list[0].FirstName.ShouldBe("Fn-first");
+    }
+
+    [Test]
+    public async Task UserList_FlagsLinkedAccountsWithoutLocalPasswordAsDirectoryOnly()
+    {
+        var directoryOnly = User("directory-only", displayOrder: 1);
+        directoryOnly.IdentityProviderId = Guid.NewGuid();
+        directoryOnly.DirectoryExternalId = "11111111-1111-1111-1111-111111111111";
+        directoryOnly.PasswordHash = null;
+        var linkedWithPassword = User("linked-with-password", displayOrder: 2);
+        linkedWithPassword.IdentityProviderId = Guid.NewGuid();
+        linkedWithPassword.DirectoryExternalId = "22222222-2222-2222-2222-222222222222";
+        linkedWithPassword.PasswordHash = "stored-hash";
+        var plain = User("plain", displayOrder: 3);
+        plain.PasswordHash = null;
+        _context.AppUser.AddRange(directoryOnly, linkedWithPassword, plain);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var list = await _sut.GetUserListAsync();
+
+        list.Select(u => (u.UserName, u.IsDirectoryLoginOnly)).ShouldBe(
+            [("directory-only", true), ("linked-with-password", false), ("plain", false)]);
     }
 
     [Test]

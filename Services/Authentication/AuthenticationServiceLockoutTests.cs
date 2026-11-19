@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Authentication;
 using Klacks.Api.Application.Validation.Accounts;
@@ -28,6 +29,7 @@ internal class AuthenticationServiceLockoutTests
     private UserManager<AppUser> _userManager = null!;
     private IIdentityProviderRepository _identityProviderRepository = null!;
     private ILdapService _ldapService = null!;
+    private IAppUserReader _appUserReader = null!;
     private AuthenticationService _sut = null!;
 
     [SetUp]
@@ -36,6 +38,7 @@ internal class AuthenticationServiceLockoutTests
         _userManager = CreateUserManager();
         _identityProviderRepository = Substitute.For<IIdentityProviderRepository>();
         _ldapService = Substitute.For<ILdapService>();
+        _appUserReader = Substitute.For<IAppUserReader>();
 
         // No identity providers configured, so the LDAP fallback always fails.
         _identityProviderRepository.GetAuthenticationProviders()
@@ -49,6 +52,7 @@ internal class AuthenticationServiceLockoutTests
             jwtValidator,
             _identityProviderRepository,
             _ldapService,
+            _appUserReader,
             logger);
     }
 
@@ -127,19 +131,27 @@ internal class AuthenticationServiceLockoutTests
     }
 
     [Test]
-    public async Task ValidateCredentials_WhenUserIsDeactivated_DoesNotFallBackToLdapForThatAccount()
+    public async Task ValidateCredentials_WhenUserIsDeactivated_NeverSignsThatAccountInThroughTheDirectory()
     {
         var user = new AppUser { Id = "6", Email = Email, DeactivatedAt = DateTime.UtcNow };
+        var provider = new IdentityProvider
+        {
+            Id = Guid.NewGuid(), Name = "Directory", Type = IdentityProviderType.Ldap, IsEnabled = true, UseForAuthentication = true,
+        };
+        var entry = new LdapUserEntry { DistinguishedName = "uid=user,dc=example,dc=com", ObjectGuid = "11111111-1111-1111-1111-111111111111" };
         _userManager.FindByEmailAsync(Email).Returns(user);
-        _userManager.HasPasswordAsync(user).Returns(false);
+        _userManager.HasPasswordAsync(user).Returns(true);
+        _identityProviderRepository.GetAuthenticationProviders().Returns(new List<IdentityProvider> { provider });
+        _ldapService.FindLoginEntryAsync(provider, Email).Returns(entry);
+        _ldapService.BindAsUserAsync(provider, entry.DistinguishedName, Password).Returns(true);
 
-        var (isValid, _) = await _sut.ValidateCredentialsAsync(Email, Password);
+        // The deactivated account is skipped by the local check; the directory only finds the entry, and the entry has no
+        // active linked account, so the sign-in ends in the coded refusal and never hands out the deactivated account.
+        await Should.ThrowAsync<DirectoryAccessNotGrantedException>(() => _sut.ValidateCredentialsAsync(Email, Password));
 
-        isValid.ShouldBeFalse();
-
-        // The refusal happens before the LDAP fallback: a deactivated account must not be able to
-        // sign in through a directory provider either.
-        await _identityProviderRepository.DidNotReceive().GetAuthenticationProviders();
+        await _userManager.DidNotReceive().CheckPasswordAsync(user, Arg.Any<string>());
+        await _userManager.DidNotReceive().AccessFailedAsync(user);
+        await _userManager.DidNotReceive().ResetAccessFailedCountAsync(user);
     }
 
     [Test]

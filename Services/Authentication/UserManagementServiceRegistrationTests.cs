@@ -58,6 +58,57 @@ public class UserManagementServiceRegistrationTests
     }
 
     [Test]
+    public async Task RegisterDirectoryUserAsync_CreatesTheAccountWithoutAPassword()
+    {
+        var user = new AppUser { Email = "directory@example.com", UserName = "directory" };
+        _userManager.CreateAsync(user).Returns(IdentityResult.Success);
+
+        var (success, result) = await _sut.RegisterDirectoryUserAsync(user);
+
+        success.ShouldBeTrue();
+        result!.Succeeded.ShouldBeTrue();
+        await _userManager.Received(1).CreateAsync(user);
+        await _userManager.DidNotReceive().CreateAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RegisterDirectoryUserAsync_EmailAlreadyInUse_RefusesWithDuplicateEmailAndCreatesNothing()
+    {
+        _userManager.FindByEmailAsync("taken@example.com").Returns(new AppUser { Email = "taken@example.com" });
+
+        var (success, result) = await _sut.RegisterDirectoryUserAsync(
+            new AppUser { Email = "taken@example.com", UserName = "taken" });
+
+        success.ShouldBeFalse();
+        result.ShouldNotBeNull();
+        result.Errors.Select(error => error.Code).ShouldBe([AccountRegistrationErrorCodes.DuplicateEmail]);
+        await _userManager.DidNotReceive().CreateAsync(Arg.Any<AppUser>());
+        await _userManager.DidNotReceive().CreateAsync(Arg.Any<AppUser>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RegisterDirectoryUserAsync_BlankEmail_RefusesWithInvalidEmail()
+    {
+        var (success, result) = await _sut.RegisterDirectoryUserAsync(new AppUser { Email = " ", UserName = "user" });
+
+        success.ShouldBeFalse();
+        result!.Errors.Select(error => error.Code).ShouldBe([AccountRegistrationErrorCodes.InvalidEmail]);
+    }
+
+    [Test]
+    public async Task RegisterDirectoryUserAsync_IdentityRefusal_IsPassedThroughUnchanged()
+    {
+        var refusal = IdentityResult.Failed(new IdentityErrorDescriber().InvalidUserName("user"));
+        _userManager.CreateAsync(Arg.Any<AppUser>()).Returns(refusal);
+
+        var (success, result) = await _sut.RegisterDirectoryUserAsync(
+            new AppUser { Email = "user@example.com", UserName = "user" });
+
+        success.ShouldBeFalse();
+        result.ShouldBeSameAs(refusal);
+    }
+
+    [Test]
     public async Task RegisterUserAsync_BlankEmail_RefusesWithInvalidEmail()
     {
         var (success, result) = await _sut.RegisterUserAsync(new AppUser { Email = " ", UserName = "user" }, Password);

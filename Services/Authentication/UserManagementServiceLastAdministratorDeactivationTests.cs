@@ -50,7 +50,7 @@ public class UserManagementServiceLastAdministratorDeactivationTests
             null!,
             NullLogger<UserManager<AppUser>>.Instance);
         _sut = new UserManagementService(
-            _userManager, new AppUserReader(_userManager), Substitute.For<ILogger<UserManagementService>>());
+            _userManager, new AppUserReader(_userManager, _context), Substitute.For<ILogger<UserManagementService>>());
         _adminRole = new IdentityRole(Roles.Admin)
         {
             Id = Guid.NewGuid().ToString(),

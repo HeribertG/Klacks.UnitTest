@@ -72,6 +72,21 @@ public class ErrorHandlingMiddlewareTests
         var response = await Invoke(new UnauthorizedException("no session"));
 
         response.StatusCode.ShouldBe(StatusCodes.Status401Unauthorized);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.TryGetProperty("errorCode", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DirectoryAccessNotGrantedException_StaysA401AndCarriesTheErrorCode()
+    {
+        var response = await Invoke(new DirectoryAccessNotGrantedException());
+
+        response.StatusCode.ShouldBe(StatusCodes.Status401Unauthorized);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("status").GetInt32().ShouldBe(StatusCodes.Status401Unauthorized);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe("directoryAccessNotGranted");
+        problem.RootElement.GetProperty("code").GetString().ShouldBe("directoryAccessNotGranted");
+        problem.RootElement.GetProperty("detail").GetString().ShouldBe(DirectoryAccessNotGrantedException.DefaultMessage);
     }
 
     [Test]

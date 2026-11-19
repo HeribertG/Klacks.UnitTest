@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Klacks.Api.Application.Commands.OAuth;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
@@ -12,6 +13,7 @@ using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.OAuth;
 
@@ -99,6 +101,23 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
 
         result.Code.ShouldBeNull();
         result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.Failure.ShouldBe(OAuthIssueFailure.AccountNotAllowed);
+        (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Handle_DirectoryAccountNotGranted_RefusesAsAccountNotAllowedWithoutStoringCode()
+    {
+        const string DirectoryEmail = "directory@example.com";
+        _authenticationService.ValidateCredentialsAsync(DirectoryEmail, Password)
+            .ThrowsAsync(new DirectoryAccessNotGrantedException());
+        var command = new IssueOAuthAuthorizationCodeCommand(DirectoryEmail, Password, KnownClientId, RegisteredRedirectUri, CodeChallenge, null, IsLocalRequest: false);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.Code.ShouldBeNull();
+        result.Error.ShouldBe(OAuthConstants.ErrorAccessDenied);
+        result.ErrorDescription.ShouldBe(OAuthConstants.AccountNotAllowedDescription);
         result.Failure.ShouldBe(OAuthIssueFailure.AccountNotAllowed);
         (await _context.OAuthAuthorizationCodes.CountAsync()).ShouldBe(0);
     }

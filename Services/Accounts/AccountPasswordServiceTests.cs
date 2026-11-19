@@ -232,6 +232,60 @@ public class AccountPasswordServiceTests
     }
 
     [Test]
+    public async Task GeneratePasswordResetTokenAsync_ForADirectoryOnlyAccount_IssuesNoTokenAndSendsNoMail()
+    {
+        var email = "directory@example.com";
+        var directoryUser = CreateUser(Guid.NewGuid().ToString(), email);
+        directoryUser.IdentityProviderId = Guid.NewGuid();
+        directoryUser.DirectoryExternalId = "11111111-1111-1111-1111-111111111111";
+        directoryUser.PasswordHash = null;
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns(directoryUser);
+
+        var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
+
+        result.ShouldBeFalse();
+        directoryUser.PasswordResetToken.ShouldBeNull();
+        directoryUser.PasswordResetTokenExpires.ShouldBeNull();
+        await _mockUserManagementService.DidNotReceive().UpdateUserAsync(Arg.Any<AppUser>());
+        await _mockNotificationService.DidNotReceive().SendEmailAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task GeneratePasswordResetTokenAsync_ForALinkedAccountThatKeptItsLocalPassword_StillIssuesAToken()
+    {
+        var email = "linked@example.com";
+        var linkedUser = CreateUser(Guid.NewGuid().ToString(), email);
+        linkedUser.IdentityProviderId = Guid.NewGuid();
+        linkedUser.DirectoryExternalId = "11111111-1111-1111-1111-111111111111";
+        linkedUser.PasswordHash = "stored-hash";
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns(linkedUser);
+        _mockUserManagementService.UpdateUserAsync(Arg.Any<AppUser>()).Returns((true, null));
+        _mockNotificationService.SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>()).Returns("true");
+
+        var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
+
+        result.ShouldBeTrue();
+        linkedUser.PasswordResetToken.ShouldNotBeNull();
+        await _mockNotificationService.Received(1).SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task GeneratePasswordResetTokenAsync_ForAnUnlinkedAccountWithoutPasswordHash_StillIssuesAToken()
+    {
+        var email = "plain@example.com";
+        var plainUser = CreateUser(Guid.NewGuid().ToString(), email);
+        plainUser.PasswordHash = null;
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns(plainUser);
+        _mockUserManagementService.UpdateUserAsync(Arg.Any<AppUser>()).Returns((true, null));
+        _mockNotificationService.SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>()).Returns("true");
+
+        var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
+
+        result.ShouldBeTrue();
+        plainUser.PasswordResetToken.ShouldNotBeNull();
+    }
+
+    [Test]
     public async Task ValidatePasswordResetTokenAsync_WithValidToken_ShouldReturnTrue()
     {
         var token = "validtoken";
