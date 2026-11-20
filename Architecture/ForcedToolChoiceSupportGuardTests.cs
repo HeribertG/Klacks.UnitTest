@@ -52,13 +52,15 @@ public class ForcedToolChoiceSupportGuardTests
             ["OpenAIProvider"] = ForcedToolChoiceSupport.NotSupported,
         };
 
-    // The Playground budget decorator declares nothing of its own: it forwards the wrapped provider's answer.
+    // The Playground budget and pseudonymisation decorators declare nothing of their own: they forward the wrapped
+    // provider's answer.
     private static IReadOnlyList<Type> Providers() =>
         typeof(DeepSeekProvider).Assembly
             .GetTypes()
             .Where(type => type is { IsClass: true, IsAbstract: false })
             .Where(type => typeof(ILLMProvider).IsAssignableFrom(type))
             .Where(type => type != typeof(PlaygroundBudgetedLLMProvider))
+            .Where(type => type != typeof(Klacks.Api.Infrastructure.Services.Assistant.Providers.Pseudonymization.PseudonymizingLLMProvider))
             .OrderBy(type => type.Name, StringComparer.Ordinal)
             .ToList();
 

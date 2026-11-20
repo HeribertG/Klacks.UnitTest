@@ -51,7 +51,12 @@ public class ProviderImageAttachmentContractTests
     /// rejects image content for every model: DeepSeek was listed here until 2026-10-06 although deepseek-flash
     /// reads images, which made it fail the vision check for our own reason.
     /// </summary>
-    private static readonly Dictionary<Type, string> TextOnlyProviders = new();
+    private static readonly Dictionary<Type, string> TextOnlyProviders = new()
+    {
+        [typeof(Klacks.Api.Infrastructure.Services.Assistant.Providers.Pseudonymization.PseudonymizingLLMProvider)] =
+            "Decorator, not an API client: it forwards an image to a local model unchanged and refuses it for a cloud " +
+            "model while pseudonymisation is active, because an image cannot be pseudonymised (PseudonymizingLLMProviderTests)."
+    };
 
     private static readonly Type[] ContractCoveredProviders =
     [

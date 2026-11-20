@@ -191,6 +191,7 @@
   "explain_klacksy_speech_setup": "ReadOnly",
   "explain_legal_entity_rule": "ReadOnly",
   "explain_linux_installation": "ReadOnly",
+  "explain_llm_pseudonymization": "ReadOnly",
   "explain_macro_editor": "ReadOnly",
   "explain_membership_single_row": "ReadOnly",
   "explain_messenger_channels": "ReadOnly",

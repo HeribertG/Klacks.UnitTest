@@ -3,7 +3,7 @@
 /// <summary>
 /// Tests for the Playground wrapping in LLMProviderFactory: with the mode on all three getters hand out a
 /// decorated provider that is wrapped exactly once; with the mode off they hand out the concrete provider and the
-/// budget is never consulted.
+/// budget is never consulted. Pseudonymisation is switched off here; LLMPseudonymizationGuardTests covers it.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Playground;
@@ -50,7 +50,13 @@ public class PlaygroundProviderFactoryTests
             new HttpClient(), NullLogger<GenericOpenAICompatibleProvider>.Instance, new ConfigurationBuilder().Build());
         var services = new ServiceCollection().AddSingleton(_concrete).BuildServiceProvider();
 
-        _sut = new LLMProviderFactory(services, _repository, NullLogger<LLMProviderFactory>.Instance, _mode, _budget);
+        var settings = Substitute.For<ISettingsReader>();
+        settings.GetSetting(Klacks.Api.Domain.Constants.SettingKeys.LlmPseudonymizationEnabled)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = "false" });
+
+        _sut = new LLMProviderFactory(
+            services, _repository, NullLogger<LLMProviderFactory>.Instance, _mode, _budget,
+            settings, Substitute.For<IPseudonymMapSource>(), Substitute.For<ICompanyClock>());
     }
 
     private static ILLMProvider Unwrap(ILLMProvider? provider)

@@ -174,4 +174,21 @@ public class ToolCallLoopStepsTests
         FunctionName = skill,
         Parameters = new Dictionary<string, object> { [ClientIdParam] = clientId }
     };
+
+    [Test]
+    public void InToolset_RejectsACallThatRefersToAnUnknownPseudonym()
+    {
+        var marked = new LLMFunctionCall
+        {
+            FunctionName = "add_note",
+            Parameters = new Dictionary<string, object> { ["text"] = PseudonymizationConstants.UnknownReferenceMarker + "MA-0999" }
+        };
+        var clean = new LLMFunctionCall { FunctionName = "add_note", Parameters = new Dictionary<string, object> { ["text"] = "ok" } };
+        var context = new LLMContext { AvailableFunctions = [new LLMFunction { Name = "add_note" }] };
+
+        var executable = ToolCallLoopSteps.InToolset([marked, clean], context, NullLogger.Instance);
+
+        executable.ShouldBe([clean]);
+        marked.IsRejectedUnknownPseudonym.ShouldBeTrue();
+    }
 }

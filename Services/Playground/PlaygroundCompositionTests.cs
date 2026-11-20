@@ -50,8 +50,18 @@ public class PlaygroundCompositionTests
         services.AddLLMCoreServices();
         services.AddScoped(_ => _repository);
         services.AddScoped(_ => _feedbackRepository);
+        services.AddScoped(_ => PseudonymizationOff());
+        services.AddScoped(_ => Substitute.For<ICompanyClock>());
 
         return services.BuildServiceProvider();
+    }
+
+    private static ISettingsReader PseudonymizationOff()
+    {
+        var settings = Substitute.For<ISettingsReader>();
+        settings.GetSetting(Klacks.Api.Domain.Constants.SettingKeys.LlmPseudonymizationEnabled)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = "false" });
+        return settings;
     }
 
     [Test]
