@@ -35,7 +35,12 @@ public class UpdateHandlerTests
 
     private GetUpdateStatusQueryHandler CreateStatusHandler()
     {
-        return new GetUpdateStatusQueryHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, DockerInstallation());
+        var engineUpgradePreflight = Substitute.For<IEngineUpgradePreflight>();
+        engineUpgradePreflight.CheckAsync(Arg.Any<UpdateManifest?>(), Arg.Any<CancellationToken>())
+            .Returns(new EngineUpgradePreflightResult(17, null, null, EngineUpgradeBlockedReason.NoEngineInManifest));
+        return new GetUpdateStatusQueryHandler(
+            _repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, DockerInstallation(), engineUpgradePreflight,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GetUpdateStatusQueryHandler>.Instance);
     }
 
     private static IInstallationIdentityProvider DockerInstallation()
