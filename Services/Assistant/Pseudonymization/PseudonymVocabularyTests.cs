@@ -6,8 +6,8 @@ using static Klacks.UnitTest.Services.Assistant.Pseudonymization.PseudonymTestMa
 namespace Klacks.UnitTest.Services.Assistant.Pseudonymization;
 
 /// <summary>
-/// Pins what the vocabulary asks the database to store: keys built from entity ids only, never a name, also for a
-/// name that several people share.
+/// Pins what the vocabulary asks the database to store: keys built from entity ids only, never a name or a street,
+/// also for a name that several people share or a street that several addresses share.
 /// </summary>
 [TestFixture]
 public class PseudonymVocabularyTests
@@ -22,14 +22,16 @@ public class PseudonymVocabularyTests
                 Employee(18, "Jürg", "Müller", GenderEnum.Male),
                 Employee(19, "Jürg", "Müller", GenderEnum.Male)
             ],
-            ["079 123 45 67"]);
+            ["079 123 45 67"],
+            [Address(3, "Bahnhofstrasse 12"), Address(4, "Bahnhofstrasse 12"), Address(5, "Seeweg 3")]);
 
         var keys = vocabulary.RequiredKeys;
 
         keys.ShouldContain(key => key.Kind == PseudonymKind.Name);
+        keys.Where(key => key.Kind == PseudonymKind.Address).Select(key => key.Key).Order().ShouldBe(["3", "5"]);
         foreach (var key in keys)
         {
-            foreach (var forbidden in new[] { "meier", "anna", "beat", "jürg", "juerg", "müller", "mueller", "123" })
+            foreach (var forbidden in new[] { "meier", "anna", "beat", "jürg", "juerg", "müller", "mueller", "123", "bahnhof", "strasse", "seeweg", "12" })
             {
                 key.Key.ShouldNotContain(forbidden, Case.Insensitive);
             }

@@ -6,7 +6,8 @@ namespace Klacks.UnitTest.Services.Assistant.Pseudonymization;
 
 /// <summary>
 /// Builds pseudonym maps for tests with readable numbers: a person's number is its entity key (key "17" gives MA-0017),
-/// ambiguous names count from 42, pattern values per kind from 1 in order of appearance (as in production).
+/// an address's number is its entity key too (key "3" gives ADR-0003), ambiguous names count from 42, pattern values
+/// per kind from 1 in order of appearance (as in production).
 /// </summary>
 internal static class PseudonymTestMaps
 {
@@ -23,9 +24,13 @@ internal static class PseudonymTestMaps
     public static PseudonymPerson User(int number, string first, string last) =>
         new(PseudonymKind.User, number.ToString(), null, first, last, null, null, null, false, null);
 
-    public static PseudonymDictionary Dictionary(IEnumerable<PseudonymPerson> persons, IEnumerable<string>? phones = null)
+    public static PseudonymAddress Address(int number, string street, string? street2 = null) =>
+        new(number.ToString(), street, street2, null, null, null);
+
+    public static PseudonymDictionary Dictionary(
+        IEnumerable<PseudonymPerson> persons, IEnumerable<string>? phones = null, IEnumerable<PseudonymAddress>? addresses = null)
     {
-        var vocabulary = PseudonymVocabulary.Create(persons, phones ?? []);
+        var vocabulary = PseudonymVocabulary.Create(persons, phones ?? [], addresses ?? []);
         var next = FirstAmbiguousOrdinal;
         var ordinals = vocabulary.RequiredKeys
             .OrderBy(key => key.Key, StringComparer.Ordinal)

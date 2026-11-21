@@ -29,15 +29,16 @@ public class PseudonymizationWireTests
     private const string CloudUrl = "https://llm.example.com/v1/";
 
     private const string AnswerBody =
-        "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"MA-0017-V ist eingeplant, MAIL-0001 informiert.\"}}]}";
+        "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"MA-0017-V ist eingeplant, MAIL-0001 informiert, Treffpunkt ADR-0003.\"}}]}";
 
     private const string ToolCallBody =
         "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null," +
         "\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"assign_shift\"," +
-        "\"arguments\":\"{\\\"employee\\\":\\\"MA-0017\\\",\\\"replaces\\\":\\\"MA-0018\\\"}\"}}]}}]}";
+        "\"arguments\":\"{\\\"employee\\\":\\\"MA-0017\\\",\\\"replaces\\\":\\\"MA-0018\\\",\\\"street\\\":\\\"ADR-0003\\\"}\"}}]}}]}";
 
     private static readonly string[] Forbidden =
-        ["Anna", "Meier", "Jürg", "Müller", "Mueller", "anna.meier@example.ch", "079 123 45 67", "4711", "1985-03-14"];
+        ["Anna", "Meier", "Jürg", "Müller", "Mueller", "anna.meier@example.ch", "079 123 45 67", "4711", "1985-03-14",
+         "Bahnhofstrasse 12", "Bahnhofstr. 12", "Bahnhofstrasse", "Bahnhofstr"];
 
     private sealed class RecordingHandler(params string[] responses) : HttpMessageHandler
     {
@@ -64,14 +65,16 @@ public class PseudonymizationWireTests
         {
             ModelId = "gpt-test",
             SystemPrompt = "You help the planner.",
-            Message = "Plane Anna Meier statt Jürg Müller ein und schreib ihr an anna.meier@example.ch oder 079 123 45 67.",
+            Message = "Plane Anna Meier statt Jürg Müller ein und schreib ihr an anna.meier@example.ch oder 079 123 45 67. " +
+                "Treffpunkt Bahnhofstr. 12 in Grabs.",
             ConversationHistory =
             [
                 new LLMMessage { Role = "user", Content = "Wer ist Mitarbeiterin #4711?" },
                 new LLMMessage
                 {
                     Role = "assistant",
-                    Content = "{\"Name\":\"Meier\",\"FirstName\":\"Anna\",\"IdNumber\":4711,\"Birthdate\":\"1985-03-14\"}"
+                    Content = "{\"Name\":\"Meier\",\"FirstName\":\"Anna\",\"IdNumber\":4711,\"Birthdate\":\"1985-03-14\"," +
+                        "\"Street\":\"Bahnhofstra\u00DFe 12\",\"Zip\":\"9472\",\"City\":\"Grabs\"}"
                 }
             ]
         };
@@ -89,12 +92,16 @@ public class PseudonymizationWireTests
             }
 
             wire.ShouldContain("MA-0017");
+            wire.ShouldContain("ADR-0003");
+            wire.ShouldContain("Grabs");
+            wire.ShouldContain("9472");
         }
 
-        answer.Content.ShouldBe("Anna ist eingeplant, anna.meier@example.ch informiert.");
+        answer.Content.ShouldBe("Anna ist eingeplant, anna.meier@example.ch informiert, Treffpunkt Bahnhofstrasse 12.");
         var call = toolTurn.FunctionCalls.ShouldHaveSingleItem();
         call.Parameters["employee"].ToString().ShouldBe("Anna Meier");
         call.Parameters["replaces"].ToString().ShouldBe("Jürg Müller");
+        call.Parameters["street"].ToString().ShouldBe("Bahnhofstrasse 12");
         request.Message.ShouldContain("Anna Meier");
         request.ConversationHistory[1].Content.ShouldContain("1985-03-14");
     }
@@ -114,7 +121,7 @@ public class PseudonymizationWireTests
         [
             Employee(17, "Anna", "Meier", idNumber: 4711),
             Employee(18, "Jürg", "Müller", GenderEnum.Male)
-        ]);
+        ], addresses: [Address(3, "Bahnhofstrasse 12")]);
         var mapSource = Substitute.For<IPseudonymMapSource>();
         mapSource.GetDictionaryAsync(Arg.Any<CancellationToken>()).Returns(dictionary);
         var clock = Substitute.For<ICompanyClock>();

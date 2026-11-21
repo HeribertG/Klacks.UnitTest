@@ -8,7 +8,9 @@ using static Klacks.UnitTest.Services.Assistant.Pseudonymization.PseudonymTestMa
 namespace Klacks.UnitTest.Services.Assistant.Pseudonymization;
 
 /// <summary>
-/// Acceptance measurement of the design (section 2): dictionary of 5000 people, prompt of 100k characters. The limits
+/// Acceptance measurement of the design (section 2): dictionary of 5000 people with one address each, prompt of 100k
+/// characters with names, street addresses, dates and times. The case without addresses is the like-for-like baseline
+/// (same prompt, street lines stay plain text). The limits
 /// are generous ceilings for a slow CI runner, the measured times are written to the test output.
 /// </summary>
 [TestFixture]
@@ -17,8 +19,9 @@ public class PseudonymPerformanceTests
     private const int PersonCount = 5000;
     private const int PromptLength = 100_000;
 
-    [Test]
-    public void FiveThousandPeople_HundredThousandCharacters_StaysWithinBudget()
+    [TestCase(true)]
+    [TestCase(false)]
+    public void FiveThousandPeople_HundredThousandCharacters_StaysWithinBudget(bool withAddresses)
     {
         var firstNames = new[] { "Anna", "Beat", "Claudia", "Daniel", "Erika", "Fritz", "Gabriela", "Hans", "Irene", "Jürg" };
         var persons = Enumerable.Range(1, PersonCount)
@@ -26,7 +29,10 @@ public class PseudonymPerformanceTests
             .ToList();
 
         var build = Stopwatch.StartNew();
-        var dictionary = Dictionary(persons, persons.Select((_, i) => $"079 {i:D3} {i % 100:D2} {i % 97:D2}"));
+        var addresses = withAddresses
+            ? Enumerable.Range(1, PersonCount).Select(i => Address(i, StreetLine(i))).ToList()
+            : new List<PseudonymAddress>();
+        var dictionary = Dictionary(persons, persons.Select((_, i) => $"079 {i:D3} {i % 100:D2} {i % 97:D2}"), addresses);
         build.Stop();
 
         var builder = new StringBuilder(PromptLength);
@@ -36,6 +42,7 @@ public class PseudonymPerformanceTests
             var person = random.Next(1, PersonCount);
             builder.Append("{\"Name\":\"").Append(LetterName(person)).Append("\",\"FirstName\":\"")
                 .Append(firstNames[person % firstNames.Length]).Append("\",\"IdNumber\":").Append(10000 + person)
+                .Append(",\"Street\":\"").Append(StreetLine(person)).Append("\",\"Zip\":\"9472\",\"City\":\"Grabs\"")
                 .Append(",\"Note\":\"Dienst am 2026-11-20 von 08:00 bis 17:00, Mail a").Append(person).Append("@example.ch\"} ");
         }
 
@@ -45,13 +52,24 @@ public class PseudonymPerformanceTests
         var result = PseudonymTextPseudonymizer.Pseudonymize(text, map, new HashSet<string>(), Today);
         pass.Stop();
 
-        TestContext.WriteLine($"Dictionary build: {build.ElapsedMilliseconds} ms, phrases: {dictionary.PhraseCount}");
+        TestContext.WriteLine(
+            $"Addresses {withAddresses}. Dictionary build: {build.ElapsedMilliseconds} ms, phrases: {dictionary.PhraseCount}, street keys: {dictionary.StreetCount}");
         TestContext.WriteLine($"Pattern scan + pseudonymisation of {text.Length} chars: {pass.ElapsedMilliseconds} ms");
         dictionary.PhraseCount.ShouldBeGreaterThan(PersonCount);
-        result.ShouldNotContain("Zett");
+        result.ShouldContain("MA-");
+        if (withAddresses)
+        {
+            result.ShouldNotContain("Zett");
+            result.ShouldNotContain("strasse");
+            result.ShouldContain("ADR-");
+            dictionary.StreetCount.ShouldBeGreaterThanOrEqualTo(PersonCount);
+        }
+
         build.ElapsedMilliseconds.ShouldBeLessThan(20_000);
         pass.ElapsedMilliseconds.ShouldBeLessThan(10_000);
     }
+
+    private static string StreetLine(int number) => $"{LetterName(number)}strasse {number % 200 + 1}";
 
     private static string LetterName(int number)
     {
