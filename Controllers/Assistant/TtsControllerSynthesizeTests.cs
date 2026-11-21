@@ -30,6 +30,7 @@ public class TtsControllerSynthesizeTests
     {
         _provider = Substitute.For<ITtsProvider>();
         _provider.ProviderId.Returns(TtsProviderConstants.Edge);
+        _provider.MediaType.Returns(TtsProviderConstants.MpegMediaType);
         _provider.SynthesizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns([1, 2, 3]);
 

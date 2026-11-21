@@ -20,13 +20,14 @@ public class UpdaterContractFreezeTests
         ((int)UpdateOperationType.WhisperInstall).ShouldBe(2);
         ((int)UpdateOperationType.WhisperUninstall).ShouldBe(3);
         ((int)UpdateOperationType.PostgresUpgrade).ShouldBe(4);
+        ((int)UpdateOperationType.TtsInstall).ShouldBe(5);
     }
 
     [Test]
     public void OperationTypeMembers_AreFrozen()
     {
         Enum.GetNames<UpdateOperationType>().ShouldBe(
-            ["Update", "Rollback", "WhisperInstall", "WhisperUninstall", "PostgresUpgrade"],
+            ["Update", "Rollback", "WhisperInstall", "WhisperUninstall", "PostgresUpgrade", "TtsInstall"],
             ignoreOrder: true);
     }
 
@@ -49,5 +50,13 @@ public class UpdaterContractFreezeTests
         WhisperPluginConstants.SmallModelId.ShouldBe("Systran/faster-whisper-small");
         WhisperPluginConstants.LargeModelId.ShouldBe("deepdml/faster-whisper-large-v3-turbo-ct2");
         WhisperPluginConstants.ParakeetModelId.ShouldBe(ParakeetModelIdWrittenByKlacksStt);
+    }
+
+    [Test]
+    public void LocalTtsContract_IsFrozen()
+    {
+        LocalTtsConstants.ModelAlias.ShouldBe("supertonic-3");
+        LocalTtsConstants.ModelId.ShouldBe("supertonic-3-int8");
+        Klacks.Api.Application.Constants.Settings.ASSISTANT_TTS_LOCAL_BASE_URL.ShouldBe("ASSISTANT_TTS_LOCAL_BASE_URL");
     }
 }

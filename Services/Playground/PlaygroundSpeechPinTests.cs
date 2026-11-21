@@ -33,9 +33,11 @@ public class PlaygroundSpeechPinTests
         _mode = Substitute.For<IPlaygroundMode>();
         _edge = Substitute.For<ITtsProvider>();
         _edge.ProviderId.Returns(TtsProviderConstants.Edge);
+        _edge.MediaType.Returns(TtsProviderConstants.MpegMediaType);
         _edge.SynthesizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns([1, 2, 3]);
         _openAi = Substitute.For<ITtsProvider>();
         _openAi.ProviderId.Returns(TtsProviderConstants.OpenAi);
+        _openAi.MediaType.Returns(TtsProviderConstants.MpegMediaType);
         _openAi.SynthesizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns([9, 9]);
 
         _controller = new TtsController(Substitute.For<ILogger<TtsController>>(), new[] { _edge, _openAi }, _mode);

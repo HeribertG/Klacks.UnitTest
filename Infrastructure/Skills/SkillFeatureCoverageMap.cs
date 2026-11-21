@@ -92,6 +92,7 @@ public static class SkillFeatureCoverageMap
         ["TranslationController"] = Covered("get_translation_status"),
         ["UpdateController"] = Covered("evaluate_software_update", "start_software_update"),
         ["VersionController"] = Covered("get_system_info"),
+        ["LocalTtsController"] = Excluded("local voice licence consent and install ride the updater deployment infrastructure; admin settings card only, provider choice via update_speech_settings"),
         ["WhisperPluginController"] = Excluded("Whisper plugin install/uninstall rides the updater deployment infrastructure; admin settings card only, engine visibility via get_speech_settings"),
         ["ExportFormatOverridesController"] = Excluded("support hotfix tooling for export formats; admin settings card only, not a Klacksy domain feature"),
 

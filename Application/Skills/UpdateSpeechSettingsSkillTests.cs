@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for the "local" engine value of UpdateSpeechSettingsSkill: it is stored as the custom provider id of
 /// the installed local speech recognition when that provider row is enabled (any casing), refused with the
-/// install hint before anything is written otherwise, and leaves ordinary engine values untouched.
+/// install hint before anything is written otherwise, and leaves ordinary engine values untouched. The TTS provider
+/// "local" is stored only while the local voice is installed (ASSISTANT_TTS_LOCAL_BASE_URL set).
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -21,6 +22,9 @@ public class UpdateSpeechSettingsSkillTests
     private const string SttEngineParameter = "sttEngine";
     private const string OutputModeParameter = "outputMode";
     private const string InstallHint = "Install the local speech recognition first (install_whisper_plugin).";
+    private const string TtsProviderParameter = "ttsProvider";
+    private const string LocalVoiceInstallHint =
+        "Install the local voice first: an administrator accepts its licence and installs it in the speech settings.";
 
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -101,5 +105,47 @@ public class UpdateSpeechSettingsSkillTests
         result.Success.ShouldBeTrue();
         _store[SettingKeys.ASSISTANT_STT_ENGINE].Value.ShouldBe(SttProviderConstants.Deepgram);
         await _resolver.DidNotReceiveWithAnyArgs().TryResolveAsync(default!, default);
+    }
+
+    [TestCase("local")]
+    [TestCase("LOCAL")]
+    public async Task ExecuteAsync_LocalVoiceWhenInstalled_StoresLocalProvider(string value)
+    {
+        _store[SettingKeys.ASSISTANT_TTS_LOCAL_BASE_URL] = new SettingsModel
+        {
+            Id = Guid.NewGuid(),
+            Type = SettingKeys.ASSISTANT_TTS_LOCAL_BASE_URL,
+            Value = "http://klacks-stt:8000",
+        };
+
+        var result = await _skill.ExecuteAsync(Context(), new Dictionary<string, object> { [TtsProviderParameter] = value });
+
+        result.Success.ShouldBeTrue();
+        _store[SettingKeys.ASSISTANT_TTS_PROVIDER].Value.ShouldBe(TtsProviderConstants.Local);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_LocalVoiceNotInstalled_ReturnsInstallHintAndWritesNothing()
+    {
+        var result = await _skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            [TtsProviderParameter] = TtsProviderConstants.Local,
+            [OutputModeParameter] = "spoken",
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(LocalVoiceInstallHint);
+        _store.ShouldBeEmpty();
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task ExecuteAsync_CloudVoice_IsStoredWithoutTheLocalVoiceInstalled()
+    {
+        var result = await _skill.ExecuteAsync(
+            Context(), new Dictionary<string, object> { [TtsProviderParameter] = TtsProviderConstants.Edge });
+
+        result.Success.ShouldBeTrue();
+        _store[SettingKeys.ASSISTANT_TTS_PROVIDER].Value.ShouldBe(TtsProviderConstants.Edge);
     }
 }

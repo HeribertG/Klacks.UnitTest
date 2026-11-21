@@ -94,6 +94,8 @@ public class PlaygroundAssistantEndpointGuardTests
         ["POST api/backend/assistant/tts/synthesize"] = "The provider is forced to Edge on the Playground, so the call costs the operator nothing.",
         ["POST api/backend/assistant/tts/test"] = "The provider is forced to Edge on the Playground, so the call costs the operator nothing.",
         ["GET api/backend/assistant/tts/voices"] = "Read-only.",
+        ["GET api/backend/assistant/tts/local/status"] = "Read-only.",
+        ["GET api/backend/assistant/tts/local/license"] = "Read-only; the licence text is a public document.",
         ["GET api/backend/assistant/explain-offers/{topicKey}"] = "Read-only.",
         ["POST api/backend/assistant/explain-offers/{topicKey}/reaction"] = "Reaction on an explain offer; no free text.",
         ["GET api/backend/assistant/usage"] = "Read-only.",

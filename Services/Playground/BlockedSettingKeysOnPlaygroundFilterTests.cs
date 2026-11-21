@@ -30,7 +30,7 @@ namespace Klacks.UnitTest.Services.Playground;
 public class BlockedSettingKeysOnPlaygroundFilterTests
 {
     private const string SettingArgumentName = "setting";
-    private const string SpeechKeyPattern = "^(DEEPL_API_KEY|ASSISTANT_STT_ENGINE|ASSISTANT_TTS_PROVIDER|ASSISTANT_(STT|TTS)_API_KEY.*)$";
+    private const string SpeechKeyPattern = "^(DEEPL_API_KEY|ASSISTANT_STT_ENGINE|ASSISTANT_TTS_PROVIDER|ASSISTANT_(STT|TTS)_API_KEY.*|ASSISTANT_TTS_LOCAL_.*)$";
     private const string InstallOrDownloadPattern = "install|download";
     private const int MinimumKnownInstallOrDownloadEndpoints = 8;
 
