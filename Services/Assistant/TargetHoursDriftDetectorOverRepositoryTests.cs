@@ -9,7 +9,6 @@
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Services;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
@@ -39,7 +38,6 @@ public class TargetHoursDriftDetectorOverRepositoryTests
 
         var clientRepository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

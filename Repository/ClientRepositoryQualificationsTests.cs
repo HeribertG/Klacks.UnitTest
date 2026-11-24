@@ -5,7 +5,6 @@ using Klacks.Api.Domain.Interfaces.Staffs;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Clients;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Staffs;
 using Klacks.Api.Infrastructure.Services;
@@ -33,7 +32,6 @@ public class ClientRepositoryQualificationsTests
 
         _repository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

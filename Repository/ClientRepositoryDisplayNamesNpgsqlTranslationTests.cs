@@ -8,7 +8,6 @@
 /// </summary>
 
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +39,6 @@ public class ClientRepositoryDisplayNamesNpgsqlTranslationTests
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _repository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

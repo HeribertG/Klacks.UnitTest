@@ -2,7 +2,6 @@
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;
@@ -22,7 +21,6 @@ public class ClientRepositoryRefactoredTests
     private IClientBreakPlaceholderRepository _clientBreakPlaceholderRepository;
     private IWorkRepository _workRepository;
     private IClientSearchFilterService _mockSearchFilterService;
-    private IMacroEngine _mockMacroEngine;
     private IGetAllClientIdsFromGroupAndSubgroups _mockGroupClient;
     private IGroupVisibilityService _mockGroupVisibility;
     private IClientFilterService _mockClientFilterService;
@@ -44,7 +42,6 @@ public class ClientRepositoryRefactoredTests
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
 
-        _mockMacroEngine = Substitute.For<IMacroEngine>();
         _mockGroupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _mockGroupVisibility = Substitute.For<IGroupVisibilityService>();
         _mockClientFilterService = Substitute.For<IClientFilterService>();
@@ -68,7 +65,6 @@ public class ClientRepositoryRefactoredTests
 
         _clientRepository = new ClientRepository(
             _context,
-            _mockMacroEngine,
             _mockChangeTrackingService,
             _mockEntityManagementService,
             collectionUpdateService,

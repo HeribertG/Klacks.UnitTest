@@ -8,7 +8,6 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -33,7 +32,6 @@ public class ClientRepositoryDisplayNamesTests
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _repository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

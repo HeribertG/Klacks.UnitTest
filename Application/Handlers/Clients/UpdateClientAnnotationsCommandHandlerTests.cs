@@ -12,7 +12,6 @@ using Klacks.Api.Application.Commands.Clients;
 using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Mappers;
-using Klacks.Api.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -44,7 +43,6 @@ public class UpdateClientAnnotationsCommandHandlerTests
 
         _clientRepository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

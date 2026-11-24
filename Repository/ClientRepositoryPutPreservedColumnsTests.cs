@@ -10,7 +10,6 @@
 /// the LDAP sync and the ERP import would be frozen out.
 /// </summary>
 
-using Klacks.Api.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,7 +41,6 @@ public class ClientRepositoryPutPreservedColumnsTests
 
         _clientRepository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             new EntityCollectionUpdateService(_context),

@@ -2,7 +2,6 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Repositories.Staffs;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
@@ -35,7 +34,6 @@ public class ClientRepositoryFindReusableCustomerTests
 
         _clientRepository = new ClientRepository(
             _context,
-            Substitute.For<IMacroEngine>(),
             Substitute.For<IClientChangeTrackingService>(),
             Substitute.For<IClientEntityManagementService>(),
             collectionUpdateService,
