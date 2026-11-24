@@ -3,8 +3,8 @@
 /// <summary>
 /// Unit tests for the lexer-based OUTPUT channel scan: literal channels are collected in statement and
 /// call form, computed channels are counted as non-literal, comments and string contents are ignored,
-/// a lexer error fails the scan, and a comment on the last line without a line break (which crashes the
-/// tokenizer) fails it with a fixed, actionable message instead of the raw .NET exception text. Also pins the set of channels the backend processes and proves that
+/// a lexer error fails the scan, and a comment on the last line without a line break is scanned like any
+/// other comment (until 2026-11-23 it crashed the tokenizer). Also pins the set of channels the backend processes and proves that
 /// every standard macro shipped by MacrosSeed passes the scan with supported literal channels only.
 /// </summary>
 
@@ -24,9 +24,6 @@ public class MacroOutputChannelInspectorTests
     private const int SeededMacroScriptCount = 8;
     private const string SqlEscapedQuote = "''";
     private const string SqlQuote = "'";
-    private const string TrailingCommentMessageText = "comment on the last line of the script";
-    private const string TrailingCommentActionText = "remove that comment or move it to an earlier line";
-    private const string DotNetIndexWording = "index";
 
     private static readonly Regex SeedScriptContent =
         new(@"SELECT\s+'[^']*','[^']*','(?<content>(?:[^']|'')*)'", RegexOptions.Compiled);
@@ -128,20 +125,17 @@ public class MacroOutputChannelInspectorTests
         scan.FailureMessage.ShouldNotBeNullOrWhiteSpace();
     }
 
-    [TestCase("OUTPUT 1, 0 ' note")]
-    [TestCase("OUTPUT 1, 0\n' note")]
-    [TestCase("' only a note")]
-    public void Inspect_CommentOnLastLineWithoutNewline_FailsTheScanLikeTheCompiler_WithAFixedActionableMessage(string script)
+    [TestCase("OUTPUT 1, 0 ' note", 1)]
+    [TestCase("OUTPUT 1, 0\n' note", 1)]
+    [TestCase("' only a note", 0)]
+    public void Inspect_CommentOnLastLineWithoutNewline_SucceedsLikeTheCompiler(string script, int expectedChannelCount)
     {
         var scan = _inspector.Inspect(script);
 
-        scan.Succeeded.ShouldBeFalse();
-        scan.FailureMessage.ShouldNotBeNull();
-        scan.FailureMessage.ShouldContain(TrailingCommentMessageText);
-        scan.FailureMessage.ShouldContain(TrailingCommentActionText);
-        scan.FailureMessage.ShouldNotContain(nameof(ArgumentOutOfRangeException));
-        scan.FailureMessage.ShouldNotContain(DotNetIndexWording, Case.Insensitive);
-        Should.Throw<ArgumentOutOfRangeException>(() => CompiledScript.Compile(script));
+        scan.Succeeded.ShouldBeTrue(scan.FailureMessage);
+        scan.LiteralChannels.Count.ShouldBe(expectedChannelCount);
+        scan.NonLiteralChannelCount.ShouldBe(0);
+        Should.NotThrow(() => CompiledScript.Compile(script));
     }
 
     [Test]

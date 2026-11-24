@@ -6,7 +6,7 @@
 /// strings with doubled quotes, statement delimiters, comments, positions, and the error cases (unknown symbol,
 /// unterminated string at end of line or end of source). Errors are recorded on the InterpreterError and never thrown;
 /// a symbol whose scan failed keeps its default token tokPlus with an empty text. A comment that is not followed by a
-/// line break makes the input stream read before its start and throws (pinned as current behaviour).
+/// line break runs to the end of the source (until 2026-11-23 it made the input stream read before its start and throw).
 /// </summary>
 
 using Klacks.Api.Infrastructure.Scripting;
@@ -200,12 +200,40 @@ public class LexicalAnalyserCharacterizationTests
     }
 
     [Test]
-    public void ACommentWithoutAFollowingLineBreak_Throws()
+    public void ACommentWithoutAFollowingLineBreak_RunsToTheEndOfTheSource()
     {
-        var analyser = Connect("x ' trailing");
+        var symbols = Tokenize("x ' trailing");
 
-        analyser.GetNextSymbol().Token.ShouldBe(Tokens.tokIdentifier);
-        Should.Throw<ArgumentOutOfRangeException>(() => analyser.GetNextSymbol());
+        Describe(symbols).ShouldBe(new[]
+        {
+            (Tokens.tokIdentifier, "x"),
+            (Tokens.tokEof, ""),
+        });
+        _error.Number.ShouldBe(0);
+    }
+
+    [Test]
+    public void ACommentBeforeACarriageReturnLineFeed_IsSkippedUpToTheLineBreak()
+    {
+        var symbols = Tokenize("x ' comment\r\ny");
+
+        Describe(symbols).ShouldBe(new[]
+        {
+            (Tokens.tokIdentifier, "x"),
+            (Tokens.tokStatementDelimiter, "\n"),
+            (Tokens.tokIdentifier, "y"),
+            (Tokens.tokEof, ""),
+        });
+        symbols[2].Line.ShouldBe(2);
+    }
+
+    [Test]
+    public void ASourceThatIsOnlyAComment_GivesEofRightAway()
+    {
+        var symbols = Tokenize("' only a comment");
+
+        Describe(symbols).ShouldBe(new[] { (Tokens.tokEof, "") });
+        _error.Number.ShouldBe(0);
     }
 
     [Test]

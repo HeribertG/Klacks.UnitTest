@@ -64,7 +64,7 @@ internal class GoupTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,

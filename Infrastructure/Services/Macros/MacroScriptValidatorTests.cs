@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for the shared macro script validator: a valid script passes, a script that fails
-/// during probe execution reports a runtime error, and malformed input that hangs the script
-/// parser ("DIM 123abc") is rejected via the hard wall-clock timeout instead of freezing the caller.
+/// Unit tests for the shared macro script validator: a valid script passes (also one that ends with a comment
+/// line without a line break), a script that fails during probe execution reports a runtime error, and malformed
+/// input that hangs the script parser ("DIM 123abc") is rejected via the hard wall-clock timeout instead of
+/// freezing the caller.
 /// </summary>
 
 using Klacks.Api.Infrastructure.Services.Macros;
@@ -36,6 +37,14 @@ public class MacroScriptValidatorTests
         var result = _validator.Validate("import fromhour\nimport untilhour\nOUTPUT 1, 0");
 
         result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Validate_ScriptEndingWithACommentWithoutLineBreak_ReturnsValid()
+    {
+        var result = _validator.Validate("import hour\nOUTPUT 1, Hour\n' trailing comment");
+
+        result.IsValid.ShouldBeTrue(result.ErrorMessage);
     }
 
     [Test]

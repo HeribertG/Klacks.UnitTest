@@ -324,7 +324,6 @@ public class ApplyCompanyRuleCommandHandlerTests
     [TestCase("OUTPUT 5, 1", "5")]
     [TestCase("OUTPUT 1, 0\nOUTPUT 20, 1", "20")]
     [TestCase("DIM c\nc = 10\nOUTPUT c, 1", "plain number")]
-    [TestCase("OUTPUT 1, 0 ' note", "comment on the last line")]
     public async Task Handle_CustomMacro_UnprocessedOrUncheckableOutputChannel_Throws_NothingPersisted(
         string script, string expectedFragment)
     {

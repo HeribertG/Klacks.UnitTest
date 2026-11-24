@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for MacroScriptRunner: a valid script compiles, a compile error returns the compiler's message, the compiler
-/// crash on a comment in the last line becomes the fixed trailing-comment message, a run binds the inputs and returns the
+/// Unit tests for MacroScriptRunner: a valid script compiles, a compile error returns the compiler's message, a script
+/// ending with a comment in its last line compiles and runs, an IMPORT in the last line is registered, a run binds the inputs and returns the
 /// OUTPUT messages, a runtime failure returns its error, and a cancelled token ends a run that completes without it.
 /// </summary>
 
@@ -18,6 +18,7 @@ public class MacroScriptRunnerTests
     private const string DoubleHour = "IMPORT Hour\nOUTPUT 1, Hour * 2";
     private const string DuplicateImport = "IMPORT Hour\nIMPORT Hour\nOUTPUT 1, Hour";
     private const string TrailingComment = "OUTPUT 1, 1 ' note";
+    private const string ImportOnTheLastLine = "IMPORT Hour";
     private const string FailsAtRuntime = "MSGBOX \"always\"\nOUTPUT 1, 1";
     private const string Loop = "DIM I\nFOR I = 1 TO 100000\nNEXT\nOUTPUT 1, 1";
 
@@ -40,12 +41,24 @@ public class MacroScriptRunnerTests
     }
 
     [Test]
-    public void TryCompile_CommentOnTheLastLine_ReportsTheFixedMessage()
+    public void TryCompile_CommentOnTheLastLine_CompilesAndRuns()
     {
         var (script, error) = MacroScriptRunner.TryCompile(TrailingComment);
 
-        script.ShouldBeNull();
-        error.ShouldBe(MacroScriptRunner.TrailingCommentCompileError);
+        error.ShouldBeNull();
+        script.ShouldNotBeNull();
+        var run = MacroScriptRunner.Run(script!, new MacroData(), CancellationToken.None);
+        run.IsCompleted.ShouldBeTrue(run.Error);
+        decimal.Parse(run.Messages!.Single().Message, CultureInfo.InvariantCulture).ShouldBe(1m);
+    }
+
+    [Test]
+    public void TryCompile_ImportOnTheLastLineWithoutLineBreak_RegistersTheImport()
+    {
+        var (script, error) = MacroScriptRunner.TryCompile(ImportOnTheLastLine);
+
+        error.ShouldBeNull();
+        script!.ExternalSymbols.Count.ShouldBe(1);
     }
 
     [Test]

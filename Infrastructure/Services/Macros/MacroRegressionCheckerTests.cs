@@ -79,7 +79,6 @@ public class MacroRegressionCheckerTests
     private const string FastOriginal = "IMPORT Hour\nOUTPUT 1, Hour";
     private const string PlainResult = "IMPORT Hour\nOUTPUT 1, Hour";
     private const string FreeChannelSurcharge = "DIM Extra, NewTotal\nExtra = Hour * 0.5";
-    private const string RawStartIndexText = "startIndex";
 
     private static readonly int[] AllShiftChannels = [1, 10, 11, 12, 13, 14];
 
@@ -316,27 +315,23 @@ public class MacroRegressionCheckerTests
     }
 
     [Test]
-    public void OriginalThatCrashesTheCompiler_AbortsAsOriginalCompileError_WithoutRawExceptionText()
+    public void OriginalEndingWithACommentInItsLastLine_IsComparedLikeAnyOtherScript()
     {
-        const string crashingOriginal = "OUTPUT 1, 0 ' note";
+        const string commentedOriginal = "OUTPUT 1, 0 ' note";
 
-        var result = _checker.Check(crashingOriginal, crashingOriginal + "\nOUTPUT 13, 1");
+        var result = _checker.Check(commentedOriginal, commentedOriginal + "\nOUTPUT 13, 1");
 
-        result.Passed.ShouldBeFalse();
-        result.FailureKind.ShouldBe(MacroRegressionFailureKind.OriginalCompileError);
-        result.FailureMessage!.ShouldContain("original macro script does not compile");
-        result.FailureMessage.ShouldNotContain(RawStartIndexText);
+        result.Passed.ShouldBeTrue(result.FailureMessage);
     }
 
     [Test]
-    public void CopyThatCrashesTheCompiler_AbortsAsCopyCompileError_WithoutRawExceptionText()
+    public void CopyEndingWithACommentInItsLastLine_IsComparedLikeAnyOtherScript()
     {
-        var result = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 13, 1 ' note");
+        var accepted = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 13, 1 ' note");
+        var refused = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 1, Hour * 2 ' note");
 
-        result.Passed.ShouldBeFalse();
-        result.FailureKind.ShouldBe(MacroRegressionFailureKind.CopyCompileError);
-        result.FailureMessage!.ShouldContain("extended script does not compile");
-        result.FailureMessage.ShouldNotContain(RawStartIndexText);
+        accepted.Passed.ShouldBeTrue(accepted.FailureMessage);
+        refused.Passed.ShouldBeFalse();
     }
 
     [Test]

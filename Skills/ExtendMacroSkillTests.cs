@@ -12,7 +12,7 @@
 /// of the copy carries the guidance on what the appended block sees and may declare; a regression abort that is not a
 /// runtime failure of the copy (original does not compile, no comparable input, time budget, result total of the copy
 /// beyond the decimal range) carries no such guidance,
-/// and a block ending in a comment line is refused by the channel scan on the trimmed block.
+/// and a block ending in a comment is stored like any other block (until 2026-11-23 the channel scan refused it).
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Macros;
@@ -40,7 +40,7 @@ public class ExtendMacroSkillTests
     private const string AdditiveBlock = "OUTPUT 13, Hour * 0.5";
     private const string UnassignedVariableText = "has not been assigned a value";
     private const string AppendedBlockHintText = "The appended block runs after the original script";
-    private const string TrailingCommentText = "comment on the last line of the script";
+    private const string BlockComment = " ' early bonus";
 
     private readonly Guid _sourceId = Guid.NewGuid();
     private IMediator _mediator = null!;
@@ -148,14 +148,15 @@ public class ExtendMacroSkillTests
     }
 
     [Test]
-    public async Task Extend_BlockEndingWithACommentLine_IsRefusedByTheChannelScan_BeforeValidation()
+    public async Task Extend_BlockEndingWithAComment_WithRealComponents_IsStored()
     {
-        var result = await CreateSkill().ExecuteAsync(Ctx(), Parameters(block: AdditiveBlock + " ' early bonus\n"));
+        var result = await CreateSkillWithRealComponents()
+            .ExecuteAsync(Ctx(), Parameters(block: AdditiveBlock + BlockComment + "\n"));
 
-        result.Success.ShouldBeFalse();
-        result.Message!.ShouldContain(TrailingCommentText);
-        _validator.DidNotReceive().Validate(Arg.Any<string>());
-        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand>(c => c.model.Content == OriginalScript + "\n" + AdditiveBlock + BlockComment),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

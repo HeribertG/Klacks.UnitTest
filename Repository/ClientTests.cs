@@ -120,7 +120,7 @@ internal class ClientTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var repository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
@@ -172,7 +172,7 @@ internal class ClientTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var repository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
@@ -225,7 +225,7 @@ internal class ClientTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var repository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
@@ -321,7 +321,7 @@ internal class ClientTests
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
-        var repository = new ClientRepository(dbContext, new MacroEngine(Microsoft.Extensions.Logging.Abstractions.NullLogger<MacroEngine>.Instance),
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
