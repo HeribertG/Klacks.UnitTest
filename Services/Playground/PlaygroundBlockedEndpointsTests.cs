@@ -12,6 +12,10 @@
 /// The blocked accounts actions include ChangePasswordUser, which carries ExemptFromAdminSetupGate only so
 /// an installation can finish its first-admin setup; AdminSetupGateService is exempt on the Playground, so nothing there
 /// depends on them.
+/// Image upload and delete (LoadFileController) are blocked as well: the images directory is not part of the nightly
+/// reset, so a visitor's logo, icon or profile picture would stay for every later visitor; download stays open.
+/// The same holds for the ERP drop folder: both UI uploads, the token push upload and minting an import token are
+/// blocked; listing files and tokens stays open.
 /// </summary>
 
 using System.Reflection;
@@ -86,6 +90,10 @@ public class PlaygroundBlockedEndpointsTests
     [TestCase("TranscriptionDictionaryController", "Create")]
     [TestCase("TranscriptionDictionaryController", "Update")]
     [TestCase("TranscriptionDictionaryController", "Delete")]
+    [TestCase("ErpDropPointsController", "UploadErpOrderFileToDefault")]
+    [TestCase("ErpDropPointsController", "UploadErpOrderFile")]
+    [TestCase("ErpOrderUploadController", "Upload")]
+    [TestCase("ErpImportTokensController", "Create")]
     public void WriteOrCostEndpoint_IsBlockedOnPlayground(string controller, string method)
     {
         IsBlocked(Action(controller, method)).ShouldBeTrue($"{controller}.{method}");
@@ -133,6 +141,9 @@ public class PlaygroundBlockedEndpointsTests
     [TestCase("TranscriptionDictionaryController", "GetAll")]
     [TestCase("UpdateController", "GetStatus")]
     [TestCase("UpdateController", "GetConfig")]
+    [TestCase("ErpDropPointsController", "GetDefaultErpDropPointFiles")]
+    [TestCase("ErpDropPointsController", "GetDefaultErpDropPoint")]
+    [TestCase("ErpImportTokensController", "GetForDropPoint")]
     public void SessionOrReadEndpoint_StaysOpen(string controller, string method)
     {
         IsBlocked(Action(controller, method)).ShouldBeFalse($"{controller}.{method} is needed by the normal session");
@@ -174,6 +185,34 @@ public class PlaygroundBlockedEndpointsTests
 
         ran.ShouldBeTrue();
         open.Result.ShouldBeNull();
+    }
+
+    [Test]
+    public void ImageWrites_AreBlockedOnPlayground_DownloadStaysOpen()
+    {
+        var actions = Controller("LoadFileController")
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetCustomAttributes().Any(a => a is HttpMethodAttribute))
+            .ToList();
+        var reads = actions.Where(m => m.GetCustomAttributes().Any(a => a is HttpGetAttribute)).ToList();
+        var writes = actions.Except(reads).ToList();
+
+        writes.Select(m => m.Name).ShouldBe(["DeleteFile", "SingleFile"], ignoreOrder: true);
+        writes.ShouldAllBe(m => IsBlocked(m));
+        reads.Select(m => m.Name).ShouldBe(["SingleFile"]);
+        reads.ShouldAllBe(m => !IsBlocked(m));
+    }
+
+    [Test]
+    public void EveryErpFileUpload_IsBlockedOnPlayground()
+    {
+        var uploads = new[] { "ErpDropPointsController", "ErpOrderUploadController" }
+            .SelectMany(name => Controller(name).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            .Where(m => m.GetParameters().Any(p => p.ParameterType == typeof(IFormFile)))
+            .ToList();
+
+        uploads.Select(m => m.Name).ShouldBe(["UploadErpOrderFileToDefault", "UploadErpOrderFile", "Upload"], ignoreOrder: true);
+        uploads.ShouldAllBe(m => IsBlocked(m));
     }
 
     [Test]
